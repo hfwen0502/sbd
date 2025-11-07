@@ -42,7 +42,7 @@ namespace sbd {
           new_bit_pos_B_v[i] = (2*i+1) % ibit_length;
 	}
     }
-    for(int i=0; i < iL; ++i) {    
+    for(int i=0; i < iL; ++i) {
       if ( A[block_v[i]] & (size_t(1) << bit_pos_v[i]) ) {
 	D[new_block_A_v[i]] |= size_t(1) << new_bit_pos_A_v[i];
       }
@@ -84,7 +84,7 @@ namespace sbd {
       size_t new_bit_pos_A = (2*i) % bit_length;
       size_t new_block_B = (2*i+1) / bit_length;
       size_t new_bit_pos_B = (2*i+1) % bit_length;
-      
+
       if ( A[block] & (size_t(1) << bit_pos) ) {
 	D[new_block_A] |= size_t(1) << new_bit_pos_A;
       }
@@ -108,7 +108,7 @@ namespace sbd {
       size_t new_bit_pos_A = (2*i) % bit_length;
       size_t new_block_B = (2*i+1) / bit_length;
       size_t new_bit_pos_B = (2*i+1) % bit_length;
-      
+
       if ( A[block] & (size_t(1) << bit_pos) ) {
 	D[new_block_A] |= size_t(1) << new_bit_pos_A;
       }
@@ -119,20 +119,22 @@ namespace sbd {
   }
 #endif
 
-  
+
+
+
   // Set the specified bit (x) in the vector of size_t (bit representation)
   void setocc(std::vector<size_t> & dets, const size_t bit_length, int x, bool y) {
     if (x < 0) {
       throw std::invalid_argument("Bit index cannot be negative");
     }
-    
+
     size_t block = x / bit_length; // Determine the block
     size_t bit = x % bit_length;   // Determine the bit within the block
-    
+
     if (block >= dets.size()) {
       throw std::out_of_range("Bit index is out of range for the given vector");
     }
-    
+
     if (y) {
       dets[block] |= (size_t(1) << bit); // Set the bit to 1
     } else {
@@ -201,14 +203,14 @@ namespace sbd {
     }
     return cindex;
   }
-  
+
   void parity(const std::vector<size_t> & dets,
 	      const size_t bit_length,
 	      const int & start, const int & end, double& sgn) {
     if (start > end) {
       throw std::invalid_argument("Start index cannot be greater than end index");
     }
-    
+
     if (bit_length <= 0 || bit_length > static_cast<size_t>(8 * sizeof(size_t))) {
       throw std::invalid_argument("Invalid bit length");
     }
@@ -278,7 +280,7 @@ namespace sbd {
 			       size_t bit_length,
 			       size_t norb) {
     std::vector<size_t> alpha((norb + bit_length - 1) / bit_length, 0);  //
-    
+
     for (size_t i = 0; i < norb; ++i) {
       bool occ = getocc(det, bit_length, 2 * i);  //
       if (occ) {
@@ -292,11 +294,11 @@ namespace sbd {
 			      size_t bit_length,
 			      size_t norb) {
     std::vector<size_t> beta((norb + bit_length - 1) / bit_length, 0);
-    
+
     for (size_t i = 0; i < norb; ++i) {
       bool occ = getocc(det, bit_length, 2 * i + 1);
       if (occ) {
-	setocc(beta, bit_length, i, true); 
+	setocc(beta, bit_length, i, true);
       }
     }
     return beta;
@@ -325,26 +327,26 @@ namespace sbd {
     return count;
   }
 
-  void OrbitalDifference(const std::vector<size_t> & a, 
-			 const std::vector<size_t> & b, 
-			 size_t bit_length, 
-			 size_t L, 
-			 std::vector<int> & x, 
+  void OrbitalDifference(const std::vector<size_t> & a,
+			 const std::vector<size_t> & b,
+			 size_t bit_length,
+			 size_t L,
+			 std::vector<int> & x,
 			 std::vector<int> & y) {
     x.clear();
     y.clear();
-    
+
     size_t full_words = L / bit_length;
     size_t remaining_bits = L % bit_length;
-    
+
     if (a.size() != b.size()) {
       throw std::invalid_argument("Vectors a and b must have the same size.");
     }
-    
+
     for (size_t i = 0; i < full_words; ++i) {
       size_t diff_a = a[i] & ~b[i];
       size_t diff_b = b[i] & ~a[i];
-      
+
       for (size_t bit_pos = 0; bit_pos < bit_length; ++bit_pos) {
 	if (diff_a & (static_cast<size_t>(1) << bit_pos)) {
 	  x.push_back(i * bit_length + bit_pos);
@@ -354,12 +356,12 @@ namespace sbd {
 	}
       }
     }
-    
+
     if (remaining_bits > 0) {
       size_t mask = (static_cast<size_t>(1) << remaining_bits) - 1;
       size_t diff_a = (a[full_words] & ~b[full_words]) & mask;
       size_t diff_b = (b[full_words] & ~a[full_words]) & mask;
-      
+
       for (size_t bit_pos = 0; bit_pos < remaining_bits; ++bit_pos) {
 	if (diff_a & (static_cast<size_t>(1) << bit_pos)) {
 	  x.push_back(full_words * bit_length + bit_pos);
@@ -396,7 +398,7 @@ namespace sbd {
     }
     return energy+I0;
   }
-  
+
   template <typename ElemT>
   ElemT OneExcite(const std::vector<size_t> & det,
 		  const size_t bit_length,
@@ -569,9 +571,9 @@ namespace sbd {
     std::mt19937 g(seed);
     std::shuffle(det.begin()+1,det.end(),g);
   }
-  
-	    
-  
+
+
+
 } // end namespace sbd
 
 #endif // end SBD_CHEMISTRY_DETERMINANTS_H

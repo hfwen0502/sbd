@@ -25,11 +25,11 @@ namespace sbd {
       int do_rdm = 0;
       double ratio = 0.0;
       double threshold = 0.01;
-      
+
       size_t bit_length = 20;
 
       std::string dump_matrix_form_wf;
-      
+
     };
 
     SBD generate_sbd_data(int argc, char *argv[]) {
@@ -163,7 +163,7 @@ namespace sbd {
       sbd::TaskCommunicator(comm,
 			    h_comm_size,adet_comm_size,bdet_comm_size,task_comm_size,
 			    h_comm,b_comm,t_comm);
-      
+
       auto time_start_help = std::chrono::high_resolution_clock::now();
       sbd::MakeHelpers(adet,bdet,bit_length,L,helper,sharedMemory,
 		       h_comm,b_comm,t_comm,
@@ -184,7 +184,7 @@ namespace sbd {
       int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
       int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
       int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
-      
+
       /**
 	 Initialize/Load wave function
       */
@@ -212,51 +212,65 @@ namespace sbd {
 	/**
 	   Default method 0: Calculation without storing hamiltonian elements
 	*/
-	
+
 	std::vector<double> hii;
 	auto time_start_diag = std::chrono::high_resolution_clock::now();
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
 	sbd::makeQChamDiagTerms(adet,bdet,bit_length,L,
 				helper,I0,I1,I2,hii,
 				h_comm,b_comm,t_comm);
+#ifdef SBD_THRUST
+	MultDataThrust<double> device_data(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
+	sbd::Davidson(hii, W, device_data,
+		      adet_comm_size, bdet_comm_size,
+		      h_comm,b_comm,t_comm,
+		      max_it,max_nb,eps,max_time, 0);
+#else
 	sbd::Davidson(hii,W,
 		      adet,bdet,bit_length,static_cast<size_t>(L),
 		      adet_comm_size,bdet_comm_size,helper,
 		      I0,I1,I2,
 		      h_comm,b_comm,t_comm,
 		      max_it,max_nb,eps,max_time);
+#endif
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
 	double elapsed_davidson = 0.000001 * elapsed_davidson_count;
 	if( mpi_rank == 0 ) {
 	  std::cout << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
 	}
-	
+
 	auto time_end_diag = std::chrono::high_resolution_clock::now();
 	auto elapsed_diag_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_diag-time_start_diag).count();
 	double elapsed_diag = 0.000001 * elapsed_diag_count;
 	if( mpi_rank == 0 ) {
 	  std::cout << " Elapsed time for diagonalization " << elapsed_diag << " (sec) " << std::endl;
 	}
-	
+
 	/**
 	   Evaluation of Hamiltonian expectation value
 	*/
-	
+
 	std::vector<double> C(W.size(),0.0);
-	
+
 	auto time_start_mult = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	sbd::mult(hii, W, C, device_data,
+		  adet_comm_size, bdet_comm_size,
+		  h_comm, b_comm, t_comm, method);
+#else
 	sbd::mult(hii,W,C,adet,bdet,bit_length,static_cast<size_t>(L),
 		  adet_comm_size,bdet_comm_size,helper,
 		  I0,I1,I2,h_comm,b_comm,t_comm);
-	
+#endif
+
 	auto time_end_mult = std::chrono::high_resolution_clock::now();
 	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
 	double elapsed_mult = 0.000001 * elapsed_mult_count;
 	if ( mpi_rank == 0 ) {
 	  std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
 	}
-	
+
 	double E = 0.0;
 	sbd::InnerProduct(W,C,E,b_comm);
 	double EE = 0.0;
@@ -267,14 +281,24 @@ namespace sbd {
 	  std::cout << " Energy = " << E << std::endl;
 	}
 	energy = E;
-	
+
       } else if ( method == 1 ) {
 
 	/**
 	   Method 1: Calculation with storing hamiltonian elements
 	*/
-
+	auto time_start_diag = std::chrono::high_resolution_clock::now();
+	auto time_start_mkham = std::chrono::high_resolution_clock::now();
 	std::vector<double> hii;
+
+#ifdef SBD_THRUST
+	// initialize hii
+	sbd::makeQChamDiagTerms(adet, bdet, bit_length, L,
+				helper, I0, I1, I2, hii,
+				h_comm, b_comm, t_comm);
+	// make Hamiltonian on device
+	MultDataThrust<double> device_data(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
+#else
 	std::vector<std::vector<size_t*>> ih;
 	std::vector<std::vector<size_t*>> jh;
 	std::vector<std::vector<double*>> hij;
@@ -284,53 +308,63 @@ namespace sbd {
 	std::vector<size_t> bdetshift;
 	std::vector<size_t> sharedInt;
 	std::vector<double> sharedElemT;
-	
-	auto time_start_diag = std::chrono::high_resolution_clock::now();
-	
-	auto time_start_mkham = std::chrono::high_resolution_clock::now();
+
 	sbd::makeQCham(adet,bdet,bit_length,L,helper,I0,I1,I2,
 		       hii,ih,jh,hij,len,tasktype,adetshift,bdetshift,
 		       sharedInt,sharedElemT,
 		       h_comm,b_comm,t_comm);
-	auto time_end_mkham = std::chrono::high_resolution_clock::now();
+#endif
+    auto time_end_mkham = std::chrono::high_resolution_clock::now();
 	auto elapsed_mkham_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mkham-time_start_mkham).count();
 	double elapsed_mkham = 0.000001 * elapsed_mkham_count;
 	std::cout << " Elapsed time for make Hamiltonian " << elapsed_mkham << " (sec) " << std::endl;
-	
+
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
 	sbd::BasisInitVector(W,adet,bdet,adet_comm_size,bdet_comm_size,h_comm,b_comm,t_comm,init);
+#ifdef SBD_THRUST
+	sbd::Davidson(hii, W, device_data,
+		      adet_comm_size, bdet_comm_size,
+		      h_comm,b_comm,t_comm,
+		      max_it,max_nb,eps,max_time, method);
+#else
 	sbd::Davidson(hii,ih,jh,hij,len,tasktype,
 		      adetshift,bdetshift,adet_comm_size,bdet_comm_size,
 		      W,
 		      h_comm,b_comm,t_comm,
 		      max_it,max_nb,bit_length,eps);
+#endif
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
 	double elapsed_davidson = 0.000001 * elapsed_davidson_count;
 	std::cout << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
-	
+
 	auto time_end_diag = std::chrono::high_resolution_clock::now();
 	auto elapsed_diag_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_diag-time_start_diag).count();
 	double elapsed_diag = 0.000001 * elapsed_diag_count;
 	std::cout << " Elapsed time for diagonalization " << elapsed_diag << " (sec) " << std::endl;
-	
+
 	/**
 	   Evaluation of Hamiltonian expectation value
 	*/
-	
+
 	std::vector<double> C(W.size(),0.0);
-	
+
 	auto time_start_mult = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	sbd::mult(hii, W, C, device_data,
+		  adet_comm_size, bdet_comm_size,
+		  h_comm, b_comm, t_comm, method);
+#else
 	sbd::mult(hii,ih,jh,hij,len,
 		  tasktype,adetshift,bdetshift,
 		  adet_comm_size,bdet_comm_size,
 		  W,C,bit_length,h_comm,b_comm,t_comm);
-	
+#endif
 	auto time_end_mult = std::chrono::high_resolution_clock::now();
 	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
 	double elapsed_mult = 0.000001 * elapsed_mult_count;
 	std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
-	
+
 	double E = 0.0;
 	sbd::InnerProduct(W,C,E,b_comm);
 	std::cout.precision(16);
@@ -338,7 +372,7 @@ namespace sbd {
 	  std::cout << " Energy = " << E << std::endl;
 	}
 	energy = E;
-	
+
       }
 
       /**
@@ -350,7 +384,7 @@ namespace sbd {
 	   do_rdm == 0: calculation only the diagonal part of 1p-RDM
 	 */
 	auto time_start_meas = std::chrono::high_resolution_clock::now();
-	
+
 	int p_size = mpi_size_t * mpi_size_h;
 	int p_rank = mpi_rank_h * mpi_size_t + mpi_rank_t;
 	size_t o_start = 0;
@@ -388,7 +422,7 @@ namespace sbd {
 	  }
 	  */
 	}
-	
+
       } else {
 
 	/**
@@ -423,9 +457,9 @@ namespace sbd {
 	  }
 	  */
 	}
-	
+
       }
-      
+
       /**
 	 Evaluation of carry-over bit-strings
        */
@@ -434,7 +468,7 @@ namespace sbd {
 	sbd::CarryOverAlphaDet(W,adet,bdet,
 			       adet_comm_size,bdet_comm_size,
 			       b_comm,carryover_bitstrings,threshold);
-	
+
       } else {
 
 	size_t n_kept = static_cast<size_t>(ratio * adet.size());
@@ -445,7 +479,7 @@ namespace sbd {
 	if( mpi_rank == 0 ) {
 	  std::cout << " truncated weight in carry-over = " << truncated_weight << std::endl;
 	}
-	
+
       }
 
       /**
@@ -505,7 +539,7 @@ namespace sbd {
 
       size_t L;
       size_t N;
-      
+
       /**
 	 Load fcifump data
        */
@@ -526,7 +560,7 @@ namespace sbd {
       /**
 	 Load dets file
        */
-      
+
       int do_shuffle = sbd_data.do_shuffle;
       std::vector<std::vector<size_t>> adet;
       std::vector<std::vector<size_t>> bdet;
@@ -578,12 +612,12 @@ namespace sbd {
 	   loadname,savename,
 	   energy,density,carryover_bitstrings,
 	   one_p_rdm,two_p_rdm);
-      
+
     } // end diag for file-name version
 
-    
+
   } // end namespace for tpb (tensor-product basis)
-  
+
 } // end namespace for sbd
 
 #endif
