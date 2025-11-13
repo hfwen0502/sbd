@@ -71,6 +71,10 @@ namespace sbd {
 	  sbd_data.threshold = std::atof(argv[i+1]);
 	  i++;
 	}
+        if( std::string(argv[i]) == "--max_time" ) {
+          sbd_data.max_time = std::atof(argv[i+1]);
+          i++;
+        }
 	if( std::string(argv[i]) == "--shuffle" ) {
 	  sbd_data.do_shuffle = std::atoi(argv[i+1]);
 	  i++;
@@ -219,6 +223,7 @@ namespace sbd {
 	sbd::makeQChamDiagTerms(adet,bdet,bit_length,L,
 				helper,I0,I1,I2,hii,
 				h_comm,b_comm,t_comm);
+    std::cout << "  num_task = " << helper.size() << std::endl;
 #ifdef SBD_THRUST
 	MultDataThrust<double> device_data(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
 	sbd::Davidson(hii, W, device_data,

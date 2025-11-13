@@ -150,7 +150,7 @@ void GetTotalD_Thrust(const std::vector<ElemT> & hii,
 template <typename ElemT, typename RealT>
 void Davidson(const std::vector<ElemT> &hii,
                 std::vector<ElemT> &W,
-                const MultDataThrust<ElemT>& data,
+                MultDataThrust<ElemT>& data,
                 const size_t adet_comm_size,
                 const size_t bdet_comm_size,
                 MPI_Comm h_comm,
@@ -279,10 +279,10 @@ void Davidson(const std::vector<ElemT> &hii,
                  Patch for stability on Fugaku
                 */
             // #ifdef SBD_FUAGKUPATCH
-            MpiAllreduce_Thrust(W_dev, MPI_SUM, t_comm);
-            MpiAllreduce_Thrust(W_dev, MPI_SUM, h_comm);
-            MpiAllreduce_Thrust(R, MPI_SUM, t_comm);
-            MpiAllreduce_Thrust(R, MPI_SUM, h_comm);
+            MpiAllreduce(W_dev, MPI_SUM, t_comm);
+            MpiAllreduce(W_dev, MPI_SUM, h_comm);
+            MpiAllreduce(R, MPI_SUM, t_comm);
+            MpiAllreduce(R, MPI_SUM, h_comm);
             ElemT volp(1.0 / (mpi_size_h * mpi_size_t));
             // W[is] *= volp;
             thrust::transform(thrust::device, W_dev.begin(), W_dev.end(), thrust::make_constant_iterator(volp), W_dev.begin(), thrust::multiplies<ElemT>());

@@ -166,8 +166,6 @@ namespace sbd {
     get_mpi_range(bdet_comm_size,0,bdet_min,bdet_max);
     size_t max_det_size = (adet_max-adet_min)*(bdet_max-bdet_min);
 
-    int num_threads = 1;
-
     auto time_copy_start = std::chrono::high_resolution_clock::now();
     std::vector<ElemT> T;
     std::vector<ElemT> R;
@@ -180,29 +178,20 @@ namespace sbd {
     auto time_copy_end = std::chrono::high_resolution_clock::now();
 
     auto time_mult_start = std::chrono::high_resolution_clock::now();
-    num_threads = omp_get_max_threads();
-#pragma omp parallel
-    {
-      int thread_id = omp_get_thread_num();
 
-      if( mpi_rank_t == 0 ) {
-#pragma omp for
-	for(size_t i=0; i < T.size(); i++) {
-	  Wb[i] += hii[i] * T[i];
-	}
+    if( mpi_rank_t == 0 ) {
+#pragma omp parallel for
+       for(size_t i=0; i < T.size(); i++) {
+          Wb[i] += hii[i] * T[i];
+       }
+    }
+
 #ifdef SBD_DEBUG_MULT
-    std::cout << " End multiplication of diagonal term at mpi process (h,b,t) = ("
+       std::cout << " End multiplication of diagonal term at mpi process (h,b,t) = ("
 	      << mpi_rank_h << "," << mpi_rank_b << "," << mpi_rank_t << ")" << std::endl;
 #endif
-      }
-    }
 
     double time_slid = 0.0;
-    size_t chunk_size = 0;
-    if( helper.size() != 0 ) {
-      chunk_size = (helper[0].braAlphaEnd-helper[0].braAlphaStart) / num_threads;
-    }
-
     for(size_t task=0; task < helper.size(); task++) {
 
 #ifdef SBD_DEBUG_MULT
@@ -222,7 +211,6 @@ namespace sbd {
       size_t ketBetaSize  = helper[task].ketBetaEnd-helper[task].ketBetaStart;
 #pragma omp parallel
       {
-	size_t thread_id = omp_get_thread_num();
 	size_t ia_start = helper[task].braAlphaStart;
 	size_t ia_end   = helper[task].braAlphaEnd;
 
@@ -232,7 +220,7 @@ namespace sbd {
 	std::vector<int> d(2,0);
 
 	if( helper[task].taskType == 2 ) { // beta range are same
-#pragma omp for	schedule(runtime)
+#pragma omp for	schedule(dynamic)
 	  for(size_t ia = ia_start; ia < ia_end; ia++) {
 	    for(size_t ib = helper[task].braBetaStart; ib < helper[task].braBetaEnd; ib++) {
 
@@ -268,7 +256,7 @@ namespace sbd {
 	  } // end for(size_t ia=helper[task].braAlphaStart; ia < helper[task].braAlphaEnd; ia++)
 
 	} else if ( helper[task].taskType == 1 ) { // alpha range are same
-#pragma omp for schedule(runtime)
+#pragma omp for schedule(dynamic)
 	  for(size_t ia = ia_start; ia < ia_end; ia++) {
 	    for(size_t ib = helper[task].braBetaStart; ib < helper[task].braBetaEnd; ib++) {
 
@@ -302,7 +290,7 @@ namespace sbd {
 
 
 	} else {
-#pragma omp for schedule (runtime)
+#pragma omp for schedule(dynamic)
 	  for(size_t ia = ia_start; ia < ia_end; ia++) {
 	    for(size_t ib = helper[task].braBetaStart; ib < helper[task].braBetaEnd; ib++) {
 
@@ -404,7 +392,7 @@ namespace sbd {
 	    MPI_Comm t_comm) {
 
 #ifdef SBD_DEBUG_TUNING
-    std::cout << " multiplication by Robert is called " << std::endl;
+    std::cout << " multiplication with round-robin assignment of work to OpenMP threads " << std::endl;
 #endif
 
     int mpi_rank_h = 0;
@@ -445,29 +433,22 @@ namespace sbd {
     auto time_copy_end = std::chrono::high_resolution_clock::now();
 
     auto time_mult_start = std::chrono::high_resolution_clock::now();
-    num_threads = omp_get_max_threads();
-#pragma omp parallel
-    {
-      int thread_id = omp_get_thread_num();
 
-      if( mpi_rank_t == 0 ) {
-#pragma omp for
-	for(size_t i=0; i < T.size(); i++) {
-	  Wb[i] += hii[i] * T[i];
-	}
+    num_threads = omp_get_max_threads();
+
+    if( mpi_rank_t == 0 ) {
+#pragma omp parallel for
+       for(size_t i=0; i < T.size(); i++) {
+          Wb[i] += hii[i] * T[i];
+       }
+    }
+
 #ifdef SBD_DEBUG_MULT
     std::cout << " End multiplication of diagonal term at mpi process (h,b,t) = ("
 	      << mpi_rank_h << "," << mpi_rank_b << "," << mpi_rank_t << ")" << std::endl;
 #endif
-      }
-    }
 
     double time_slid = 0.0;
-    size_t chunk_size = 0;
-    if( helper.size() != 0 ) {
-      chunk_size = (helper[0].braAlphaEnd-helper[0].braAlphaStart) / num_threads;
-    }
-
     for(size_t task=0; task < helper.size(); task++) {
 
 #ifdef SBD_DEBUG_MULT
@@ -486,10 +467,11 @@ namespace sbd {
       size_t ketAlphaSize = helper[task].ketAlphaEnd-helper[task].ketAlphaStart;
       size_t ketBetaSize  = helper[task].ketBetaEnd-helper[task].ketBetaStart;
 #pragma omp parallel
-	{
-		size_t thread_id = omp_get_thread_num();
-		size_t ia_start = thread_id + helper[task].braAlphaStart;
-		size_t ia_end   = helper[task].braAlphaEnd;
+      {
+        // round-robin assignment of work to threads
+	size_t thread_id = omp_get_thread_num();
+	size_t ia_start = thread_id + helper[task].braAlphaStart;
+	size_t ia_end   = helper[task].braAlphaEnd;
 
 		auto DetI = DetFromAlphaBeta(adets[0],bdets[0],bit_length,norbs);
 		auto DetJ = DetI;

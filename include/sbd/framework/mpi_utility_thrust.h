@@ -13,7 +13,7 @@ namespace sbd
 {
 
 template <typename ElemT>
-void MpiAllreduce_Thrust(thrust::device_vector<ElemT> &A, MPI_Op op, MPI_Comm comm)
+void MpiAllreduce(thrust::device_vector<ElemT> &A, MPI_Op op, MPI_Comm comm)
 {
     MPI_Datatype DataT = GetMpiType<ElemT>::MpiT;
     thrust::device_vector<ElemT> B(A);
@@ -21,7 +21,7 @@ void MpiAllreduce_Thrust(thrust::device_vector<ElemT> &A, MPI_Op op, MPI_Comm co
 }
 
 template <typename ElemT>
-void _Mpi2dSlide_Thrust(const ElemT* A,
+void _Mpi2dSlide(const ElemT* A,
                 thrust::device_vector<ElemT> &B,
                 size_t sizeA,
                 int x_size,
@@ -97,7 +97,7 @@ void _Mpi2dSlide_Thrust(const ElemT* A,
 }
 
 template <typename ElemT>
-void Mpi2dSlide_Thrust(const thrust::device_vector<ElemT> &A,
+void Mpi2dSlide(const thrust::device_vector<ElemT> &A,
                 thrust::device_vector<ElemT> &B,
                 int x_size,
                 int y_size,
@@ -105,12 +105,12 @@ void Mpi2dSlide_Thrust(const thrust::device_vector<ElemT> &A,
                 int y_slide,
                 MPI_Comm comm)
 {
-    _Mpi2dSlide_Thrust((ElemT*)thrust::raw_pointer_cast(A.data()), B, A.size(),
+    _Mpi2dSlide((ElemT*)thrust::raw_pointer_cast(A.data()), B, A.size(),
                       x_size, y_size, x_slide, y_slide, comm);
 }
 
 template <typename ElemT>
-void Mpi2dSlide_Thrust(const std::vector<ElemT> &A,
+void Mpi2dSlide(const std::vector<ElemT> &A,
                 thrust::device_vector<ElemT> &B,
                 int x_size,
                 int y_size,
@@ -118,7 +118,7 @@ void Mpi2dSlide_Thrust(const std::vector<ElemT> &A,
                 int y_slide,
                 MPI_Comm comm)
 {
-    _Mpi2dSlide_Thrust(A.data(), B, A.size(),
+    _Mpi2dSlide(A.data(), B, A.size(),
                       x_size, y_size, x_slide, y_slide, comm);
 }
 

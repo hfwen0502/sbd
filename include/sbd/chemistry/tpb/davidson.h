@@ -900,6 +900,7 @@ x = 0    1    2    3
 
 	if( predicted_next_end > max_time ) {
 	  do_continue = false;
+          if (mpi_rank_h + mpi_rank_t + mpi_rank_b == 0) std::cerr << "halting iterations due to max_time limit" << std::endl;
 	  break;
 	}
 

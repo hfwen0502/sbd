@@ -44,3 +44,4 @@ cmake_install.cmake
 # ---- other backup files ----
 *~
 *.swp
+

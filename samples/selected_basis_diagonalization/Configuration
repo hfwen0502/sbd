@@ -10,14 +10,14 @@ CCCOM=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/comm_libs/mpi/bin/mpic++
 
 
 # accelerate using Thrust
-CCFLAGS= -cuda -Minfo=accel --diag_suppress declared_but_not_referenced,set_but_not_used -fmax-errors=0 -I/opt/nvidia/hpc_sdk/Linux_x86_64/2025/cuda/include/cccl -I/usr/local/cuda/include -DSBD_THRUST
+CCFLAGS= -cuda -fast -Minfo=accel --diag_suppress declared_but_not_referenced,set_but_not_used -fmax-errors=0 -I/opt/nvidia/hpc_sdk/Linux_x86_64/2025/cuda/include/cccl -I/usr/local/cuda/include -DSBD_THRUST -DSBD_DEBUG_MULT
 
 # Specify -gpu=mem:unified option on Grace Hopper environment (?)
 # std::vector between diag and mult will be lost without this option (???)
 # CCFLAGS= -cuda -Minfo=accel -gpu=mem:unified --diag_suppress declared_but_not_referenced,set_but_not_used -fmax-errors=0 -I/opt/nvidia/hpc_sdk/Linux_x86_64/2025/cuda/include/cccl -I/usr/local/cuda/include -DSBD_THRUST
 
 # CPU run
-# CCFLAGS= -mp --diag_suppress declared_but_not_referenced,set_but_not_used -fmax-errors=0 -I/opt/nvidia/hpc_sdk/Linux_x86_64/2025/cuda/include/cccl -I/usr/local/cuda/include
+#CCFLAGS= -mp --diag_suppress declared_but_not_referenced,set_but_not_used -fmax-errors=0 -I/opt/nvidia/hpc_sdk/Linux_x86_64/2025/cuda/include/cccl -I/usr/local/cuda/include -DSBD_DEBUG_MULT
 
 
 # flags for linking: include link to lapack and blas. The following s the case using homebrew's openblas on Mac
