@@ -55,7 +55,8 @@ void Normalize(thrust::device_vector<ElemT>& X,
     // If CUDA native kernel can not be used, use host code
     std::vector<ElemT> hx(X.size());
     thrust::copy_n(X.begin(), X.size(), hx.begin());
-    InnerProduct(hx, hx, res, comm);
+    Normalize(hx, res, comm);
+    thrust::copy_n(hx.begin(), hx.size(), X.begin());
     */
 
     auto kernel = dot_product_kernel<RealT>(X, X);
@@ -220,9 +221,6 @@ void Davidson(const std::vector<ElemT> &hii,
     // copyin W
     thrust::device_vector<ElemT> W_dev(W.size());
     thrust::copy_n(W.begin(), W.size(), W_dev.begin());
-    for (int i = 1; i < num_block; i++) {
-        C[i] = W_dev;
-    }
 
     for (int it = 0; it < max_iteration; it++) {
         C[0] = W_dev;
@@ -279,15 +277,21 @@ void Davidson(const std::vector<ElemT> &hii,
                  Patch for stability on Fugaku
                 */
             // #ifdef SBD_FUAGKUPATCH
-            MpiAllreduce(W_dev, MPI_SUM, t_comm);
-            MpiAllreduce(W_dev, MPI_SUM, h_comm);
-            MpiAllreduce(R, MPI_SUM, t_comm);
-            MpiAllreduce(R, MPI_SUM, h_comm);
-            ElemT volp(1.0 / (mpi_size_h * mpi_size_t));
-            // W[is] *= volp;
-            thrust::transform(thrust::device, W_dev.begin(), W_dev.end(), thrust::make_constant_iterator(volp), W_dev.begin(), thrust::multiplies<ElemT>());
-            // R[is] *= volp;
-            thrust::transform(thrust::device, R.begin(), R.end(), thrust::make_constant_iterator(volp), R.begin(), thrust::multiplies<ElemT>());
+            if (mpi_size_t > 1)
+                MpiAllreduce(W_dev, MPI_SUM, t_comm);
+            if (mpi_size_h > 1)
+                MpiAllreduce(W_dev, MPI_SUM, h_comm);
+            if (mpi_size_t > 1)
+                MpiAllreduce(R, MPI_SUM, t_comm);
+            if (mpi_size_h > 1)
+                MpiAllreduce(R, MPI_SUM, h_comm);
+            if (mpi_size_h * mpi_size_t > 1) {
+                ElemT volp(1.0 / (mpi_size_h * mpi_size_t));
+                // W[is] *= volp;
+                thrust::transform(thrust::device, W_dev.begin(), W_dev.end(), thrust::make_constant_iterator(volp), W_dev.begin(), thrust::multiplies<ElemT>());
+                // R[is] *= volp;
+                thrust::transform(thrust::device, R.begin(), R.end(), thrust::make_constant_iterator(volp), R.begin(), thrust::multiplies<ElemT>());
+            }
             // #endif
 
             RealT norm_W;
