@@ -402,8 +402,26 @@ namespace sbd {
 		   const size_t L,
 		   const ElemT & I0,
 		   const oneInt<ElemT> & I1,
-		   const twoInt<ElemT> & I2) {
-    ElemT energy(0.0);
+		   const twoInt<ElemT> & I2)
+{
+        ElemT energy(0.0);
+
+        for (int i = 0; i < 2 * L; i++) {
+            if (getocc(det, bit_length, i)) {
+                energy += I1.Value(i, i);
+                for (int j = i + 1; j < 2 * L; j++) {
+                    if (getocc(det, bit_length, j)) {
+                        energy += I2.DirectValue(i / 2, j / 2);
+                        if ((i % 2) == (j % 2)) {
+                            energy -= I2.ExchangeValue(i / 2, j / 2);
+                        }
+                    }
+                }
+            }
+        }
+        return energy + I0;
+
+/*    ElemT energy(0.0);
     size_t one = 1;
     std::vector<int> closed;
     int num_closed = getClosed(det,bit_length,2*L,closed);
@@ -419,7 +437,7 @@ namespace sbd {
 	}
       }
     }
-    return energy+I0;
+    return energy+I0;*/
   }
 
   template <typename ElemT>
@@ -428,8 +446,25 @@ namespace sbd {
 		  int & i,
 		  int & a,
 		  const oneInt<ElemT> & I1,
-		  const twoInt<ElemT> & I2) {
-    double sgn = 1.0;
+		  const twoInt<ElemT> & I2)
+{
+        double sgn = 1.0;
+        parity(det, bit_length, std::min(i, a), std::max(i, a), sgn);
+        ElemT energy = I1.Value(a, i);
+        for (int x = 0; x < det.size(); x++) {
+            size_t bits = det[x];
+            for (int pos = 0; pos < bit_length; pos++) {
+                if ((bits & 1ULL) == 1ULL) {
+                    int j = x * bit_length + pos;
+                    energy += (I2.Value(a, i, j, j) - I2.Value(a, j, j, i));
+                }
+                bits >>= 1;
+            }
+        }
+        energy *= ElemT(sgn);
+        return energy;
+
+  /*double sgn = 1.0;
     parity(det,bit_length,std::min(i,a),std::max(i,a),sgn);
     ElemT energy = I1.Value(a,i);
     size_t one = 1;
@@ -443,7 +478,7 @@ namespace sbd {
       }
     }
     energy *= ElemT(sgn);
-    return energy;
+    return energy;*/
   }
 
   template <typename ElemT>

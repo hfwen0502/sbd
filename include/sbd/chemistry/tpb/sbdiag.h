@@ -208,6 +208,10 @@ namespace sbd {
 	std::cout << " Elapsed time for init " << elapsed_init << " (sec) " << std::endl;
       }
 
+#ifdef SBD_THRUST
+	  // data storage for thrust implementation
+	  MultDataThrust<double> device_data;
+#endif
       /**
 	 Diagonalization
       */
@@ -224,7 +228,7 @@ namespace sbd {
 				helper,I0,I1,I2,hii,
 				h_comm,b_comm,t_comm);
 #ifdef SBD_THRUST
-	MultDataThrust<double> device_data(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
+	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
 	sbd::Davidson(hii, W, device_data,
 		      adet_comm_size, bdet_comm_size,
 		      h_comm,b_comm,t_comm,
@@ -300,8 +304,7 @@ namespace sbd {
 	sbd::makeQChamDiagTerms(adet, bdet, bit_length, L,
 				helper, I0, I1, I2, hii,
 				h_comm, b_comm, t_comm);
-	// make Hamiltonian on device
-	MultDataThrust<double> device_data(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
+ 	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
 #else
 	std::vector<std::vector<size_t*>> ih;
 	std::vector<std::vector<size_t*>> jh;
@@ -434,12 +437,21 @@ namespace sbd {
 	 */
 
 	auto time_start_meas = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	Correlation(W,
+		adet_comm_size, bdet_comm_size,
+		device_data,
+		h_comm, b_comm, t_comm,
+		one_p_rdm,
+	    two_p_rdm);
+#else
 	Correlation(W,adet,bdet,bit_length,L,
 		    adet_comm_size,bdet_comm_size,
 		    helper,
 		    h_comm,b_comm,t_comm,
 		    one_p_rdm,
 		    two_p_rdm);
+#endif
 	auto time_end_meas = std::chrono::high_resolution_clock::now();
 	auto elapsed_meas_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_meas-time_start_meas).count();
 	double elapsed_meas = 0.000001 * elapsed_meas_count;

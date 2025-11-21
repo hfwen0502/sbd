@@ -50,15 +50,18 @@ public:
 
     MultDataThrust() {}
 
-    MultDataThrust( const std::vector<std::vector<size_t>> &adets_in,
-    const std::vector<std::vector<size_t>> &bdets_in,
-    const size_t bit_length_in,
-    const size_t norbs_in,
-    const std::vector<TaskHelpers> &helper_in,
-    const ElemT &I0_in,
-    const oneInt<ElemT> &I1_in,
-    const twoInt<ElemT> &I2_in,
-    int method);
+    void Init( const std::vector<std::vector<size_t>> &adets_in,
+        const std::vector<std::vector<size_t>> &bdets_in,
+        const size_t bit_length_in,
+        const size_t norbs_in,
+        const std::vector<TaskHelpers> &helper_in,
+        const ElemT &I0_in,
+        const oneInt<ElemT> &I1_in,
+        const twoInt<ElemT> &I2_in,
+        int method);
+
+    void UpdateDet(size_t task);
+
 };
 
 
@@ -145,8 +148,8 @@ public:
 
     __device__ __host__ ElemT Hij(const size_t *DetA, const size_t *DetB)
     {
-        int c[4] = {0, 0, 0, 0};
-        int d[4] = {0, 0, 0, 0};
+        size_t c[2] = {0, 0};
+        size_t d[2] = {0, 0};
         size_t nc = 0;
         size_t nd = 0;
         size_t L = norbs;
@@ -159,10 +162,14 @@ public:
             size_t diff_d = DetB[i] & ~DetA[i];
             for (size_t bit_pos = 0; bit_pos < bit_length; ++bit_pos) {
                 if (diff_c & (static_cast<size_t>(1) << bit_pos)) {
+                    if (nc >= 2)
+                        return ElemT(0.0);
                     c[nc] = i * bit_length + bit_pos;
                     nc++;
                 }
                 if (diff_d & (static_cast<size_t>(1) << bit_pos)) {
+                    if (nd >= 2)
+                        return ElemT(0.0);
                     d[nd] = i * bit_length + bit_pos;
                     nd++;
                 }
@@ -175,10 +182,14 @@ public:
             size_t diff_d = (DetB[full_words] & ~DetA[full_words]) & mask;
             for (size_t bit_pos = 0; bit_pos < remaining_bits; ++bit_pos) {
                 if (diff_c & (static_cast<size_t>(1) << bit_pos)) {
+                    if (nc >= 2)
+                        return ElemT(0.0);
                     c[nc] = bit_length * full_words + bit_pos;
                     nc++;
                 }
                 if (diff_d & (static_cast<size_t>(1) << bit_pos)) {
+                    if (nd >= 2)
+                        return ElemT(0.0);
                     d[nd] = bit_length * full_words + bit_pos;
                     nd++;
                 }
@@ -289,7 +300,7 @@ public:
         for (int x = 0; x < size_D; x++) {
             size_t bits = det[x];
             for (int pos = 0; pos < bit_length; pos++) {
-                if (bits & 1ULL) {
+                if ((bits & 1ULL) == 1ULL) {
                     int j = x * bit_length + pos;
                     energy += (I2.Value(a, i, j, j) - I2.Value(a, j, j, i));
                 }
@@ -334,6 +345,21 @@ public:
         }
     }
 
+    inline __device__ __host__ void SetEnergy(TaskHelpersThrust<ElemT>& helper, size_t i, size_t ia, size_t ib, size_t ja, size_t jb)
+    {
+        size_t braIdx = (ia - helper.braAlphaStart) * (helper.braBetaEnd - helper.braBetaStart) + ib - helper.braBetaStart;
+        if( (braIdx % mpi_size_h) == mpi_rank_h ) {
+            size_t ketIdx = (ja - helper.ketAlphaStart) * (helper.ketBetaEnd - helper.ketBetaStart)
+                            + jb - helper.ketBetaStart;
+
+            size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * bdets_size + ib - helper.braBetaStart) * this->size_D;
+            size_t* DetJ = this->det_J + ((ja - helper.ketAlphaStart) * bdets_size + jb - helper.ketBetaStart) * this->size_D;
+
+            ElemT eij = Hij(DetI, DetJ);
+            Wb[braIdx] += eij * T[ketIdx];
+        }
+    }
+
     void set_mpi_size(size_t h_rank, size_t h_size)
     {
         mpi_rank_h = h_rank;
@@ -362,19 +388,21 @@ public:
     {
         size_t a = i / this->bdets_size;
         size_t b = i - a * this->bdets_size;
-        size_t* Det;
-        if (update_I) {
-            Det = this->det_I + i * this->size_D;
-            size_t ia = a + helper.braAlphaStart;
-            size_t ib = b + helper.braBetaStart;
+        if (a < helper.braAlphaEnd - helper.braAlphaStart && b < helper.braBetaEnd - helper.braBetaStart) {
+            size_t* Det;
+            if (update_I) {
+                Det = this->det_I + i * this->size_D;
+                size_t ia = a + helper.braAlphaStart;
+                size_t ib = b + helper.braBetaStart;
 
-            this->DetFromAlphaBeta(Det, this->adets + ia * this->size_D, this->bdets + ib * this->size_D);
-        }
-        if (update_J && this->det_I != this->det_J) {
-            Det = this->det_J + i * this->size_D;
-            size_t ja = a + helper.ketAlphaStart;
-            size_t jb = b + helper.ketBetaStart;
-            this->DetFromAlphaBeta(Det, this->adets + ja * this->size_D, this->bdets + jb * this->size_D);
+                this->DetFromAlphaBeta(Det, this->adets + ia * this->size_D, this->bdets + ib * this->size_D);
+            }
+            if (update_J && this->det_I != this->det_J) {
+                Det = this->det_J + i * this->size_D;
+                size_t ja = a + helper.ketAlphaStart;
+                size_t jb = b + helper.ketBetaStart;
+                this->DetFromAlphaBeta(Det, this->adets + ja * this->size_D, this->bdets + jb * this->size_D);
+            }
         }
     }
 };
@@ -400,14 +428,16 @@ public:
     // kernel entry point
     __device__ __host__ void operator()(size_t i)
     {
-        size_t j = (i + offset) / helper.size_single_beta;
-        size_t k = (i + offset) - j * helper.size_single_beta;
+        if (i + offset < helper.size_single_alpha * helper.size_single_beta) {
+            size_t j = (i + offset) / helper.size_single_beta;
+            size_t k = (i + offset) - j * helper.size_single_beta;
 
-        size_t ia = helper.SinglesFromAlphaBraIndex[j];
-        size_t ja = helper.SinglesFromAlphaKetIndex[j];
-        size_t ib = helper.SinglesFromBetaBraIndex[k];
-        size_t jb = helper.SinglesFromBetaKetIndex[k];
-        this->AddEnergy(helper, i, ia, ib, ja, jb);
+            size_t ia = helper.SinglesFromAlphaBraIndex[j];
+            size_t ja = helper.SinglesFromAlphaKetIndex[j];
+            size_t ib = helper.SinglesFromBetaBraIndex[k];
+            size_t jb = helper.SinglesFromBetaKetIndex[k];
+            this->AddEnergy(helper, i, ia, ib, ja, jb);
+        }
     }
 };
 
@@ -432,13 +462,15 @@ public:
     // kernel entry point
     __device__ __host__ void operator()(size_t i)
     {
-        size_t k = (i + offset) / helper.size_single_alpha;
-        size_t j = (i + offset) - k * helper.size_single_alpha;
+        if (i + offset < helper.size_single_alpha * (helper.braBetaEnd - helper.braBetaStart)) {
+            size_t k = (i + offset) / helper.size_single_alpha;
+            size_t j = (i + offset) - k * helper.size_single_alpha;
 
-        size_t ia = helper.SinglesFromAlphaBraIndex[j];
-        size_t ja = helper.SinglesFromAlphaKetIndex[j];
-        size_t ib = k + helper.braBetaStart;
-        this->AddEnergy(helper, i, ia, ib, ja, ib);
+            size_t ia = helper.SinglesFromAlphaBraIndex[j];
+            size_t ja = helper.SinglesFromAlphaKetIndex[j];
+            size_t ib = k + helper.braBetaStart;
+            this->AddEnergy(helper, i, ia, ib, ja, ib);
+        }
     }
 };
 
@@ -462,13 +494,15 @@ public:
     // kernel entry point
     __device__ __host__ void operator()(size_t i)
     {
-        size_t k = (i + offset) / helper.size_double_alpha;
-        size_t j = (i + offset) - k * helper.size_double_alpha;
+        if (i + offset < helper.size_double_alpha * (helper.braBetaEnd - helper.braBetaStart)) {
+            size_t k = (i + offset) / helper.size_double_alpha;
+            size_t j = (i + offset) - k * helper.size_double_alpha;
 
-        size_t ia = helper.DoublesFromAlphaBraIndex[j];
-        size_t ja = helper.DoublesFromAlphaKetIndex[j];
-        size_t ib = k + helper.braBetaStart;
-        this->AddEnergy(helper, i, ia, ib, ja, ib);
+            size_t ia = helper.DoublesFromAlphaBraIndex[j];
+            size_t ja = helper.DoublesFromAlphaKetIndex[j];
+            size_t ib = k + helper.braBetaStart;
+            this->AddEnergy(helper, i, ia, ib, ja, ib);
+        }
     }
 };
 
@@ -492,13 +526,15 @@ public:
     // kernel entry point
     __device__ __host__ void operator()(size_t i)
     {
-        size_t j = (i + offset) / helper.size_single_beta;
-        size_t k = (i + offset) - j * helper.size_single_beta;
+        if (i + offset < helper.size_single_beta * (helper.braAlphaEnd - helper.braAlphaStart)) {
+            size_t j = (i + offset) / helper.size_single_beta;
+            size_t k = (i + offset) - j * helper.size_single_beta;
 
-        size_t ia = j + helper.braAlphaStart;
-        size_t ib = helper.SinglesFromBetaBraIndex[k];
-        size_t jb = helper.SinglesFromBetaKetIndex[k];
-        this->AddEnergy(helper, i, ia, ib, ia, jb);
+            size_t ia = j + helper.braAlphaStart;
+            size_t ib = helper.SinglesFromBetaBraIndex[k];
+            size_t jb = helper.SinglesFromBetaKetIndex[k];
+            this->AddEnergy(helper, i, ia, ib, ia, jb);
+        }
     }
 };
 
@@ -522,15 +558,137 @@ public:
     // kernel entry point
     __device__ __host__ void operator()(size_t i)
     {
-        size_t j = (i + offset) / helper.size_double_beta;
-        size_t k = (i + offset) - j * helper.size_double_beta;
+        if (i + offset < helper.size_double_beta * (helper.braAlphaEnd - helper.braAlphaStart)) {
+            size_t j = (i + offset) / helper.size_double_beta;
+            size_t k = (i + offset) - j * helper.size_double_beta;
 
-        size_t ia = j + helper.braAlphaStart;
-        size_t ib = helper.DoublesFromBetaBraIndex[k];
-        size_t jb = helper.DoublesFromBetaKetIndex[k];
-        this->AddEnergy(helper, i, ia, ib, ia, jb);
+            size_t ia = j + helper.braAlphaStart;
+            size_t ib = helper.DoublesFromBetaBraIndex[k];
+            size_t jb = helper.DoublesFromBetaKetIndex[k];
+            this->AddEnergy(helper, i, ia, ib, ia, jb);
+        }
     }
 };
+
+
+template <typename ElemT>
+class MultTask0 : public MultKernelBase<ElemT>
+{
+protected:
+    TaskHelpersThrust<ElemT> helper;
+    size_t offset;
+public:
+    MultTask0(const TaskHelpersThrust<ElemT>& h,
+                const thrust::device_vector<ElemT>& v_wb,
+                const thrust::device_vector<ElemT>& v_t,
+                const MultDataThrust<ElemT>& data, size_t o
+                ) : MultKernelBase<ElemT>(v_wb, v_t, data)
+    {
+        helper = h;
+        offset = o;
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+        size_t braAlphaSize = helper.braAlphaEnd - helper.braAlphaStart;
+        size_t a = i / braAlphaSize;
+        size_t b = i - a * braAlphaSize;
+
+        for (size_t j = helper.SinglesFromAlphaOffset[a]; j < helper.SinglesFromAlphaOffset[a + 1]; j++) {
+            for (size_t k = helper.SinglesFromBetaOffset[b]; k < helper.SinglesFromBetaOffset[b + 1]; k++) {
+                size_t ia = a + helper.braAlphaStart;
+                size_t ja = helper.SinglesFromAlphaKetIndex[j];
+                size_t ib = b + helper.braBetaStart;
+                size_t jb = helper.SinglesFromBetaKetIndex[k];
+                this->SetEnergy(helper, i, ia, ib, ja, jb);
+            }
+        }
+    }
+};
+
+template <typename ElemT>
+class MultTask1 : public MultKernelBase<ElemT>
+{
+protected:
+    TaskHelpersThrust<ElemT> helper;
+    size_t offset;
+public:
+    MultTask1(const TaskHelpersThrust<ElemT>& h,
+                const thrust::device_vector<ElemT>& v_wb,
+                const thrust::device_vector<ElemT>& v_t,
+                const MultDataThrust<ElemT>& data, size_t o
+                ) : MultKernelBase<ElemT>(v_wb, v_t, data)
+    {
+        helper = h;
+        offset = o;
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+        size_t braAlphaSize = helper.braAlphaEnd - helper.braAlphaStart;
+        size_t a = i / braAlphaSize;
+        size_t b = i - a * braAlphaSize;
+
+        for (size_t k = helper.SinglesFromBetaOffset[b]; k < helper.SinglesFromBetaOffset[b + 1]; k++) {
+            size_t ia = a + helper.braAlphaStart;
+            size_t ja = ia;
+            size_t ib = b + helper.braBetaStart;
+            size_t jb = helper.SinglesFromBetaKetIndex[k];
+            this->SetEnergy(helper, i, ia, ib, ja, jb);
+        }
+        for (size_t k = helper.DoublesFromBetaOffset[b]; k < helper.DoublesFromBetaOffset[b + 1]; k++) {
+            size_t ia = a + helper.braAlphaStart;
+            size_t ja = ia;
+            size_t ib = b + helper.braBetaStart;
+            size_t jb = helper.DoublesFromBetaKetIndex[k];
+            this->SetEnergy(helper, i, ia, ib, ja, jb);
+        }
+    }
+};
+
+template <typename ElemT>
+class MultTask2 : public MultKernelBase<ElemT>
+{
+protected:
+    TaskHelpersThrust<ElemT> helper;
+    size_t offset;
+public:
+    MultTask2(const TaskHelpersThrust<ElemT>& h,
+                const thrust::device_vector<ElemT>& v_wb,
+                const thrust::device_vector<ElemT>& v_t,
+                const MultDataThrust<ElemT>& data, size_t o
+                ) : MultKernelBase<ElemT>(v_wb, v_t, data)
+    {
+        helper = h;
+        offset = o;
+    }
+
+    // kernel entry point
+    __device__ __host__ void operator()(size_t i)
+    {
+        size_t braAlphaSize = helper.braAlphaEnd - helper.braAlphaStart;
+        size_t a = i / braAlphaSize;
+        size_t b = i - a * braAlphaSize;
+
+        for (size_t j = helper.SinglesFromAlphaOffset[a]; j < helper.SinglesFromAlphaOffset[a + 1]; j++) {
+            size_t ia = a + helper.braAlphaStart;
+            size_t ja = helper.SinglesFromAlphaKetIndex[j];
+            size_t ib = b + helper.braBetaStart;
+            size_t jb = ib;
+            this->SetEnergy(helper, i, ia, ib, ja, jb);
+        }
+        for (size_t j = helper.DoublesFromAlphaOffset[a]; j < helper.DoublesFromAlphaOffset[a + 1]; j++) {
+            size_t ia = a + helper.braAlphaStart;
+            size_t ja = helper.DoublesFromAlphaKetIndex[j];
+            size_t ib = b + helper.braBetaStart;
+            size_t jb = ib;
+            this->SetEnergy(helper, i, ia, ib, ja, jb);
+        }
+    }
+};
+
 
 // kernel for Wb initialization
 template <typename ElemT>
@@ -664,27 +822,31 @@ void mult(const thrust::device_vector<ElemT> &hii,
         braBetaSize = data.helper[task].braBetaEnd - data.helper[task].braBetaStart;
 
         // precalculate DetI and DetJ (if update needed)
-        bool update_I =  data.bra_adets_begin != data.helper[task].braAlphaStart || data.bra_bdets_begin != data.helper[task].braBetaStart ||
-                        data.bra_adets_end != data.helper[task].braAlphaEnd || data.bra_bdets_end != data.helper[task].braBetaEnd;
-        bool update_J =  data.ket_adets_begin != data.helper[task].ketAlphaStart || data.ket_bdets_begin != data.helper[task].ketBetaStart ||
-                        data.ket_adets_end != data.helper[task].ketAlphaEnd || data.ket_bdets_end != data.helper[task].ketBetaEnd;
-        if (update_I || update_J) {
-            data.bra_adets_begin = data.helper[task].braAlphaStart;
-            data.bra_bdets_begin = data.helper[task].braBetaStart;
-            data.bra_adets_end = data.helper[task].braAlphaEnd;
-            data.bra_bdets_end = data.helper[task].braBetaEnd;
-            data.ket_adets_begin = data.helper[task].ketAlphaStart;
-            data.ket_bdets_begin = data.helper[task].ketBetaStart;
-            data.ket_adets_end = data.helper[task].ketAlphaEnd;
-            data.ket_bdets_end = data.helper[task].ketBetaEnd;
-
-            DetFromAlphaBetaKernel det_kernel(data.helper[task], data, update_I, update_J);
-            auto det_ci = thrust::counting_iterator<size_t>(0);
-            thrust::for_each_n(thrust::device, det_ci, data.adets_size * data.bdets_size, det_kernel);
-        }
+        data.UpdateDet(task);
 
         size_t offset;
         size_t size;
+#ifdef SBD_THRUST_NO_COLLAPSE
+        if (data.helper[task].taskType == 2) {
+            MultTask2 kernel(data.helper[task], Wb, T, data, offset);
+            kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+            auto ci = thrust::counting_iterator<size_t>(0);
+            thrust::for_each_n(thrust::device, ci, braAlphaSize*braBetaSize, kernel);
+        } else if(data.helper[task].taskType == 1) {
+            MultTask1 kernel(data.helper[task], Wb, T, data, offset);
+            kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+            auto ci = thrust::counting_iterator<size_t>(0);
+            thrust::for_each_n(thrust::device, ci, braAlphaSize*braBetaSize, kernel);
+        } else {
+            MultTask0 kernel(data.helper[task], Wb, T, data, offset);
+            kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
+
+            auto ci = thrust::counting_iterator<size_t>(0);
+            thrust::for_each_n(thrust::device, ci, braAlphaSize*braBetaSize, kernel);
+        }
+#else
         if (data.helper[task].taskType == 2) {
             offset = 0;
             size = data.helper[task].size_single_alpha * braBetaSize;
@@ -766,7 +928,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
                 offset += num_threads;
             }
         }
-
+#endif
         if (data.helper[task].taskType == 0 && task != data.helper.size() - 1) {
 #ifdef SBD_DEBUG_MULT
             size_t adet_rank = mpi_rank_b / bdet_comm_size;
@@ -827,7 +989,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
 
 // contructor for Mult data
 template <typename ElemT>
-MultDataThrust<ElemT>::MultDataThrust( const std::vector<std::vector<size_t>> &adets_in,
+void MultDataThrust<ElemT>::Init( const std::vector<std::vector<size_t>> &adets_in,
     const std::vector<std::vector<size_t>> &bdets_in,
     const size_t bit_length_in,
     const size_t norbs_in,
@@ -835,12 +997,13 @@ MultDataThrust<ElemT>::MultDataThrust( const std::vector<std::vector<size_t>> &a
     const ElemT &I0_in,
     const oneInt<ElemT> &I1_in,
     const twoInt<ElemT> &I2_in,
-    int method) : I0(I0_in)
+    int method)
 {
     bit_length = bit_length_in;
     norbs = norbs_in;
     size_D = (2 * norbs + bit_length - 1) / bit_length;
 
+    I0 = I0_in;
     // copyin I1
     I1_store.resize(I1_in.store.size());
     thrust::copy_n(I1_in.store.begin(), I1_in.store.size(), I1_store.begin());
@@ -920,6 +1083,30 @@ MultDataThrust<ElemT>::MultDataThrust( const std::vector<std::vector<size_t>> &a
 
     // allocate per thread storage for DetI, DetJ
     // dets.resize(size_D * 2 * size_det);
+}
+
+template <typename ElemT>
+void MultDataThrust<ElemT>::UpdateDet(size_t task)
+{
+    // precalculate DetI and DetJ (if update needed)
+    bool update_I =  bra_adets_begin != helper[task].braAlphaStart || bra_bdets_begin != helper[task].braBetaStart ||
+                    bra_adets_end != helper[task].braAlphaEnd || bra_bdets_end != helper[task].braBetaEnd;
+    bool update_J =  ket_adets_begin != helper[task].ketAlphaStart || ket_bdets_begin != helper[task].ketBetaStart ||
+                    ket_adets_end != helper[task].ketAlphaEnd || ket_bdets_end != helper[task].ketBetaEnd;
+    if (update_I || update_J) {
+        bra_adets_begin = helper[task].braAlphaStart;
+        bra_bdets_begin = helper[task].braBetaStart;
+        bra_adets_end = helper[task].braAlphaEnd;
+        bra_bdets_end = helper[task].braBetaEnd;
+        ket_adets_begin = helper[task].ketAlphaStart;
+        ket_bdets_begin = helper[task].ketBetaStart;
+        ket_adets_end = helper[task].ketAlphaEnd;
+        ket_bdets_end = helper[task].ketBetaEnd;
+
+        DetFromAlphaBetaKernel det_kernel(helper[task], *this, update_I, update_J);
+        auto det_ci = thrust::counting_iterator<size_t>(0);
+        thrust::for_each_n(thrust::device, det_ci, adets_size * bdets_size, det_kernel);
+    }
 }
 
 

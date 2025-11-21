@@ -38,6 +38,12 @@ public:
     size_t* DoublesFromBetaBraIndex;
     size_t* DoublesFromBetaKetIndex;
 
+    // offset for non-load balanced mode
+    size_t* SinglesFromAlphaOffset;
+    size_t* SinglesFromBetaOffset;
+    size_t* DoublesFromAlphaOffset;
+    size_t* DoublesFromBetaOffset;
+
     size_t size_single_alpha = 0;
     size_t size_double_alpha = 0;
     size_t size_single_beta = 0;
@@ -69,6 +75,11 @@ public:
         DoublesFromBetaBraIndex = other.DoublesFromBetaBraIndex;
         DoublesFromBetaKetIndex = other.DoublesFromBetaKetIndex;
 
+        SinglesFromAlphaOffset = other.SinglesFromAlphaOffset;
+        SinglesFromBetaOffset = other.SinglesFromBetaOffset;
+        DoublesFromAlphaOffset = other.DoublesFromAlphaOffset;
+        DoublesFromBetaOffset = other.DoublesFromBetaOffset;
+
         size_single_alpha = other.size_single_alpha;
         size_double_alpha = other.size_double_alpha;
         size_single_beta = other.size_single_beta;
@@ -94,35 +105,62 @@ public:
         thrust::host_vector<size_t> offset_ij;
 
         size_t size = 0;
+        // storage for offsets
+#ifdef SBD_THRUST_NO_COLLAPSE
+        size += (braAlphaSize + 1) + (braBetaSize + 1);
+#endif
 
         size_single_alpha = 0;
         size_double_alpha = 0;
         size_single_beta = 0;
         size_double_beta = 0;
-        std::vector<size_t> offset_single_alpha(braAlphaSize);
-        std::vector<size_t> offset_double_alpha(braAlphaSize);
+        std::vector<size_t> offset_single_alpha(braAlphaSize + 1);
+        std::vector<size_t> offset_double_alpha(braAlphaSize + 1);
         for(size_t i=0; i < braAlphaSize; i++) {
             offset_single_alpha[i] = size_single_alpha;
             offset_double_alpha[i] = size_double_alpha;
             size_single_alpha += helper.SinglesFromAlphaLen[i];
             size_double_alpha += helper.DoublesFromAlphaLen[i];
         }
+        offset_single_alpha[braAlphaSize] = size_single_alpha;
+        offset_double_alpha[braAlphaSize] = size_double_alpha;
         size += size_single_alpha + size_double_alpha;
 
-        std::vector<size_t> offset_single_beta(braBetaSize);
-        std::vector<size_t> offset_double_beta(braBetaSize);
+        std::vector<size_t> offset_single_beta(braBetaSize + 1);
+        std::vector<size_t> offset_double_beta(braBetaSize + 1);
         for(size_t i=0; i < braBetaSize; i++) {
             offset_single_beta[i] = size_single_beta;
             offset_double_beta[i] = size_double_beta;
             size_single_beta += helper.SinglesFromBetaLen[i];
             size_double_beta += helper.DoublesFromBetaLen[i];
         }
+        offset_single_beta[braBetaSize] = size_single_beta;
+        offset_double_beta[braBetaSize] = size_double_beta;
         size += size_single_beta + size_double_beta;
 
         storage.resize(size*2);
         base_memory = (size_t*)thrust::raw_pointer_cast(storage.data());
 
         size_t count = 0;
+
+#ifdef SBD_THRUST_NO_COLLAPSE
+        // store offsets for non-balanced
+        SinglesFromAlphaOffset = base_memory + count;
+        thrust::copy_n(offset_single_alpha.begin(), braAlphaSize + 1, storage.begin() + count);
+        count += braAlphaSize + 1;
+
+        DoublesFromAlphaOffset = base_memory + count;
+        thrust::copy_n(offset_double_alpha.begin(), braAlphaSize + 1, storage.begin() + count);
+        count += braAlphaSize + 1;
+
+        SinglesFromBetaOffset = base_memory + count;
+        thrust::copy_n(offset_single_beta.begin(), braBetaSize + 1, storage.begin() + count);
+        count += braBetaSize + 1;
+
+        DoublesFromBetaOffset = base_memory + count;
+        thrust::copy_n(offset_double_beta.begin(), braBetaSize + 1, storage.begin() + count);
+        count += braBetaSize + 1;
+#endif
 
         SinglesFromAlphaBraIndex = base_memory + count;
         SinglesFromAlphaKetIndex = base_memory + count + size_single_alpha;

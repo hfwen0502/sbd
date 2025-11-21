@@ -16,6 +16,9 @@
 
 #include "sbd/chemistry/tpb/occupation.h"
 #include "sbd/chemistry/tpb/correlation.h"
+#ifdef SBD_THRUST
+#include "sbd/chemistry/tpb/correlation_thrust.h"
+#endif
 #include "sbd/chemistry/tpb/rdmat.h"
 #include "sbd/chemistry/tpb/restart.h"
 #include "sbd/chemistry/tpb/sbdiag.h"
