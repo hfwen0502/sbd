@@ -101,7 +101,7 @@ public:
         adets_size = data.adets_size;
         bdets_size = data.bdets_size;
 
-        if (data.bra_adets_begin != data.ket_adets_begin || data.bra_bdets_begin != data.ket_bdets_begin)
+        if (data.bra_adets_begin != data.ket_adets_begin || data.bra_bdets_begin != data.ket_bdets_begin || data.bra_adets_end != data.ket_adets_end || data.bra_bdets_end != data.ket_bdets_end)
             det_J = det_I + adets_size * bdets_size * size_D;
         else
             det_J = det_I;
@@ -117,7 +117,7 @@ public:
         adets_size = data.adets_size;
         bdets_size = data.bdets_size;
 
-        if (data.bra_adets_begin != data.ket_adets_begin || data.bra_bdets_begin != data.ket_bdets_begin)
+        if (data.bra_adets_begin != data.ket_adets_begin || data.bra_bdets_begin != data.ket_bdets_begin || data.bra_adets_end != data.ket_adets_end || data.bra_bdets_end != data.ket_bdets_end)
             det_J = det_I + adets_size * bdets_size * size_D;
         else
             det_J = det_I;
@@ -388,21 +388,21 @@ public:
     {
         size_t a = i / this->bdets_size;
         size_t b = i - a * this->bdets_size;
-        if (a < helper.braAlphaEnd - helper.braAlphaStart && b < helper.braBetaEnd - helper.braBetaStart) {
-            size_t* Det;
-            if (update_I) {
-                Det = this->det_I + i * this->size_D;
-                size_t ia = a + helper.braAlphaStart;
-                size_t ib = b + helper.braBetaStart;
+        size_t* Det;
+        if (update_I) {
+            Det = this->det_I + i * this->size_D;
+            size_t ia = a + helper.braAlphaStart;
+            size_t ib = b + helper.braBetaStart;
 
+            if (ia < helper.braAlphaEnd && ib < helper.braBetaEnd)
                 this->DetFromAlphaBeta(Det, this->adets + ia * this->size_D, this->bdets + ib * this->size_D);
-            }
-            if (update_J && this->det_I != this->det_J) {
-                Det = this->det_J + i * this->size_D;
-                size_t ja = a + helper.ketAlphaStart;
-                size_t jb = b + helper.ketBetaStart;
+        }
+        if (update_J && this->det_I != this->det_J) {
+            Det = this->det_J + i * this->size_D;
+            size_t ja = a + helper.ketAlphaStart;
+            size_t jb = b + helper.ketBetaStart;
+            if (ja < helper.ketAlphaEnd && jb < helper.ketBetaEnd)
                 this->DetFromAlphaBeta(Det, this->adets + ja * this->size_D, this->bdets + jb * this->size_D);
-            }
         }
     }
 };
@@ -804,6 +804,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
     double time_slid = 0.0;
     for (size_t task = 0; task < data.helper.size(); task++) {
 #ifdef SBD_DEBUG_MULT
+        auto time_task_start = std::chrono::high_resolution_clock::now();
         std::cout << " Start multiplication for task " << task << " at (h,b,t) = ("
                     << mpi_rank_h << "," << mpi_rank_b << "," << mpi_rank_t << "): task type = "
                     << data.helper[task].taskType << ", bra-adet range = ["
@@ -957,7 +958,11 @@ void mult(const thrust::device_vector<ElemT> &hii,
             R.clear();
             R.shrink_to_fit();
         }
-
+#ifdef SBD_DEBUG_MULT
+        auto time_task_end = std::chrono::high_resolution_clock::now();
+        auto time_task_count = std::chrono::duration_cast<std::chrono::microseconds>(time_task_end - time_task_start).count();
+        std::cout << "     time for task " << task << " : " << 1.0e-6 * time_task_count << std::endl;
+#endif
     } // end for(size_t task=0; task < data.helper.size(); task++)
 
     auto time_mult_end = std::chrono::high_resolution_clock::now();

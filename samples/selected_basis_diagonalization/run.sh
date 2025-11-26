@@ -3,6 +3,6 @@
 
 #mpirun -np 1 -x OMP_NUM_THREADS=4 ./build/sbd --fcidump fcidump_Fe4S4.txt --adetfile AlphaDets.txt --method 0 --block 10 --iteration 1 --tolerance 1.0e-4 --adet_comm_size 1 --bdet_comm_size 1 --task_comm_size 1 --init 0 --shuffle 0 --carryover_ratio 0.5 --savename wf --dump_matrix_form_wf matrixformwf.txt --carryoverfile carryover.txt --rdm 0
 
-mpirun --hostfile hostfile -np 1 ./diag --fcidump fcidump_Fe4S4.txt --adetfile AlphaDets.txt --method 0 --block 10 --iteration 1 --tolerance 1.0e-4 --adet_comm_size 1 --bdet_comm_size 1 --task_comm_size 1 --init 0 --shuffle 0 --carryover_ratio 0.5 --savename wf --dump_matrix_form_wf matrixformwf.txt --carryoverfile carryover.txt --rdm 1
+mpirun --hostfile hostfile -np 1 ./diag --fcidump fcidump_Fe4S4.txt --adetfile AlphaDets.txt --method 0 --block 10 --iteration 1 --tolerance 1.0e-4 --adet_comm_size 1 --bdet_comm_size 1 --task_comm_size 1 --init 0 --shuffle 0 --carryover_ratio 0.5 --savename wf --dump_matrix_form_wf matrixformwf.txt --carryoverfile carryover.txt --rdm 0
 
-#mpirun --hostfile hostfile -np 1 ./diag --fcidump fcidump_Fe4S4.txt --adetfile AlphaDets.bin --method 0 --block 10 --iteration 2 --tolerance 1.0e-4 --eps 1.0e-4 --adet_comm_size 1 --bdet_comm_size 1 --task_comm_size 1 --init 0 --shuffle 0 --carryover_ratio 0.5 --savename wf --carryoverfile carryover.txt --rdm 1 --max_time 24000
+#mpirun --hostfile hostfile -np 1 ./diag --fcidump fcidump_Fe4S4.txt --adetfile AlphaDets.bin --method 0 --block 10 --iteration 2 --tolerance 1.0e-4 --eps 1.0e-4 --adet_comm_size 1 --bdet_comm_size 1 --task_comm_size 1 --init 0 --shuffle 0 --carryover_ratio 0.5 --savename wf --carryoverfile carryover.txt --rdm 0 --max_time 24000

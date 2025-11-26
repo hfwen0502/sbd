@@ -25,6 +25,20 @@ struct AXPY_kernel {
     }
 };
 
+// AX kernel
+template <typename ElemT>
+struct AX_kernel {
+    ElemT a;
+
+    AX_kernel(ElemT a_in) : a(a_in) {}
+
+    __host__ __device__ ElemT operator()(const ElemT& x) const
+    {
+        return a * x;
+    }
+};
+
+
 // dot product
 template <typename ElemT>
 struct dot_product_kernel {
@@ -67,7 +81,8 @@ void Normalize(thrust::device_vector<ElemT>& X,
     res = std::sqrt(res);
     ElemT factor = ElemT(1.0 / res);
 
-    thrust::transform(thrust::device, X.begin(), X.end(), thrust::make_constant_iterator(factor), X.begin(), thrust::multiplies<ElemT>());
+//    thrust::transform(thrust::device, X.begin(), X.end(), thrust::constant_iterator<ElemT>(factor), X.begin(), thrust::multiplies<ElemT>());
+    thrust::transform(thrust::device, X.begin(), X.end(), X.begin(), AX_kernel<ElemT>(factor));
 }
 
 template <typename ElemT, typename RealT>
@@ -255,11 +270,13 @@ void Davidson(const std::vector<ElemT> &hii,
 
             // ElemT x = U[0];
             // W[is] = C[0][is] * x;
-            thrust::transform(thrust::device, C[0].begin(), C[0].end(), thrust::make_constant_iterator(U[0]), W_dev.begin(), thrust::multiplies<ElemT>());
+            //thrust::transform(thrust::device, C[0].begin(), C[0].end(), thrust::constant_iterator<ElemT>(U[0]), W_dev.begin(), thrust::multiplies<ElemT>());
+            thrust::transform(thrust::device, C[0].begin(), C[0].end(), W_dev.begin(), AX_kernel<ElemT>(U[0]));
 
             // x = ElemT(-1.0) * U[0];
             // R[is] = HC[0][is] * x;
-            thrust::transform(thrust::device, HC[0].begin(), HC[0].end(), thrust::make_constant_iterator(-U[0]), R.begin(), thrust::multiplies<ElemT>());
+            //thrust::transform(thrust::device, HC[0].begin(), HC[0].end(), thrust::constant_iterator<ElemT>(-U[0]), R.begin(), thrust::multiplies<ElemT>());
+            thrust::transform(thrust::device, HC[0].begin(), HC[0].end(), R.begin(), AX_kernel<ElemT>(-U[0]));
 
             for (int kb = 1; kb <= ib; kb++) {
                 // x = U[kb];
@@ -288,9 +305,11 @@ void Davidson(const std::vector<ElemT> &hii,
             if (mpi_size_h * mpi_size_t > 1) {
                 ElemT volp(1.0 / (mpi_size_h * mpi_size_t));
                 // W[is] *= volp;
-                thrust::transform(thrust::device, W_dev.begin(), W_dev.end(), thrust::make_constant_iterator(volp), W_dev.begin(), thrust::multiplies<ElemT>());
+                //thrust::transform(thrust::device, W_dev.begin(), W_dev.end(), thrust::constant_iterator<ElemT>(volp), W_dev.begin(), thrust::multiplies<ElemT>());
+                thrust::transform(thrust::device, W_dev.begin(), W_dev.end(), W_dev.begin(), AX_kernel<ElemT>(volp));
                 // R[is] *= volp;
-                thrust::transform(thrust::device, R.begin(), R.end(), thrust::make_constant_iterator(volp), R.begin(), thrust::multiplies<ElemT>());
+                //thrust::transform(thrust::device, R.begin(), R.end(), thrust::constant_iterator<ElemT>(volp), R.begin(), thrust::multiplies<ElemT>());
+                thrust::transform(thrust::device, R.begin(), R.end(), R.begin(), AX_kernel<ElemT>(volp));
             }
             // #endif
 
