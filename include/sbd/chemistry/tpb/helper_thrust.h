@@ -86,7 +86,7 @@ public:
         size_double_beta = other.size_double_beta;
     }
 
-    TaskHelpersThrust(thrust::device_vector<size_t>& storage, thrust::device_vector<ElemT>& veij, const TaskHelpers& helper, bool precalculate = false)
+    TaskHelpersThrust(thrust::device_vector<size_t>& storage, const TaskHelpers& helper)
     {
         braAlphaStart = helper.braAlphaStart;
         braAlphaEnd = helper.braAlphaEnd;

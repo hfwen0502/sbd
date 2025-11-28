@@ -228,11 +228,11 @@ namespace sbd {
 				helper,I0,I1,I2,hii,
 				h_comm,b_comm,t_comm);
 #ifdef SBD_THRUST
-	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
+	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2);
 	sbd::Davidson(hii, W, device_data,
 		      adet_comm_size, bdet_comm_size,
 		      h_comm,b_comm,t_comm,
-		      max_it,max_nb,eps,max_time, 0);
+		      max_it,max_nb,eps,max_time);
 #else
 	sbd::Davidson(hii,W,
 		      adet,bdet,bit_length,static_cast<size_t>(L),
@@ -265,7 +265,7 @@ namespace sbd {
 #ifdef SBD_THRUST
 	sbd::mult(hii, W, C, device_data,
 		  adet_comm_size, bdet_comm_size,
-		  h_comm, b_comm, t_comm, method);
+		  h_comm, b_comm, t_comm);
 #else
 	sbd::mult(hii,W,C,adet,bdet,bit_length,static_cast<size_t>(L),
 		  adet_comm_size,bdet_comm_size,helper,
@@ -304,7 +304,7 @@ namespace sbd {
 	sbd::makeQChamDiagTerms(adet, bdet, bit_length, L,
 				helper, I0, I1, I2, hii,
 				h_comm, b_comm, t_comm);
- 	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2, method);
+ 	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2);
 #else
 	std::vector<std::vector<size_t*>> ih;
 	std::vector<std::vector<size_t*>> jh;
@@ -332,7 +332,7 @@ namespace sbd {
 	sbd::Davidson(hii, W, device_data,
 		      adet_comm_size, bdet_comm_size,
 		      h_comm,b_comm,t_comm,
-		      max_it,max_nb,eps,max_time, method);
+		      max_it,max_nb,eps,max_time);
 #else
 	sbd::Davidson(hii,ih,jh,hij,len,tasktype,
 		      adetshift,bdetshift,adet_comm_size,bdet_comm_size,
@@ -360,7 +360,7 @@ namespace sbd {
 #ifdef SBD_THRUST
 	sbd::mult(hii, W, C, device_data,
 		  adet_comm_size, bdet_comm_size,
-		  h_comm, b_comm, t_comm, method);
+		  h_comm, b_comm, t_comm);
 #else
 	sbd::mult(hii,ih,jh,hij,len,
 		  tasktype,adetshift,bdetshift,

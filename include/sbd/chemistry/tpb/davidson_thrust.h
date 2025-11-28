@@ -175,8 +175,7 @@ void Davidson(const std::vector<ElemT> &hii,
                 int max_iteration,
                 int num_block,
                 RealT eps,
-                RealT max_time,
-                int method)
+                RealT max_time)
 {
     RealT eps_reg = 1.0e-12;
 
@@ -248,7 +247,7 @@ void Davidson(const std::vector<ElemT> &hii,
 
             mult(hii_dev, C[ib], HC[ib], data,
                     adet_comm_size, bdet_comm_size,
-                    h_comm, b_comm, t_comm, method);
+                    h_comm, b_comm, t_comm);
 
             for (int jb = 0; jb <= ib; jb++) {
                 InnerProduct(C[jb], HC[ib], H[jb + nb * ib], b_comm);
@@ -265,9 +264,6 @@ void Davidson(const std::vector<ElemT> &hii,
 #else
             hp_numeric::MatHeev(jobz, uplo, ib + 1, U, nb, E);
 #endif
-            std::vector<ElemT> A(W.size());
-            std::vector<ElemT> B(W.size());
-
             // ElemT x = U[0];
             // W[is] = C[0][is] * x;
             //thrust::transform(thrust::device, C[0].begin(), C[0].end(), thrust::constant_iterator<ElemT>(U[0]), W_dev.begin(), thrust::multiplies<ElemT>());

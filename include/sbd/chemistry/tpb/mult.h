@@ -371,7 +371,6 @@ namespace sbd {
   } // end function
 
 #else
-#ifndef SBD_THRUST
 
   template <typename ElemT>
   void mult(const std::vector<ElemT> & hii,
@@ -622,9 +621,6 @@ namespace sbd {
 
   } // end function
 
-
-
-#endif // SBD_THRUST
 #endif // SBD_TRADMODE
 
 }

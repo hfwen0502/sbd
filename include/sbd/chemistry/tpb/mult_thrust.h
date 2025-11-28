@@ -41,7 +41,6 @@ public:
     thrust::device_vector<ElemT> I2_dm;
     thrust::device_vector<ElemT> I2_em;
     std::vector<thrust::device_vector<size_t>> helper_storage;
-	std::vector<thrust::device_vector<ElemT>> eij_storage;
     size_t bit_length;
     size_t norbs;
     size_t size_D;
@@ -57,8 +56,7 @@ public:
         const std::vector<TaskHelpers> &helper_in,
         const ElemT &I0_in,
         const oneInt<ElemT> &I1_in,
-        const twoInt<ElemT> &I2_in,
-        int method);
+        const twoInt<ElemT> &I2_in);
 
     void UpdateDet(size_t task);
 
@@ -148,8 +146,10 @@ public:
 
     __device__ __host__ ElemT Hij(const size_t *DetA, const size_t *DetB)
     {
-        size_t c[2] = {0, 0};
-        size_t d[2] = {0, 0};
+        size_t c0 = 0;
+        size_t c1 = 0;
+        size_t d0 = 0;
+        size_t d1 = 0;
         size_t nc = 0;
         size_t nd = 0;
         size_t L = norbs;
@@ -162,15 +162,17 @@ public:
             size_t diff_d = DetB[i] & ~DetA[i];
             for (size_t bit_pos = 0; bit_pos < bit_length; ++bit_pos) {
                 if (diff_c & (static_cast<size_t>(1) << bit_pos)) {
-                    if (nc >= 2)
-                        return ElemT(0.0);
-                    c[nc] = i * bit_length + bit_pos;
+                    if (nc == 0)
+                        c0 = i * bit_length + bit_pos;
+                    else if (nc == 1)
+                        c1 = i * bit_length + bit_pos;
                     nc++;
                 }
                 if (diff_d & (static_cast<size_t>(1) << bit_pos)) {
-                    if (nd >= 2)
-                        return ElemT(0.0);
-                    d[nd] = i * bit_length + bit_pos;
+                    if (nd == 0)
+                        d0 = i * bit_length + bit_pos;
+                    else if (nd == 1)
+                        d1 = i * bit_length + bit_pos;
                     nd++;
                 }
             }
@@ -182,15 +184,17 @@ public:
             size_t diff_d = (DetB[full_words] & ~DetA[full_words]) & mask;
             for (size_t bit_pos = 0; bit_pos < remaining_bits; ++bit_pos) {
                 if (diff_c & (static_cast<size_t>(1) << bit_pos)) {
-                    if (nc >= 2)
-                        return ElemT(0.0);
-                    c[nc] = bit_length * full_words + bit_pos;
+                    if (nc == 0)
+                        c0 = bit_length * full_words + bit_pos;
+                    else if (nc == 1)
+                        c1 = bit_length * full_words + bit_pos;
                     nc++;
                 }
                 if (diff_d & (static_cast<size_t>(1) << bit_pos)) {
-                    if (nd >= 2)
-                        return ElemT(0.0);
-                    d[nd] = bit_length * full_words + bit_pos;
+                    if (nd == 0)
+                        d0 = bit_length * full_words + bit_pos;
+                    else if (nd == 1)
+                        d1 = bit_length * full_words + bit_pos;
                     nd++;
                 }
             }
@@ -200,10 +204,10 @@ public:
             return ZeroExcite(DetB, L);
         }
         else if (nc == 1) {
-            return OneExcite(DetB, d[0], c[0]);
+            return OneExcite(DetB, d0, c0);
         }
         else if (nc == 2) {
-            return TwoExcite(DetB, d[0], d[1], c[0], c[1]);
+            return TwoExcite(DetB, d0, d1, c0, c1);
         }
         return ElemT(0.0);
     }
@@ -334,11 +338,6 @@ public:
 
             size_t* DetI = this->det_I + ((ia - helper.braAlphaStart) * bdets_size + ib - helper.braBetaStart) * this->size_D;
             size_t* DetJ = this->det_J + ((ja - helper.ketAlphaStart) * bdets_size + jb - helper.ketBetaStart) * this->size_D;
-
-            /*size_t* DetI = this->det_I + i * size_D * 2;
-            size_t* DetJ = DetI + size_D;
-            DetFromAlphaBeta(DetI, adets + ia * size_D, bdets + ib * size_D);
-            DetFromAlphaBeta(DetJ, adets + ja * size_D, bdets + jb * size_D);*/
 
             ElemT eij = Hij(DetI, DetJ);
             atomicAdd(Wb + braIdx, eij * T[ketIdx]);
@@ -719,8 +718,7 @@ void mult(const std::vector<ElemT> &hii,
             const size_t bdet_comm_size,
             MPI_Comm h_comm,
             MPI_Comm b_comm,
-            MPI_Comm t_comm,
-            int method)
+            MPI_Comm t_comm)
 {
     // this is wrapper mult function with data copy
 
@@ -736,7 +734,7 @@ void mult(const std::vector<ElemT> &hii,
 
     mult(hii_dev, Wk_dev, Wb_dev, data,
 		  adet_comm_size, bdet_comm_size,
-		  h_comm, b_comm, t_comm, method);
+		  h_comm, b_comm, t_comm);
 
     // copyout Wb
     thrust::copy_n(Wb_dev.begin(), Wb_dev.size(), Wb.begin());
@@ -752,8 +750,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
             const size_t bdet_comm_size,
             MPI_Comm h_comm,
             MPI_Comm b_comm,
-            MPI_Comm t_comm,
-            int method)
+            MPI_Comm t_comm)
 {
 
 #ifdef SBD_DEBUG_TUNING
@@ -784,13 +781,19 @@ void mult(const thrust::device_vector<ElemT> &hii,
     get_mpi_range(bdet_comm_size,0,bdet_min,bdet_max);
     size_t max_det_size = (adet_max-adet_min)*(bdet_max-bdet_min);
 
-    thrust::device_vector<ElemT> T(max_det_size);
-    thrust::device_vector<ElemT> R;
+    thrust::device_vector<ElemT> T[2];
+    int active_T = 0;
+    int recv_T = 1;
+    Mpi2dSlider<ElemT> mpi2dslider;
 
     auto time_copy_start = std::chrono::high_resolution_clock::now();
     if (data.helper.size() != 0) {
-        Mpi2dSlide(Wk, T, adet_comm_size, bdet_comm_size,
-                    -data.helper[0].adetShift, -data.helper[0].bdetShift, b_comm);
+        if (mpi_size_b > 1) {
+            Mpi2dSlide(Wk, T[active_T], adet_comm_size, bdet_comm_size,
+                        -data.helper[0].adetShift, -data.helper[0].bdetShift, b_comm);
+        } else {
+            T[active_T] = Wk;
+        }
     }
     auto time_copy_end = std::chrono::high_resolution_clock::now();
 
@@ -798,7 +801,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
 
     if (mpi_rank_t == 0) {
         auto ci = thrust::counting_iterator<size_t>(0);
-        thrust::for_each_n(thrust::device, ci, T.size(), Wb_init_kernel(Wb, hii, T));
+        thrust::for_each_n(thrust::device, ci, T[active_T].size(), Wb_init_kernel(Wb, hii, T[active_T]));
     }
 
     double time_slid = 0.0;
@@ -812,12 +815,46 @@ void mult(const thrust::device_vector<ElemT> &hii,
                     << data.helper[task].braBetaStart << "," << data.helper[task].braBetaEnd << "), ket-adet range = ["
                     << data.helper[task].ketAlphaStart << "," << data.helper[task].ketAlphaEnd << "), ket-bdet range = ["
                     << data.helper[task].ketBetaStart << "," << data.helper[task].ketBetaEnd << "), ket wf =";
-        for (size_t i = 0; i < std::min(static_cast<size_t>(4), T.size()); i++)
-        {
-            std::cout << " " << T[i];
+        for (size_t i = 0; i < std::min(static_cast<size_t>(4), T[active_T].size()); i++) {
+            std::cout << " " << T[active_T][i];
         }
         std::cout << std::endl;
 #endif
+
+        // synchronize 2d slide
+        auto time_slid_start = std::chrono::high_resolution_clock::now();
+        if (mpi2dslider.Sync()) {
+            int t = active_T;
+            active_T = recv_T;
+            recv_T = t;
+        }
+        auto time_slid_end = std::chrono::high_resolution_clock::now();
+        auto time_slid_count = std::chrono::duration_cast<std::chrono::microseconds>(time_slid_end - time_slid_start).count();
+        time_slid += 1.0e-6 * time_slid_count;
+
+        // exchange T asynchronously for later tasks
+        for (size_t extask = task + 1; extask < data.helper.size(); extask++) {
+            if (data.helper[extask].taskType == 0 && extask != data.helper.size() - 1) {
+#ifdef SBD_DEBUG_MULT
+                size_t adet_rank = mpi_rank_b / bdet_comm_size;
+                size_t bdet_rank = mpi_rank_b % bdet_comm_size;
+                size_t adet_rank_task = (adet_rank + data.helper[extask].adetShift) % adet_comm_size;
+                size_t bdet_rank_task = (bdet_rank + data.helper[extask].bdetShift) % bdet_comm_size;
+                size_t adet_rank_next = (adet_rank + data.helper[extask + 1].adetShift) % adet_comm_size;
+                size_t bdet_rank_next = (bdet_rank + data.helper[extask + 1].bdetShift) % bdet_comm_size;
+                std::cout << " mult: task " << task << " at mpi process (h,b,t) = ("
+                            << mpi_rank_h << "," << mpi_rank_b << "," << mpi_rank_t
+                            << "): two-dimensional slide communication from ("
+                            << adet_rank_task << "," << bdet_rank_task << ") to ("
+                            << adet_rank_next << "," << bdet_rank_next << ")"
+                            << std::endl;
+#endif
+                int adetslide = data.helper[extask].adetShift - data.helper[extask + 1].adetShift;
+                int bdetslide = data.helper[extask].bdetShift - data.helper[extask + 1].bdetShift;
+                mpi2dslider.ExchangeAsync(T[active_T], T[recv_T], adet_comm_size, bdet_comm_size, adetslide, bdetslide, b_comm);
+                break;
+            }
+        }
 
         braAlphaSize = data.helper[task].braAlphaEnd - data.helper[task].braAlphaStart;
         braBetaSize = data.helper[task].braBetaEnd - data.helper[task].braBetaStart;
@@ -829,19 +866,19 @@ void mult(const thrust::device_vector<ElemT> &hii,
         size_t size;
 #ifdef SBD_THRUST_NO_COLLAPSE
         if (data.helper[task].taskType == 2) {
-            MultTask2 kernel(data.helper[task], Wb, T, data, offset);
+            MultTask2 kernel(data.helper[task], Wb, T[active_T], data, offset);
             kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
             auto ci = thrust::counting_iterator<size_t>(0);
             thrust::for_each_n(thrust::device, ci, braAlphaSize*braBetaSize, kernel);
         } else if(data.helper[task].taskType == 1) {
-            MultTask1 kernel(data.helper[task], Wb, T, data, offset);
+            MultTask1 kernel(data.helper[task], Wb, T[active_T], data, offset);
             kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
             auto ci = thrust::counting_iterator<size_t>(0);
             thrust::for_each_n(thrust::device, ci, braAlphaSize*braBetaSize, kernel);
         } else {
-            MultTask0 kernel(data.helper[task], Wb, T, data, offset);
+            MultTask0 kernel(data.helper[task], Wb, T[active_T], data, offset);
             kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
             auto ci = thrust::counting_iterator<size_t>(0);
@@ -857,7 +894,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
                     num_threads = size - offset;
                 }
 
-                MultSingleAlpha single_kernel(data.helper[task], Wb, T, data, offset);
+                MultSingleAlpha single_kernel(data.helper[task], Wb, T[active_T], data, offset);
                 single_kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
                 auto cis = thrust::counting_iterator<size_t>(0);
@@ -873,7 +910,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
                     num_threads = size - offset;
                 }
 
-                MultDoubleAlpha double_kernel(data.helper[task], Wb, T, data, offset);
+                MultDoubleAlpha double_kernel(data.helper[task], Wb, T[active_T], data, offset);
                 double_kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
                 auto cid = thrust::counting_iterator<size_t>(0);
@@ -889,7 +926,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
                     num_threads = size - offset;
                 }
 
-                MultSingleBeta single_kernel(data.helper[task], Wb, T, data, offset);
+                MultSingleBeta single_kernel(data.helper[task], Wb, T[active_T], data, offset);
                 single_kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
                 auto cis = thrust::counting_iterator<size_t>(0);
@@ -905,7 +942,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
                     num_threads = size - offset;
                 }
 
-                MultDoubleBeta double_kernel(data.helper[task], Wb, T, data, offset);
+                MultDoubleBeta double_kernel(data.helper[task], Wb, T[active_T], data, offset);
                 double_kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
                 auto cid = thrust::counting_iterator<size_t>(0);
@@ -921,7 +958,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
                     num_threads = size - offset;
                 }
 
-                MultAlphaBeta kernel(data.helper[task], Wb, T, data, offset);
+                MultAlphaBeta kernel(data.helper[task], Wb, T[active_T], data, offset);
                 kernel.set_mpi_size(mpi_rank_h, mpi_size_h);
 
                 auto ci = thrust::counting_iterator<size_t>(0);
@@ -930,38 +967,11 @@ void mult(const thrust::device_vector<ElemT> &hii,
             }
         }
 #endif
-        if (data.helper[task].taskType == 0 && task != data.helper.size() - 1) {
-#ifdef SBD_DEBUG_MULT
-            size_t adet_rank = mpi_rank_b / bdet_comm_size;
-            size_t bdet_rank = mpi_rank_b % bdet_comm_size;
-            size_t adet_rank_task = (adet_rank + data.helper[task].adetShift) % adet_comm_size;
-            size_t bdet_rank_task = (bdet_rank + data.helper[task].bdetShift) % bdet_comm_size;
-            size_t adet_rank_next = (adet_rank + data.helper[task + 1].adetShift) % adet_comm_size;
-            size_t bdet_rank_next = (bdet_rank + data.helper[task + 1].bdetShift) % bdet_comm_size;
-            std::cout << " mult: task " << task << " at mpi process (h,b,t) = ("
-                        << mpi_rank_h << "," << mpi_rank_b << "," << mpi_rank_t
-                        << "): two-dimensional slide communication from ("
-                        << adet_rank_task << "," << bdet_rank_task << ") to ("
-                        << adet_rank_next << "," << bdet_rank_next << ")"
-                        << std::endl;
 
-#endif
-            int adetslide = data.helper[task].adetShift - data.helper[task + 1].adetShift;
-            int bdetslide = data.helper[task].bdetShift - data.helper[task + 1].bdetShift;
-            R.resize(T.size());
-            R = T;
-            auto time_slid_start = std::chrono::high_resolution_clock::now();
-            Mpi2dSlide(R, T, adet_comm_size, bdet_comm_size, adetslide, bdetslide, b_comm);
-            auto time_slid_end = std::chrono::high_resolution_clock::now();
-            auto time_slid_count = std::chrono::duration_cast<std::chrono::microseconds>(time_slid_end - time_slid_start).count();
-            time_slid += 1.0e-6 * time_slid_count;
-            R.clear();
-            R.shrink_to_fit();
-        }
 #ifdef SBD_DEBUG_MULT
         auto time_task_end = std::chrono::high_resolution_clock::now();
         auto time_task_count = std::chrono::duration_cast<std::chrono::microseconds>(time_task_end - time_task_start).count();
-        std::cout << "     time for task " << task << " : " << 1.0e-6 * time_task_count << std::endl;
+        std::cout << "     time for task " << task << " [" << data.helper[task].taskType << "] : " << 1.0e-6 * time_task_count << std::endl;
 #endif
     } // end for(size_t task=0; task < data.helper.size(); task++)
 
@@ -1001,8 +1011,7 @@ void MultDataThrust<ElemT>::Init( const std::vector<std::vector<size_t>> &adets_
     const std::vector<TaskHelpers> &helper_in,
     const ElemT &I0_in,
     const oneInt<ElemT> &I1_in,
-    const twoInt<ElemT> &I2_in,
-    int method)
+    const twoInt<ElemT> &I2_in)
 {
     bit_length = bit_length_in;
     norbs = norbs_in;
@@ -1038,9 +1047,8 @@ void MultDataThrust<ElemT>::Init( const std::vector<std::vector<size_t>> &adets_
     // copyin helpers
     helper.clear();
     helper_storage.resize(helper_in.size());
-    eij_storage.resize(helper_in.size());
     for (size_t task = 0; task < helper_in.size(); task++) {
-        helper.push_back(TaskHelpersThrust<ElemT>(helper_storage[task], eij_storage[task], helper_in[task], method == 1));
+        helper.push_back(TaskHelpersThrust<ElemT>(helper_storage[task], helper_in[task]));
 
         adets_size = std::max(adets_size, std::max(helper[task].braAlphaEnd - helper[task].braAlphaStart, helper[task].ketAlphaEnd - helper[task].ketAlphaStart));
         bdets_size = std::max(bdets_size, std::max(helper[task].braBetaEnd - helper[task].braBetaStart, helper[task].ketBetaEnd - helper[task].ketBetaStart));
@@ -1055,10 +1063,10 @@ void MultDataThrust<ElemT>::Init( const std::vector<std::vector<size_t>> &adets_
     adets.resize(size_D * adets_in.size());
     bdets.resize(size_D * bdets_in.size());
     for (int i = 0; i < adets_in.size(); i++) {
-        thrust::copy(adets_in[i].begin(), adets_in[i].end(), adets.begin() + i * size_D);
+        thrust::copy_n(adets_in[i].begin(), size_D, adets.begin() + i * size_D);
     }
     for (int i = 0; i < bdets_in.size(); i++) {
-        thrust::copy(bdets_in[i].begin(), bdets_in[i].end(), bdets.begin() + i * size_D);
+        thrust::copy_n(bdets_in[i].begin(), size_D, bdets.begin() + i * size_D);
     }
 
     size_t size_det = 0;
