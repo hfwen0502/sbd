@@ -137,7 +137,8 @@ public:
                 int y_size,
                 int x_slide,
                 int y_slide,
-                MPI_Comm comm)
+                MPI_Comm comm,
+                size_t task)
     {
         // Assuming mpi_rank = x_rank * y_size + y_rank;
 
@@ -182,10 +183,10 @@ public:
 
         MPI_Datatype DataT = GetMpiType<ElemT>::MpiT;
         if (send_size != 0) {
-            MPI_Isend((ElemT*)thrust::raw_pointer_cast(A.data()), send_size, DataT, mpi_dist, 1, comm, &req_send);
+            MPI_Isend((ElemT*)thrust::raw_pointer_cast(A.data()), send_size, DataT, mpi_dist, task, comm, &req_send);
         }
         if (recv_size != 0) {
-            MPI_Irecv((ElemT*)thrust::raw_pointer_cast(B.data()), recv_size, DataT, mpi_source, 1, comm, &req_recv);
+            MPI_Irecv((ElemT*)thrust::raw_pointer_cast(B.data()), recv_size, DataT, mpi_source, task, comm, &req_recv);
         }
     }
 
