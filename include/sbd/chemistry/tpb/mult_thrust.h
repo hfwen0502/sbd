@@ -823,7 +823,7 @@ void mult(const thrust::device_vector<ElemT> &hii,
 #endif
 
         // synchronize 2d slide
-        if (task_sent == task) {
+        if (task_sent != 0 && task_sent == task) {
             auto time_slid_start = std::chrono::high_resolution_clock::now();
             if (mpi2dslider.Sync()) {
                 int t = active_T;
