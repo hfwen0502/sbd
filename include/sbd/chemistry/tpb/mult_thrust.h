@@ -823,39 +823,42 @@ void mult(const thrust::device_vector<ElemT> &hii,
 #endif
 
         // synchronize 2d slide
-        if (task_sent != 0 && task_sent == task) {
-            auto time_slid_start = std::chrono::high_resolution_clock::now();
-            if (mpi2dslider.Sync()) {
-                int t = active_T;
-                active_T = recv_T;
-                recv_T = t;
+        if (task_sent == task) {
+            if (task_sent != 0) {
+                auto time_slid_start = std::chrono::high_resolution_clock::now();
+                if (mpi2dslider.Sync()) {
+                    int t = active_T;
+                    active_T = recv_T;
+                    recv_T = t;
+                }
+                auto time_slid_end = std::chrono::high_resolution_clock::now();
+                auto time_slid_count = std::chrono::duration_cast<std::chrono::microseconds>(time_slid_end - time_slid_start).count();
+                time_slid += 1.0e-6 * time_slid_count;
             }
-            auto time_slid_end = std::chrono::high_resolution_clock::now();
-            auto time_slid_count = std::chrono::duration_cast<std::chrono::microseconds>(time_slid_end - time_slid_start).count();
-            time_slid += 1.0e-6 * time_slid_count;
-        }
-        // exchange T asynchronously for later tasks
-        for (size_t extask = task_sent + 1; extask < data.helper.size(); extask++) {
-            if (data.helper[extask].taskType == 0 && extask != data.helper.size() - 1) {
+
+            // exchange T asynchronously for later tasks
+            for (size_t extask = task_sent; extask < data.helper.size() - 1; extask++) {
+                if (data.helper[extask].taskType == 0) {
 #ifdef SBD_DEBUG_MULT
-                size_t adet_rank = mpi_rank_b / bdet_comm_size;
-                size_t bdet_rank = mpi_rank_b % bdet_comm_size;
-                size_t adet_rank_task = (adet_rank + data.helper[extask].adetShift) % adet_comm_size;
-                size_t bdet_rank_task = (bdet_rank + data.helper[extask].bdetShift) % bdet_comm_size;
-                size_t adet_rank_next = (adet_rank + data.helper[extask + 1].adetShift) % adet_comm_size;
-                size_t bdet_rank_next = (bdet_rank + data.helper[extask + 1].bdetShift) % bdet_comm_size;
-                std::cout << " mult: task " << task << " at mpi process (h,b,t) = ("
-                            << mpi_rank_h << "," << mpi_rank_b << "," << mpi_rank_t
-                            << "): two-dimensional slide communication from ("
-                            << adet_rank_task << "," << bdet_rank_task << ") to ("
-                            << adet_rank_next << "," << bdet_rank_next << ")"
-                            << std::endl;
+                    size_t adet_rank = mpi_rank_b / bdet_comm_size;
+                    size_t bdet_rank = mpi_rank_b % bdet_comm_size;
+                    size_t adet_rank_task = (adet_rank + data.helper[extask].adetShift) % adet_comm_size;
+                    size_t bdet_rank_task = (bdet_rank + data.helper[extask].bdetShift) % bdet_comm_size;
+                    size_t adet_rank_next = (adet_rank + data.helper[extask + 1].adetShift) % adet_comm_size;
+                    size_t bdet_rank_next = (bdet_rank + data.helper[extask + 1].bdetShift) % bdet_comm_size;
+                    std::cout << " mult: task " << task << " at mpi process (h,b,t) = ("
+                                << mpi_rank_h << "," << mpi_rank_b << "," << mpi_rank_t
+                                << "): two-dimensional slide communication from ("
+                                << adet_rank_task << "," << bdet_rank_task << ") to ("
+                                << adet_rank_next << "," << bdet_rank_next << ")"
+                                << std::endl;
 #endif
-                int adetslide = data.helper[extask].adetShift - data.helper[extask + 1].adetShift;
-                int bdetslide = data.helper[extask].bdetShift - data.helper[extask + 1].bdetShift;
-                mpi2dslider.ExchangeAsync(T[active_T], T[recv_T], adet_comm_size, bdet_comm_size, adetslide, bdetslide, b_comm, extask);
-                task_sent = extask;
-                break;
+                    int adetslide = data.helper[extask].adetShift - data.helper[extask + 1].adetShift;
+                    int bdetslide = data.helper[extask].bdetShift - data.helper[extask + 1].bdetShift;
+                    mpi2dslider.ExchangeAsync(T[active_T], T[recv_T], adet_comm_size, bdet_comm_size, adetslide, bdetslide, b_comm, extask);
+                    task_sent = extask + 1;
+                    break;
+                }
             }
         }
 

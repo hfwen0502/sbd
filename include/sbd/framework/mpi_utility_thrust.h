@@ -171,9 +171,9 @@ public:
         size_send[0] = A.size();
 
         MPI_Isend(size_send.data(), 1, SBD_MPI_SIZE_T,
-                    mpi_dist, 0, comm, &req_size[0]);
+                    mpi_dist, task * 2, comm, &req_size[0]);
         MPI_Irecv(size_recv.data(), 1, SBD_MPI_SIZE_T,
-                    mpi_source, 0, comm, &req_size[1]);
+                    mpi_source, task * 2, comm, &req_size[1]);
         MPI_Waitall(2, req_size.data(), sta_size.data());
 
         send_size = size_send[0];
@@ -183,10 +183,10 @@ public:
 
         MPI_Datatype DataT = GetMpiType<ElemT>::MpiT;
         if (send_size != 0) {
-            MPI_Isend((ElemT*)thrust::raw_pointer_cast(A.data()), send_size, DataT, mpi_dist, task, comm, &req_send);
+            MPI_Isend((ElemT*)thrust::raw_pointer_cast(A.data()), send_size, DataT, mpi_dist, task * 2 + 1, comm, &req_send);
         }
         if (recv_size != 0) {
-            MPI_Irecv((ElemT*)thrust::raw_pointer_cast(B.data()), recv_size, DataT, mpi_source, task, comm, &req_recv);
+            MPI_Irecv((ElemT*)thrust::raw_pointer_cast(B.data()), recv_size, DataT, mpi_source, task * 2 + 1, comm, &req_recv);
         }
     }
 
