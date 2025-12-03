@@ -13,7 +13,6 @@
 #include "mpi.h"
 
 
-
 int main(int argc, char * argv[]) {
 
   int provided;
@@ -24,6 +23,17 @@ int main(int argc, char * argv[]) {
   int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
   int mpi_size; MPI_Comm_size(comm,&mpi_size);
 
+  int numDevices, myDevice;
+#ifdef __CUDACC__
+  cudaGetDeviceCount(&numDevices);
+  myDevice = mpi_rank % numDevices;
+  cudaSetDevice(myDevice);
+#else
+  hipGetDeviceCount(&numDevices);
+  myDevice = mpi_rank % numDevices;
+  hipSetDevice(myDevice);
+#endif
+
   auto sbd_data = sbd::tpb::generate_sbd_data(argc,argv);
 
   std::string adetfile("alphadets.txt");
@@ -31,7 +41,7 @@ int main(int argc, char * argv[]) {
   std::string loadname("");
   std::string savename("");
   std::string carryoverfile("");
-  
+
   for(int i=0; i < argc; i++) {
     if( std::string(argv[i]) == "--adetfile" ) {
       adetfile = std::string(argv[i+1]);
@@ -54,7 +64,7 @@ int main(int argc, char * argv[]) {
       i++;
     }
   }
-  
+
   int L;
   int N;
   double energy;
@@ -65,7 +75,7 @@ int main(int argc, char * argv[]) {
   sbd::FCIDump fcidump;
 
   std::cout.precision(16);
-  
+
 #ifdef SBD_FILEIN
 
   /**
@@ -99,7 +109,7 @@ int main(int argc, char * argv[]) {
     fcidump = sbd::LoadFCIDump(fcidumpfile);
   }
   sbd::MpiBcast(fcidump,0,comm);
-  
+
   for(const auto & [key,value] : fcidump.header) {
     if( key == std::string("NORB") ) {
       L = std::atoi(value.c_str());
@@ -136,7 +146,7 @@ int main(int argc, char * argv[]) {
    */
   sbd::tpb::diag(comm,sbd_data,fcidump,adet,bdet,loadname,savename,
 		 energy,density,cobits,one_p_rdm,two_p_rdm);
-  
+
 #endif
 
   if( mpi_rank == 0 ) {
@@ -162,7 +172,7 @@ int main(int argc, char * argv[]) {
       }
       ofs_co.close();
     }
-    
+
     if( one_p_rdm.size() != 0 ) {
 
       double onebody = 0.0;
@@ -171,7 +181,7 @@ int main(int argc, char * argv[]) {
       sbd::oneInt<double> I1;
       sbd::twoInt<double> I2;
       sbd::SetupIntegrals(fcidump,L,N,I0,I1,I2);
-      
+
       auto time_start_dump = std::chrono::high_resolution_clock::now();
       std::ofstream ofs_one("1pRDM.txt");
       ofs_one.precision(16);
@@ -205,7 +215,7 @@ int main(int argc, char * argv[]) {
 	  }
 	}
       }
-      
+
       time_end_dump = std::chrono::high_resolution_clock::now();
       elapsed_dump_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_dump-time_start_dump).count();
       elapsed_dump = 0.000001 * elapsed_dump_count;
@@ -213,7 +223,7 @@ int main(int argc, char * argv[]) {
       std::cout << " One-Body energy = " << onebody << std::endl;
       std::cout << " Two-Body energy = " << twobody << std::endl;
       std::cout << " One-Body + Two-Body energy = " << onebody + twobody << std::endl;
-      
+
     }
   }
 

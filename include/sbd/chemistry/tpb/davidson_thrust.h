@@ -6,7 +6,11 @@
 #define SBD_CHEMISTRY_TPB_DAVIDSON_THRUST_H
 
 #include "sbd/framework/jacobi.h"
+#ifdef __CUDACC__
 #include "sbd/framework/cuda_reduce.h"
+#else
+#include "sbd/framework/hip_reduce.h"
+#endif
 
 namespace sbd
 {
