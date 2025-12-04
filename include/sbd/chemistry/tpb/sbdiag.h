@@ -30,7 +30,11 @@ namespace sbd {
 
       std::string dump_matrix_form_wf;
 
-    };
+#ifdef SBD_THRUST
+	  bool use_precalculated_dets = true;
+	  int max_memory_gb_for_determinants = -1;
+#endif
+	};
 
     SBD generate_sbd_data(int argc, char *argv[]) {
       SBD sbd_data;
@@ -91,6 +95,16 @@ namespace sbd {
 	  sbd_data.dump_matrix_form_wf = std::string(argv[i+1]);
 	  i++;
 	}
+#ifdef SBD_THRUST
+	if( std::string(argv[i]) == "--use_precalculated_dets" ) {
+	  sbd_data.use_precalculated_dets = std::atoi(argv[i+1]) == 1;
+	  i++;
+	}
+	if( std::string(argv[i]) == "--max_memory_gb_for_determinants" ) {
+	  sbd_data.max_memory_gb_for_determinants = std::atoi(argv[i+1]);
+	  i++;
+	}
+#endif
       }
       return sbd_data;
     }
@@ -228,7 +242,8 @@ namespace sbd {
 				helper,I0,I1,I2,hii,
 				h_comm,b_comm,t_comm);
 #ifdef SBD_THRUST
-	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2);
+	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2,
+	                 sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants);
 	sbd::Davidson(hii, W, device_data,
 		      adet_comm_size, bdet_comm_size,
 		      h_comm,b_comm,t_comm,
@@ -304,7 +319,8 @@ namespace sbd {
 	sbd::makeQChamDiagTerms(adet, bdet, bit_length, L,
 				helper, I0, I1, I2, hii,
 				h_comm, b_comm, t_comm);
- 	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2);
+	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2,
+ 		             sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants);
 #else
 	std::vector<std::vector<size_t*>> ih;
 	std::vector<std::vector<size_t*>> jh;
