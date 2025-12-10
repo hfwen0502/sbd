@@ -211,7 +211,7 @@ namespace sbd {
       /**
 	 Diagonalization
       */
-      if( method == 0 ) {
+      if( method == 0 || method == 2 ) {
 
 	/**
 	   Default method 0: Calculation without storing hamiltonian elements
@@ -223,12 +223,21 @@ namespace sbd {
 	sbd::makeQChamDiagTerms(adet,bdet,bit_length,L,
 				helper,I0,I1,I2,hii,
 				h_comm,b_comm,t_comm);
-	sbd::Davidson(hii,W,
-		      adet,bdet,bit_length,static_cast<size_t>(L),
-		      adet_comm_size,bdet_comm_size,helper,
-		      I0,I1,I2,
-		      h_comm,b_comm,t_comm,
-		      max_it,max_nb,eps,max_time);
+	if( method == 0 ) {
+	  sbd::Davidson(hii,W,
+			adet,bdet,bit_length,static_cast<size_t>(L),
+			adet_comm_size,bdet_comm_size,helper,
+			I0,I1,I2,
+			h_comm,b_comm,t_comm,
+			max_it,max_nb,eps,max_time);
+	} else if ( method == 2 ) {
+	  sbd::Lanczos(hii,W,
+		       adet,bdet,bit_length,static_cast<size_t>(L),
+		       adet_comm_size,bdet_comm_size,helper,
+		       I0,I1,I2,
+		       h_comm,b_comm,t_comm,
+		       max_it,max_nb,eps);
+	}
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
 	double elapsed_davidson = 0.000001 * elapsed_davidson_count;
@@ -272,7 +281,7 @@ namespace sbd {
 	}
 	energy = E;
 	
-      } else if ( method == 1 ) {
+      } else if ( method == 1 || method == 3 ) {
 
 	/**
 	   Method 1: Calculation with storing hamiltonian elements
@@ -303,11 +312,19 @@ namespace sbd {
 	
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
 	sbd::BasisInitVector(W,adet,bdet,adet_comm_size,bdet_comm_size,h_comm,b_comm,t_comm,init);
-	sbd::Davidson(hii,ih,jh,hij,len,tasktype,
-		      adetshift,bdetshift,adet_comm_size,bdet_comm_size,
-		      W,
-		      h_comm,b_comm,t_comm,
-		      max_it,max_nb,bit_length,eps);
+	if( method == 1 ) {
+	  sbd::Davidson(hii,ih,jh,hij,len,tasktype,
+			adetshift,bdetshift,adet_comm_size,bdet_comm_size,
+			W,
+			h_comm,b_comm,t_comm,
+			max_it,max_nb,bit_length,eps);
+	} else if ( method == 3 ) {
+	  sbd::Lanczos(hii,ih,jh,hij,len,tasktype,
+		       adetshift,bdetshift,adet_comm_size,bdet_comm_size,
+		       W,
+		       h_comm,b_comm,t_comm,
+		       max_it,max_nb,bit_length,eps);
+	}
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
 	double elapsed_davidson = 0.000001 * elapsed_davidson_count;

@@ -382,7 +382,8 @@ namespace sbd {
       int mpi_rank_begin = 0;
       int mpi_rank_end   = mpi_size-1;
       for(int rank=0; rank < mpi_size; rank++) {
-	if ( ( index_begin[rank] <= i_begin[recv_rank] ) && ( i_begin[recv_rank] < index_end[rank] ) ) {
+	if ( ( index_begin[rank] <= i_begin[recv_rank] )
+	     && ( i_begin[recv_rank] < index_end[rank] ) ) {
 	  mpi_rank_begin = rank;
 	  break;
 	}
@@ -435,11 +436,14 @@ namespace sbd {
     for(int rank=0; rank < mpi_size; rank++) {
       index_end[rank] = index_begin[rank] + config_size[rank];
     }
-    
+
     for(int rank=0; rank < mpi_size; rank++) {
       if( rank == mpi_rank ) {
 	config_begin[rank] = config[0];
+      } else {
+	config_begin[rank].resize(config_length);
       }
+      
       MPI_Bcast(config_begin[rank].data(),config_length,SBD_MPI_SIZE_T,rank,comm);
     }
     for(int rank=0; rank < mpi_size-1; rank++) {
@@ -448,8 +452,11 @@ namespace sbd {
     if( mpi_rank == mpi_size-1 ) {
       config_end[mpi_rank] = config[config.size()-1];
       bitadvance(config_end[mpi_rank],bit_length);
+    } else {
+      config_end[mpi_size-1].resize(config_length);
     }
     MPI_Bcast(config_end[mpi_size-1].data(),config_length,SBD_MPI_SIZE_T,mpi_size-1,comm);
+    
   }
 
   /**

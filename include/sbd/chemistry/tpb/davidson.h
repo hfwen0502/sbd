@@ -6,6 +6,8 @@
 #define SBD_CHEMISTRY_TPB_DAVIDSON_H
 
 #include "sbd/framework/jacobi.h"
+#include "sbd/framework/hp_numeric.h"
+#include "sbd/framework/dm_vector.h"
 
 namespace sbd {
 
