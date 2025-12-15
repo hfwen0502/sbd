@@ -77,20 +77,15 @@ namespace sbd {
     bdetshift.resize(helper.size());
     len.resize(helper.size(),std::vector<size_t>(num_threads));
     
-    size_t chunk_size = (braAlphaEnd-braAlphaStart) / num_threads;
-
     // size evaluation
 #pragma omp parallel
     {
       size_t thread_id = omp_get_thread_num();
-      size_t ia_start = thread_id * chunk_size     + braAlphaStart;
-      size_t ia_end   = (thread_id+1) * chunk_size + braAlphaStart;
-      if( thread_id == num_threads - 1 ) {
-	ia_end = braAlphaEnd;
-      }
+      size_t ia_start = thread_id + braAlphaStart;
+      size_t ia_end   = braAlphaEnd;
       for(size_t task = 0; task < helper.size(); task++) {
 	len[task][thread_id] = 0;
-	for(size_t ia = ia_start; ia < ia_end; ia++) {
+	for(size_t ia = ia_start; ia < ia_end; ia+=num_threads) {
 	  for(size_t ib = helper[task].braBetaStart; ib < helper[task].braBetaEnd; ib++) {
 	    size_t braIdx = (ia-helper[task].braAlphaStart)*braBetaSize
 	                    +ib-helper[task].braBetaStart;
@@ -173,11 +168,8 @@ namespace sbd {
 #pragma omp parallel
     {
       size_t thread_id = omp_get_thread_num();
-      size_t ia_start = thread_id * chunk_size     + braAlphaStart;
-      size_t ia_end   = (thread_id+1) * chunk_size + braAlphaStart;
-      if( thread_id == num_threads - 1 ) {
-	ia_end = braAlphaEnd;
-      }
+      size_t ia_start = thread_id + braAlphaStart;
+      size_t ia_end   = braAlphaEnd;
 
       auto DetI = DetFromAlphaBeta(adets[0],bdets[0],bit_length,norbs);
       auto DetJ = DetI;
@@ -192,7 +184,7 @@ namespace sbd {
 	size_t ketBetaSize  = helper[task].ketBetaEnd-helper[task].ketBetaStart;
 	size_t address = 0;
 	
-	for(size_t ia = ia_start; ia < ia_end; ia++) {
+	for(size_t ia = ia_start; ia < ia_end; ia+=num_threads) {
 	  for(size_t ib = helper[task].braBetaStart; ib < helper[task].braBetaEnd; ib++) {
 
 	    size_t braIdx = (ia-helper[task].braAlphaStart)*braBetaSize
