@@ -54,11 +54,9 @@ namespace sbd {
     auto time_mult_start = std::chrono::high_resolution_clock::now();
 
     size_t num_threads = 1;
-    size_t thread_id = 1;
 #pragma omp parallel
     {
       num_threads = omp_get_num_threads();
-      thread_id = omp_get_thread_num();
       
       if( mpi_rank_t == 0 ) {
 #pragma omp for
@@ -68,18 +66,14 @@ namespace sbd {
       }
     }
 
-    // std::vector<size_t> k_start(num_threads,0);
-    // std::vector<size_t> k_end(num_threads,0);
     for(size_t task=0; task < tasktype.size(); task++) {
 
 #pragma omp parallel
       {
-	// k_end[thread_id] = k_start[thread_id] + len[task][thread_id];
-	// for(size_t k=k_start[thread_id]; k < k_end[thread_id]; k++) {
+	size_t thread_id = omp_get_thread_num();
 	for(size_t k=0; k < len[task][thread_id]; k++) {
 	  Wb[ih[task][thread_id][k]] += hij[task][thread_id][k] * T[jh[task][thread_id][k]];
 	}
-	// k_start[thread_id] = k_end[thread_id];
       }
 
       

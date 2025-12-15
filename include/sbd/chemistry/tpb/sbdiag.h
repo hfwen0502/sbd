@@ -308,7 +308,9 @@ namespace sbd {
 	auto time_end_mkham = std::chrono::high_resolution_clock::now();
 	auto elapsed_mkham_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mkham-time_start_mkham).count();
 	double elapsed_mkham = 0.000001 * elapsed_mkham_count;
-	std::cout << " Elapsed time for make Hamiltonian " << elapsed_mkham << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for make Hamiltonian " << elapsed_mkham << " (sec) " << std::endl;
+	}
 	
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
 	sbd::BasisInitVector(W,adet,bdet,adet_comm_size,bdet_comm_size,h_comm,b_comm,t_comm,init);
@@ -328,12 +330,16 @@ namespace sbd {
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
 	double elapsed_davidson = 0.000001 * elapsed_davidson_count;
-	std::cout << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
+	}
 	
 	auto time_end_diag = std::chrono::high_resolution_clock::now();
 	auto elapsed_diag_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_diag-time_start_diag).count();
 	double elapsed_diag = 0.000001 * elapsed_diag_count;
-	std::cout << " Elapsed time for diagonalization " << elapsed_diag << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for diagonalization " << elapsed_diag << " (sec) " << std::endl;
+	}
 	
 	/**
 	   Evaluation of Hamiltonian expectation value
@@ -350,7 +356,9 @@ namespace sbd {
 	auto time_end_mult = std::chrono::high_resolution_clock::now();
 	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
 	double elapsed_mult = 0.000001 * elapsed_mult_count;
-	std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
+	}
 	
 	double E = 0.0;
 	sbd::InnerProduct(W,C,E,b_comm);
