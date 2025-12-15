@@ -116,6 +116,7 @@ int main(int argc, char * argv[]) {
   std::vector<std::vector<size_t>> bdet;
   if( mpi_rank == 0 ) {
     sbd::LoadAlphaDets(adetfile,adet,sbd_data.bit_length,L);
+    sbd::sort_bitarray(adet);
   }
 
   sbd::MpiBcast(adet,0,comm);

@@ -5,6 +5,7 @@
 #include "sbd/chemistry/tpb/qcham.h"
 #include "sbd/chemistry/tpb/mult.h"
 #include "sbd/chemistry/tpb/davidson.h"
+#include "sbd/chemistry/tpb/lanczos.h"
 #include "sbd/chemistry/tpb/occupation.h"
 #include "sbd/chemistry/tpb/correlation.h"
 #include "sbd/chemistry/tpb/rdmat.h"

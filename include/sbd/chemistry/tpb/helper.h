@@ -5,6 +5,7 @@
 #ifndef SBD_CHEMISTRY_TPB_HELPER_H
 #define SBD_CHEMISTRY_TPB_HELPER_H
 
+#include <map>
 #include <algorithm>
 
 namespace sbd {
