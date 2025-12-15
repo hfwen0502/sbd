@@ -8,9 +8,10 @@ Sample usage examples are provided in the `/samples` directory.
 
 - Tomonori Shirakawa, RIKEN Center for Computational Science
 
-## Version
+## Versions
 
-- v1.0.0 (This version is tagged as initial public release).
+- **v1.0.0**: Initial public release corresponding to the arXiv submission.
+- **v1.1.0**: Feature additions, refactoring, and bug fixes
 
 ## Requirement
 
@@ -36,11 +37,18 @@ You can generate the documentation by running:
 doxygen ./doc/Doxyfile
 ```
 
-
 ## Note
-This repository contains code that is part of ongoing research and is related to a paper that has not yet been published.
-The code is shared publicly for transparency and to support academic collaboration.  
-Please do not cite this work until the related paper is published.
+This repository contains research code related to the following paper:
+
+- **Title:** Closed-loop calculations of electronic structure on a quantum processor and a classical supercomputer at full scale
+- **arXiv:** https://arxiv.org/abs/2511.00224
+
+Version **v1.0.0** corresponds to the code used for the above arXiv submission and represents the initial public release associated with that paper.
+
+Subsequent versions (v1.1.0 and later) include additional features, refactoring, and bug fixes, and may go beyond the exact implementation described in the paper.
+
+The code is shared publicly to support transparency and academic collaboration.  
+If you use this repository in your research, please cite the corresponding arXiv paper.
 
 ## Licence
 
