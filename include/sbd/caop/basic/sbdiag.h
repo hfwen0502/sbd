@@ -5,6 +5,8 @@
 #ifndef SBD_CAOP_BASIC_SBDIAG_H
 #define SBD_CAOP_BASIC_SBDIAG_H
 
+#include "sbd/framework/timestamp.h"
+
 namespace sbd {
   namespace caop {
 
@@ -79,7 +81,16 @@ namespace sbd {
       std::cout.precision(16);
       std::cout << "# t_comm_size: " << sbd_data.t_comm_size << std::endl;
       std::cout << "# b_comm_size: " << sbd_data.b_comm_size << std::endl;
-      std::cout << "# method: " << sbd_data.method << std::endl;
+      std::cout << "# method: (" << sbd_data.method << ")";
+      if( sbd_data.method == 0 ) {
+	std::cout << " Davidson method without storing Hamiltonian data " << std::endl;
+      } else if ( sbd_data.method == 1 ) {
+	std::cout << " Davidson method and store Hamiltonian data to accelerate Hamiltonian operation" << std::endl;
+      } else if ( sbd_data.method == 2 ) {
+	std::cout << " Lanczos method without storing Hamiltonian data " << std::endl;
+      } else if ( sbd_data.method == 3 ) {
+	std::cout << " Lanczos method and store Hamiltonian data to accelerate Hamiltonian operation" << std::endl;
+      }
       std::cout << "# max_it: " << sbd_data.max_it << std::endl;
       std::cout << "# block size: " << sbd_data.max_nb << std::endl;
       std::cout << "# tolerance: " << sbd_data.eps << std::endl;
@@ -146,35 +157,37 @@ namespace sbd {
       auto elapsed_init_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_init-time_start_init).count();
       double elapsed_init = 0.000001 * elapsed_init_count;
       if( mpi_rank == 0 ) {
-	std::cout << " Elapsed time for init " << elapsed_init << " (sec) " << std::endl;
-#ifdef SBD_SBDIAG_DEBUG
-	for(size_t i=0; i < W.size(); i++) {
-	  std::cout << " wave function amplitude for basis " << i
-		    << " = " << W[i] << std::endl;
-	}
-#endif
+	std::cout << " " << make_timestamp()
+		  << " Elapsed time for init " << elapsed_init << " (sec) " << std::endl;
       }
       
       /**
 	 Diagonalization
       */
-      if( method == 0 ) {
+      if( method == 0 || method == 2 ) {
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
 	std::vector<ElemT> hii;
 	makeCAOpHamDiagTerms(basis,bit_length,slide,H,hii);
-#ifdef SBD_SBDIAG_DEBUG
-	if( mpi_rank_h == 0 && mpi_rank_b == 0 && mpi_rank_t == 0 ) {
-	  std::cout << " End make diagonal term " << std::endl;
+	if( method == 0 ) {
+	  Davidson(hii,W,basis,bit_length,slide,H,sign,
+		   h_comm,b_comm,t_comm,
+		   max_it,max_nb,eps);
+	} else if ( method == 2 ) {
+	  Lanczos(hii,W,basis,bit_length,slide,H,sign,
+		  h_comm,b_comm,t_comm,
+		  max_it,max_nb,eps);
 	}
-#endif
-	Davidson(hii,W,basis,bit_length,slide,H,sign,
-		 h_comm,b_comm,t_comm,
-		 max_it,max_nb,eps);
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
 	double elapsed_davidson = 0.000001 * elapsed_davidson_count;
 	if( mpi_rank == 0 ) {
-	  std::cout << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
+	  if( method == 0 ) {
+	    std::cout << " " << make_timestamp()
+		      << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
+	  } else if ( method == 2 ) {
+	    std::cout << " " << make_timestamp()
+		      << " Elapsed time for lanczos " << elapsed_davidson << " (sec) " << std::endl;
+	  }
 	}
 
 	/**
@@ -188,12 +201,14 @@ namespace sbd {
 	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
         double elapsed_mult = 0.000001 * elapsed_mult_count;
 	if ( mpi_rank == 0 ) {
-          std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
+          std::cout << " " << make_timestamp()
+		    << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
         }
 	ElemT E = 0.0;
 	InnerProduct(W,C,E,b_comm);
 	if( mpi_rank == 0 ) {
-	  std::cout << " Energy = " << GetReal(E) << std::endl;
+	  std::cout << " " << make_timestamp()
+		    << " Energy = " << GetReal(E) << std::endl;
 	}
 	energy = GetReal(E);
 	
@@ -211,17 +226,32 @@ namespace sbd {
 	auto time_end_mkham = std::chrono::high_resolution_clock::now();
 	auto elapsed_mkham_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mkham-time_start_mkham).count();
 	double elapsed_mkham = 0.000001 * elapsed_mkham_count;
-	std::cout << " Elapsed time for make Hamiltonian " << elapsed_mkham << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " " << make_timestamp()
+		    << " Elapsed time for make Hamiltonian " << elapsed_mkham << " (sec) " << std::endl;
+	}
 	
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
-	Davidson(hii,ib,ik,hij,W,slide,
-		 h_comm,b_comm,t_comm,
-		 max_it,max_nb,eps);
+	if( method == 1 ) {
+	  Davidson(hii,ib,ik,hij,W,slide,
+		   h_comm,b_comm,t_comm,
+		   max_it,max_nb,eps);
+	} else if ( method == 3 ) {
+	  Lanczos(hii,ib,ik,hij,W,slide,
+		  h_comm,b_comm,t_comm,
+		  max_it,max_nb,eps);
+	}
         auto time_end_davidson = std::chrono::high_resolution_clock::now();
         auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
         double elapsed_davidson = 0.000001 * elapsed_davidson_count;
 	if( mpi_rank == 0 ) {
-	  std::cout << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
+	  if( method == 1 ) {
+	    std::cout << " " << make_timestamp()
+		      << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
+	  } else if ( method == 3 ) {
+	    std::cout << " " << make_timestamp()
+		      << " Elapsed time for lanczos " << elapsed_davidson << " (sec) " << std::endl;
+	  }
 	}
 
 	/**
@@ -235,12 +265,14 @@ namespace sbd {
 	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
 	double elapsed_mult = 0.000001 * elapsed_mult_count;
 	if( mpi_rank == 0 ) {
-	  std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
+	  std::cout << " " << make_timestamp()
+		    << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
 	}
 	ElemT E = 0.0;
 	InnerProduct(W,C,E,b_comm);
 	if( mpi_rank == 0 ) {
-	  std::cout << " Energy = " << E << std::endl;
+	  std::cout << " " << make_timestamp()
+		    << " Energy = " << E << std::endl;
 	}
 	energy = GetReal(E);
 	
@@ -304,15 +336,6 @@ namespace sbd {
       load_GeneralOp_from_file(hamiltonianfile,hamiltonian,sign,
 			       h_comm,b_comm,t_comm);
 
-#ifdef SBD_SBDIAG_DEBUG
-      if( mpi_rank_b == 0 ) {
-	if( mpi_rank_t == 0 ) {
-	  std::cout << " hamiltonian at h_rank = " << mpi_rank_h << std::endl;
-	  std::cout << hamiltonian << std::endl;
-	}
-      }
-#endif
-
       /**
 	 Load basis data
        */
@@ -322,8 +345,6 @@ namespace sbd {
 	  load_basis_from_files(basisfiles,basis,
 				bit_length,system_size,
 				b_comm);
-	  std::cout << " load basis: size = " << basis.size()
-		    << " at mpi rank = " << mpi_rank_b << std::endl;
 	  if( sbd_data.do_sort_basis ) {
 	    redistribution(basis,bit_length,system_size,b_comm);
 	    reordering(basis,bit_length,system_size,b_comm);
@@ -335,20 +356,6 @@ namespace sbd {
       }
       MpiBcast(basis,0,h_comm);
 
-#ifdef SBD_SBDIAG_DEBUG
-      if( mpi_rank_h == 0 && mpi_rank_t == 0 ) {
-	std::cout << " basis at rank " << mpi_rank_b << ":";
-	for(size_t i=0; i < std::min(basis.size(),static_cast<size_t>(4)); i++) {
-	  std::cout << " " << makestring(basis[i],bit_length,system_size);
-	}
-	if( basis.size() > static_cast<size_t>(4) ) {
-	  std::cout << " ... " << makestring(basis[basis.size()-1],bit_length,system_size);
-	}
-	std::cout << std::endl;
-      }
-#endif
-      
-      
       diag(comm,sbd_data,hamiltonian,basis,loadname,savename,energy);
       
     }

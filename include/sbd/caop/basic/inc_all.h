@@ -9,6 +9,7 @@
 #include "sbd/caop/basic/mkham.h"
 #include "sbd/caop/basic/mult.h"
 #include "sbd/caop/basic/davidson.h"
+#include "sbd/caop/basic/lanczos.h"
 #include "sbd/caop/basic/restart.h"
 #include "sbd/caop/basic/sbdiag.h"
 

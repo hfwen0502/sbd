@@ -72,15 +72,6 @@ namespace sbd {
     // std::vector<size_t> k_end(num_threads,0);
     for(size_t task=0; task < tasktype.size(); task++) {
 
-#ifdef SBD_DEBUG_MULT
-      std::cout << "(" << mpi_rank_h << "," << mpi_rank_b
-		<< "," << mpi_rank_t << "): size of task " << task
-		<< " =";
-      for(int tid=0; tid < num_threads; tid++) {
-	std::cout << " (" << 0 << "," << len[task][tid] << ")";
-      }
-#endif
-      
 #pragma omp parallel
       {
 	// k_end[thread_id] = k_start[thread_id] + len[task][thread_id];
@@ -107,12 +98,11 @@ namespace sbd {
     MpiAllreduce(Wb,MPI_SUM,t_comm);
     MpiAllreduce(Wb,MPI_SUM,h_comm);
     auto time_comm_end = std::chrono::high_resolution_clock::now();
-
+    
+#ifdef SBD_DEBUG_MULT
     auto time_copy_count = std::chrono::duration_cast<std::chrono::microseconds>(time_copy_end-time_copy_start).count();
     auto time_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_mult_end-time_mult_start).count();
     auto time_comm_count = std::chrono::duration_cast<std::chrono::microseconds>(time_comm_end-time_comm_start).count();
-
-#ifdef SBD_DEBUG_MULT
     double time_copy = 1.0e-6 * time_copy_count;
     double time_mult = 1.0e-6 * time_mult_count;
     double time_comm = 1.0e-6 * time_comm_count;

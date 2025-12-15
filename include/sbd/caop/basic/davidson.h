@@ -8,6 +8,7 @@
 #include "sbd/framework/hp_numeric.h"
 #include "sbd/framework/ssutils.h"
 #include "sbd/framework/dm_vector.h"
+#include "sbd/framework/timestamp.h"
 
 namespace sbd {
 
@@ -148,7 +149,8 @@ namespace sbd {
 	if( mpi_rank_h == 0 ) {
 	  if( mpi_rank_t == 0 ) {
 	    if( mpi_rank_b == 0 ) {
-	      std::cout << " Davidson iteration " << it << "." << ib
+	      std::cout << " " << make_timestamp()
+			<< " Davidson iteration " << it << "." << ib
 			<< " (tol=" << norm_R << "):";
 	      for(int p=0; p < std::min(ib+1,4); p++) {
 		std::cout << " " << E[p];
@@ -316,7 +318,8 @@ namespace sbd {
 	if( mpi_rank_h == 0 ) {
 	  if( mpi_rank_t == 0 ) {
 	    if( mpi_rank_b == 0 ) {
-	      std::cout << " Davidson iteration " << it << "." << ib
+	      std::cout << " " << make_timestamp()
+			<< " Davidson iteration " << it << "." << ib
 			<< " (tol=" << norm_R << "):";
 	      for(int p=0; p < std::min(ib+1,4); p++) {
 		std::cout << " " << E[p];

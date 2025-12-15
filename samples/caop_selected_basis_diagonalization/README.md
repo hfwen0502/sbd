@@ -32,9 +32,11 @@ Below is an explanation of each command-line option.
 - `--h_comm_size` (int):  
   Size of the communicator used for row-wise parallelization during Hamiltonian application.
 - `--method` (int):  
-  Selects how the Hamiltonian is handled. 
-    - `0`: Do not store Hamiltonian data: perform Hamiltonian application on-the-fly.
-    - `1`: Store Hamiltonian data to accelerate Hamiltonian application.
+  Selects diagonalization method and how the Hamiltonian is handled
+    - `0`: (Davidson) Do not store Hamiltonian data: perform Hamiltonian application on-the-fly.
+    - `1`: (Davidson) Store Hamiltonian data to accelerate Hamiltonian application.
+    - `2`: (Lanczos) Do not store Hamiltonian data: perform Hamiltonian application on-the-fly.
+    - `3`: (Lanczos) Store Hamiltonian data to accelerate Hamiltonian application.
 - `--iteration` (int):  
   Number of restart cycles in the Davidson algorithm.
 - `--block` (int):  
@@ -182,7 +184,7 @@ This section describes all available options.
 | `--method m` | `int` | `0`: Random generation with fixed Hamming weight. |
 | `--unique` | -- | If specified, only unique bitstrings are output. |
 | `--seed R` | `int` | Set random seed to make the output reproducible. |
-| `--output files1 [files2 ...]` | `str` | Specify one or more output files. |
+| `--outfile files1 [files2 ...]` | `str` | Specify one or more output files. |
 
 ### Usage Examples
 - **Generate 100 bitstrings to stdout**. 

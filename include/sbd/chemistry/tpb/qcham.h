@@ -35,10 +35,8 @@ namespace sbd {
     MPI_Comm_rank(h_comm,&mpi_rank_h);
     MPI_Comm_size(h_comm,&mpi_size_h);
 
-    int mpi_size_x; MPI_Comm_size(b_comm,&mpi_size_x);
-    int mpi_rank_x; MPI_Comm_rank(b_comm,&mpi_rank_x);
-    int mpi_size_y; MPI_Comm_size(t_comm,&mpi_size_y);
-    int mpi_rank_y; MPI_Comm_rank(t_comm,&mpi_rank_y);
+    int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
+    int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
 
     size_t braAlphaSize = 0;
     size_t braBetaSize = 0;
@@ -74,26 +72,6 @@ namespace sbd {
       }
     }
     
-#ifdef SBD_DEBUG_QCHAM
-    for(int task=0; task < helper.size(); task++) {
-      for(int rank_y=0; rank_y < mpi_size_y; rank_y++) {
-	for(int rank_x=0; rank_x < mpi_size_x; rank_x++) {
-	  if( mpi_rank_x == rank_x && mpi_rank_y == rank_y ) {
-	    std::cout << " mpi rank (" << rank_x << "," << rank_y << ")";
-	    std::cout << " braAlphaRange, braBetaRange, ketAlphaRange, ketBetaRange = "
-		      << "(" << helper[task].braAlphaStart << "," << helper[task].braAlphaEnd
-		      << "), (" << helper[task].braBetaStart << "," << helper[task].braBetaEnd
-		      << "), (" << helper[task].ketAlphaStart << "," << helper[task].ketAlphaEnd
-		      << "), (" << helper[task].ketBetaStart << "," << helper[task].ketBetaEnd
-		      << "), task type = " << helper[task].taskType << std::endl;
-	  }
-	  MPI_Barrier(b_comm);
-	}
-	MPI_Barrier(t_comm);
-      }
-    }
-#endif
-
     tasktype.resize(helper.size());
     adetshift.resize(helper.size());
     bdetshift.resize(helper.size());
@@ -181,9 +159,15 @@ namespace sbd {
     size_t total_memory_size_count = counter_int * sizeof(size_t)
       + counter_ElemT * sizeof(ElemT);
     RealT total_memory_size = 1.0 * total_memory_size_count / 1073741824.0;
-    std::cout << " Memory size for Hamiltonian = "
-	      << total_memory_size 
-	      << " GiB " << std::endl;
+    if( mpi_rank_h == 0 ) {
+      if( mpi_rank_t == 0 ) {
+	if( mpi_rank_b == 0 ) {
+	  std::cout << " Memory size for Hamiltonian = "
+		    << total_memory_size 
+		    << " GiB " << std::endl;
+	}
+      }
+    }
     
     // size_t chunk_size = (helper.braBetaEnd-helper.braBetaStart) / num_threads;
 #pragma omp parallel
@@ -298,15 +282,6 @@ namespace sbd {
 	    }
 	  } // end for(size_t ib=ib_start; ib < ib_end; ib++)
 	} // end for(size_t ia=helper[task].braAlphaStart; ia < helper[task].braAlphaEnd; ia++)
-
-#ifdef SBD_DEBUG_QCHAM
-	std::cout << "(" << mpi_rank_h << "," << mpi_rank_x << "," << mpi_rank_y
-		  << "): size check: address = " << address << ", len[task][thread] = "
-		  << len[task][thread_id] << " for task " << task
-		  << "(" << tasktype[task] << ") and thread "
-		  << thread_id << std::endl;
-#endif
-	
       } // end for(size_t task=0; task < helper.size(); task++)
     } // end pragma paralell
   } // end function
