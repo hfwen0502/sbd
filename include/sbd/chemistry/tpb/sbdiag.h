@@ -554,6 +554,7 @@ namespace sbd {
 
       if( mpi_rank == 0 ) {
 	sbd::LoadAlphaDets(adetfile,adet,sbd_data.bit_length,L);
+	sbd::sort_bitarray(adet);
       }
 
       if( do_shuffle == 0 ) {
