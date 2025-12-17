@@ -191,7 +191,7 @@ namespace sbd {
 	      }
 	    }
 	    size_t target_rank = rank_count % static_cast<size_t>(mpi_size_h);
-	    send_op[target_rank] += term;
+	    send_op[target_rank] += coef * term;
 	    term_count++;
 	    rank_count++;
 	    
