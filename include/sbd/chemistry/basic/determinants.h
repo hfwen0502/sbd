@@ -325,6 +325,41 @@ namespace sbd {
     return beta;
   }
 
+  void getAdet(const std::vector<size_t> & det,
+	       size_t bit_length,
+	       size_t norb,
+	       std::vector<size_t> & adet) {
+    size_t adet_size = (norb + bit_length - 1 ) / bit_length;
+    if( adet_size != adet.size() ) {
+      adet.resize(adet_size);
+    }
+    
+    for (size_t i = 0; i < norb; ++i) {
+      bool occ = getocc(det, bit_length, 2 * i);  //
+      if (occ) {
+	setocc(adet, bit_length, i, true);  //
+      }
+    }
+  }
+
+  void getBdet(const std::vector<size_t>& det,
+	       size_t bit_length,
+	       size_t norb,
+	       std::vector<size_t> & bdet) {
+    size_t bdet_size = (norb + bit_length - 1 ) / bit_length;
+    if( bdet_size != bdet.size() ) {
+      bdet.resize(bdet_size);
+    }
+    
+    for (size_t i = 0; i < norb; ++i) {
+      bool occ = getocc(det, bit_length, 2 * i + 1);
+      if (occ) {
+	setocc(bdet, bit_length, i, true); 
+      }
+    }
+  }
+  
+
   int difference(const std::vector<size_t> & a,
 		 const std::vector<size_t> & b,
 		 size_t bit_length,
