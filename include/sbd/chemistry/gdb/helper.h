@@ -22,7 +22,7 @@ namespace sbd {
   /**
      Labels connected 
    */
-  struct DetExcitationHelper {
+  struct ExcitationLookup {
     std::vector<size_t> SelfFromAdetLen;
     std::vector<size_t> SelfFromBdetLen;
     std::vector<size_t> SinglesFromAdetLen;
@@ -130,12 +130,88 @@ namespace sbd {
     }
   }
 
-  void makeHdetSingles(const std::vector<std::vector<size_t>> & hdet_bra,
-		       const std::vector<std::vector<size_t>> & hdet_ket,
+  void makeDetIndexMap(const std::vector<std::vector<size_t>> & det,
+		       const std::vector<std::vector<size_t>> & adet,
+		       const std::vector<std::vector<size_t>> & bdet,
+		       const std::vector<size_t> & adet_count,
+		       const std::vector<size_t> & bdet_count,
 		       size_t bit_length,
 		       size_t norb,
-		       std::vector<std::vector<size_t>> & samedet,
-		       std::vector<std::vector<size_t>> & singles) {
+		       DetIndexMap & idxmap,
+		       std::vector<size_t> & memory) {
+    std::vector<std::vector<size_t>> adet_to_bdet;
+    std::vector<std::vector<size_t>> adet_to_det;
+    std::vector<std::vector<size_t>> bdet_to_adet;
+    std::vector<std::vector<size_t>> bdet_to_det;
+    makeDetIndexMap(det,adet,bdet,adet_count,bdet_count,bit_length,norb,
+		    adet_to_bdet,adet_to_det,
+		    bdet_to_adet,bdet_to_det);
+    idxmap.AdetToBdetSM.resize(adet_to_bdet.size());
+    idxmap.AdetToDetSM.resize(adet_to_det.size());
+    idxmap.BdetToAdetSM.resize(bdet_to_adet.size());
+    idxmap.BdetToDetSM.resize(bdet_to_det.size());
+    idxmap.AdetToDetLen.resize(adet_to_det.size());
+    idxmap.BdetToDetLen.resize(bdet_to_det.size());
+    size_t aidx_size = 0;
+    for(size_t k=0; k < adet_to_det.size(); k++) {
+      idxmap.AdetToDetLen[k] = adet_to_det[k].size();
+      aidx_size += adet_to_det[k].size();
+    }
+    size_t bidx_size = 0;
+    for(size_t k=0; k < bdet_to_det.size(); k++) {
+      idxmap.BdetToDetLen[k] = bdet_to_det[k].size();
+      bidx_size += bdet_to_det[k].size();
+    }
+    size_t total_size = 2*aidx_size + 2*bidx_size;
+    memory.resize(total_size);
+    size_t * begin = memory.begin();
+    size_t counter = 0;
+    for(size_t k=0; k < adet_to_det.size(); k++) {
+      idxmap.AdetToDetSM[k] = begin + counter;
+      counter += adet_to_det[k].size();
+    }
+    for(size_t k=0; k < adet_to_det.size(); k++) {
+      idxmap.AdetToBdetSM[k] = begin + counter;
+      counter += adet_to_det[k].size();
+    }
+    for(size_t k=0; k < bdet_to_det.size(); k++) {
+      idxmap.BdetToDetSM[k] = begin + counter;
+      counter += bdet_to_det[k].size();
+    }
+    for(size_t k=0; k < bdet_to_det.size(); k++) {
+      idxmap.BdetToAdetSM[k] = begin + counter;
+      counter += bdet_to_det[k].size();
+    }
+    
+    for(size_t k=0; k < adet_to_det.size(); k++) {
+      std::memcpy(idxmap.AdetToDetSM[k],
+		  adet_to_det[k].data(),
+		  idxmap.AdetToDetLen[k]*sizeof(size_t));
+    }
+    for(size_t k=0; k < adet_to_det.size(); k++) {
+      std::memcpy(idxmap.AdetToBdetSM[k],
+		  adet_to_bdet[k].data(),
+		  idxmap.AdetToBdetLen[k]*sizeof(size_t));
+    }
+    for(size_t k=0; k < bdet_to_det.size(); k++) {
+      std::memcpy(idxmap.BdetToDetSM[k],
+		  bdet_to_det[k].data(),
+		  idxmap.BdetToDetLen[k]*sizeof(size_t));
+    }
+    for(size_t k=0; k < bdet_to_det.size(); k++) {
+      std::memcpy(idxmap.BdetToAdetSM[k],
+		  bdet_to_adet[k].data(),
+		  idxmap.BdetToDetLen[k]*sizeof(size_t));
+    }
+  }
+		       
+
+  void makeExcitationLookup(const std::vector<std::vector<size_t>> & hdet_bra,
+			    const std::vector<std::vector<size_t>> & hdet_ket,
+			    size_t bit_length,
+			    size_t norb,
+			    std::vector<std::vector<size_t>> & samedet,
+			    std::vector<std::vector<size_t>> & singles) {
     samedet.resize(hdet_bra.size());
     singles.resize(hdet_bra.size());
 #pragma omp parallel for
@@ -160,6 +236,114 @@ namespace sbd {
     }
   }
 
+  void makeExcitationLookup(const std::vector<std::vector<size_t>> & adet_bra,
+			    const std::vector<std::vector<size_t>> & bdet_bra,
+			    const std::vector<std::vector<size_t>> & adet_ket,
+			    const std::vector<std::vector<size_t>> & bdet_ket,
+			    size_t bit_length,
+			    size_t norb,
+			    ExcitationLookup & exidx,
+			    std::vector<size_t> & exidx_storage) {
+    std::vector<std::vector<size_t>> selfdet_a;
+    std::vector<std::vector<size_t>> singles_a;
+    std::vector<std::vector<size_t>> selfdet_b;
+    std::vector<std::vector<size_t>> singles_b;
+    makeExcitationLookup(adet_bra,adet_ket,bit_length,norb,selfdet_a,singles_a);
+    makeExcitationLookup(bdet_bra,bdet_ket,bit_length,norb,selfdet_b,singles_b);
+    exidx.SelfFromAdetLen.resize(selfdet_a.size());
+    exidx.SinglesFromAdetLen.resize(singles_a.size());
+    exidx.SelfFromBdetLen.resize(selfdet_b.size());
+    exidx.SinglesFromBdetLen.resize(singles_b.size());
+    size_t total_size = 0;
+    for(size_t k=0; k < selfdet_a.size(); k++) {
+      exidx.SelfFromAdetLen[k] = selfdet_a[k].size();
+      total_size += selfdet_a[k].size();
+    }
+    for(size_t k=0; k < singles_a.size(); k++) {
+      exidx.SinglesFromAdetLen[k] = singles_a[k].size();
+      total_size += singles_a[k].size();
+    }
+    for(size_t k=0; k < selfdet_b.size(); k++) {
+      exidx.SelfFromBdetLen[k] = selfdet_b[k].size();
+      total_size += selfdet_b[k].size();
+    }
+    for(size_t k=0; k < singles_b.size(); k++) {
+      exidx.SinglesFromBdetLen[k] = singles_b[k].size();
+      total_size += singles_b[k].size();
+    }
+    exidx_storage.resize(total_size);
+    size_t * begin = exidx_storage.begin();
+    size_t counter = 0;
+    for(size_t k=0; k < selfdet_a.size(); k++) {
+      exidx.SelfFromAdetSM[k] = begin + counter;
+      counter += exidx.SelfFromAdetLen[k];
+    }
+    for(size_t k=0; k < singles_a.size(); k++) {
+      exidx.SinglesFromAdetSM[k] = begin + counter;
+      counter += exidx.SinglesFromAdetLen[k];
+    }
+    for(size_t k=0; k < selfdet_b.size(); k++) {
+      exidx.SelfFromBdetSM[k] = begin + counter;
+      counter += exidx.SelfFromBdetLen[k];
+    }
+    for(size_t k=0; k < singles_b.size(); k++) {
+      exidx.SinglesFromBdetSM[k] = begin + counter;
+      counter += exidx.SinglesFromBdetLen[k];
+    }
+    
+    for(size_t k=0; k < selfdet_a.size(); k++) {
+      std::memcpy(exidx.SelfFromAdetSM[k],
+		  selfdet_a[k].data(),
+		  exidx.SelfFromAdetLen[k]*sizeof(size_t));
+    }
+    for(size_t k=0; k < singles_a.size(); k++) {
+      std::memcpy(exidx.SinglesFromAdetSM[k],
+		  singles_a[k].data(),
+		  exidx.SinglesFromAdetLen[k]*sizeof(size_t));
+    }
+    for(size_t k=0; k < selfdet_b.size(); k++) {
+      std::memcpy(exidx.SelfFromBdetSM[k],
+		  selfdet_b[k].data(),
+		  exidx.SelfFromBdetLen[k]*sizeof(size_t));
+    }
+    for(size_t k=0; k < singles_b.size(); k++) {
+      std::memcpy(exidx.SinglesFromBdetSM[k],
+		  singles_b[k].data(),
+		  exidx.SinglesFromBdetLen[k]*sizeof(size_t));
+    }
+  }
+
+  void DetIdxMapCopy(const DetIdxMap & idxmap,
+		     const std::vector<size_t> & idxmap_storage,
+		     DetIdxMap & new_idxmap,
+		     std::vector<size_t> & new_idxmap_storage) {
+    new_idxmap_storage = idxmap_storage; // hard copy
+    new_idxmap.AdetToDetLen = idxmap.AdetToDetLen;
+    new_idxmap.BdetToDetLen = idxmap.BdetToDetLen;
+    new_idxmap.AdetToDetSM.resize(new_idxmap.AdetToDetLen.size());
+    new_idxmap.AdetToBdetSM.resize(new_idxmap.AdetToDetLen.size());
+    new_idxmap.BdetToDetSM.resize(new_idxmap.BdetToDetLen.size());
+    new_idxmap.BdetToAdetSM.resize(new_idxmap.BdetToDetLen.size());
+    size_t * begin = new_idxmap_storage.begin();
+    size_t counter = 0;
+    for(size_t i=0; i < new_idxmap.AdetToDetLen.size(); i++) {
+      new_idxmap.AdetToDetSM[i] = begin + counter;
+      counter += new_idxmap.AdetToDetLen[i];
+    }
+    for(size_t i=0; i < new_idxmap.AdetToDetLen.size(); i++) {
+      new_idxmap.AdetToBdetSM[i] = begin + counter;
+      counter += new_idxmap.AdetToDetLen[i];
+    }
+    for(size_t i=0; i < new_idxmap.BdetToDetLen.size(); i++) {
+      new_idxmap.BdetToDetSM[i] = begin + counter;
+      counter += new_idxmap.BdetToDetLen[i];
+    }
+    for(size_t i=0; i < new_idxmap.BdetToDetLen.size(); i++) {
+      new_idxmap.BdetToAdetSM[i] = begin + counter;
+      counter += new_idxmap.BdetToDetLen[i];
+    }
+  }
+
   void MpiSlide(const DetIndexMap & send_map,
 		const std::vector<size_t> & send_storage,
 		DetIndexMap & recv_map,
@@ -181,7 +365,7 @@ namespace sbd {
     recv_map.AdetToBdetSM(recv_map.AdetToBdetLen.size());
     recv_map.BdetToDetSM(recv_map.BdetToDetLen.size());
     recv_map.BdetToAdetSM(recv_map.BdetToAdetLen.size());
-    size_t * begin = recv_memory.data();
+    size_t * begin = recv_storage.data();
     size_t counter = 0;
     for(size_t i=0; i < recv_size_a; i++) {
       recv_map.AdetToDetSM[i] = begin + counter;
@@ -226,10 +410,81 @@ namespace sbd {
     MPI_Comm_split(a_comm,b_comm_color,mpi_rank,&b_comm);
   }
 
+  void MakeHelpers(const std::vector<std::vector<size_t>> & det,
+		   size_t bit_length,
+		   size_t norb,
+		   std::vector<ExcitationLookup> & exidx,
+		   std::vector<std::vector<size_t>> & exidx_storage,
+		   DetIndexMap & idxmap,
+		   std::vector<size_t> & idxmap_storage,
+		   MPI_Comm h_comm,
+		   MPI_Comm b_comm,
+		   MPI_Comm t_comm) {
+    
+    int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
+    int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
+    int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
+    int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
+    int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
+    int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
 
-  
+    size_t task_begin = 0;
+    size_t task_end   = static_cast<size_t>(mpi_size_t);
+    get_mpi_range(mpi_size_t,mpi_rank_t,task_begin,task_end);
+    size_t task_size = task_end-task_begin;
+    exidx.resize(task_size);
+    exidx_storage.resize(task_size);
 
-  
+    std::vector<std::vector<size_t>> adet;
+    std::vector<std::vector<size_t>> bdet;
+    std::vector<size_t> adet_count;
+    std::vector<size_t> bdet_count;
+    getHalfDets(det,bit_length,norb,adet,bdet,adet_count,bdet_count);
+    makeDetIndexMap(det,adet,bdet,adet_count,bdet_count,bit_length,norb,
+		    idxmap,idxmap_storage);
+
+    std::vector<std::vector<size_t>> ket_det;
+    std::vector<std::vector<size_t>> ket_adet;
+    std::vector<std::vector<size_t>> ket_bdet;
+    DetIndexMap ket_idxmap;
+    std::vector<size_t> ket_idxmap_storage;
+    if ( task_begin != static_cast<size_t>(0) ) {
+      int slide = - static_cast<int>(task_begin);
+      MpiSlide(det,ket_det,slide,t_comm);
+      MpiSlide(adet,ket_adet,slide,t_comm);
+      MpiSlide(bdet,ket_bdet,slide,t_comm);
+      MpiSlide(idxmap,idxmap_storage,
+	       ket_idxmap,ket_idxmap_storage,
+	       slide,t_comm);
+    } else {
+      ket_det = det;
+      ket_adet = ket_adet;
+      ket_bdet = ket_bdet;
+      DetIdxMapCopy(idxmap,idxmap_storage,
+		    ket_idxmap,ket_idxmap_storage);
+    }
+
+    for(size_t task=task_begin; task < task_end; task++) {
+      makeExcitationLookup(adet,bdet,adet_ket,bdet_ket,bit_length,norb,
+			   exidx[task],exidx_storage[task]);
+      if( task != task_end-1 ) {
+	std::vector<std::vector<size_t>> send_det;
+	std::vector<std::vector<size_t>> send_adet;
+	std::vector<std::vector<size_t>> send_bdet;
+	DetIndexMap send_idxmap;
+	std::vector<size_t> send_idxmap_storage;
+	std::swap(ket_det,send_det);
+	std::swap(ket_adet,send_adet);
+	std::swap(ket_bdet,send_bdet);
+	std::swap(ket_idxmap,send_idxmap);
+	std::swap(ket_idxmap_storage,send_idxmap_storage);
+	int slide = -1;
+	MpiSlide(send_idxmap,send_idxmap_storage,
+		 ket_idxmap,ket_idxmap_storage,
+		 slide,t_comm);
+      }
+    }
+  }
   
 }
 
