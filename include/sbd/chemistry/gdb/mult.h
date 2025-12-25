@@ -11,6 +11,183 @@ namespace sbd {
 
     template <typename ElemT>
     void mult(const std::vector<ElemT> & hii,
+	      const std::vector<ElemT> & wk,
+	      std::vector<ElemT> & wb,
+	      size_t bit_length,
+	      size_t norb,
+	      const std::vector<std::vector<size_t>> & det,
+	      const DetIndexMap & idxmap,
+	      const std::vector<ExcitationLookup> & exidx,
+	      const ElemT & I0,
+	      const oneInt<ElemT> & I1,
+	      const twoInt<ElemT> & I2,
+	      MPI_Comm h_comm,
+	      MPI_Comm b_comm,
+	      MPI_Comm t_comm) {
+      
+      int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
+      int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
+      int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
+      int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
+      int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
+      int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
+
+      std::vector<ElemT> twk;
+      std::vector<ElemT> rwk;
+      DetIndexMap tidxmap;
+      std::vector<std::vector<size_t>> tdet;
+
+      if( exidx[0].slide != 0 ) {
+	MpiSlide(idxmap,tidxmap,-exidx[0].slide,b_comm);
+	MpiSlide(wk,twk,-exidx[0].slide,b_comm);
+	MpiSlide(det,tdet,-exidx[0].slide,b_comm);
+      } else {
+	DetIndexMapCopy(idxmap,tidxmap);
+	twk = wk;
+	tdet = det;
+      }
+
+      size_t num_threads = 1;
+#pragma omp parallel
+      {
+	num_threads = omp_get_num_threads();
+	if( mpi_rank_t == 0 ) {
+#pragma omp for
+	  for(size_t i=0; i < twk.size(); i++) {
+	    wb[i] += hii[i] * twk[i];
+	  }
+	}
+      }
+
+      for(size_t task=0; task < exidx.size(); task++) {
+#pragma omp parallel
+	{
+	  size_t thread_id = omp_get_thread_num();
+	  size_t ia_begin = thread_id;
+	  size_t ia_end = exidx[task].AdetToDetLen.size();
+
+	  // alpha-beta excitaiton
+	  for(size_t ia=ia_begin; ia < ia_end; ia+=num_threads) {
+	    for(size_t ib=0; ib < idxmap.AdetToDetLen[i].size(); ib++) {
+	      size_t iast = ia;
+	      size_t ibst = idxmap.AdetToBdetSM[ia][ib];
+	      size_t idet = idxmap.AdetToDetSM[ia][ib];
+	      if( idet % mpi_size_h != mpi_rank ) continue;
+
+	      // single alpha excitations
+	      if( exidx[task].SelfFromBdetLen[ibst].size() != 0 ) {
+		size_t jbst = exidx[task].SelfFromBdetSM[ibst][0];
+		for(size_t ja=0; ja < exidx[task].SinglesFromAdetLen[ia]; ja++) {
+		  size_t jast = helper.SinglesFromAdetSM[ia][ja];
+		  auto itA = std::lower_bound(&tidxmap.BdetToAdetSM[jbst][0],
+					      &tidxmap.BdetToAdetSM[jbst][0]
+					      +tidxmap.BdetToDetLen[jbst],
+					      jast);
+		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst]) ) {
+		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
+		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
+		    size_t od;
+		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);
+		    wb[idet] += eij * twk[jdet];
+		  }
+		}
+
+		// double alpha excitations
+		for(size_t ja=0; ja < tidxmap.BdetToDetLen[jbst]; ja++) {
+		  size_t jdet = tidxmap.BdetToDetSM[jbst][ja];
+		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
+		    size_t odiff;
+		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+		    wb[idet] += eij * twk[jdet];
+		  }
+		}
+		
+	      } // if there is same beta string
+
+	      // alpha-beta two-particle excitations
+	      for(size_t ja=0; ja < exidx[task].SinglesFromAdetLen[ia]; ja++) {
+		size_t jast = helper.SinglesFromAdetSM[ia][ja];
+		size_t start_idx = 0;
+		size_t end_idx = tidxmap.AdetToDetLen[jast];
+		size_t SinglesFromBLen = exidx[task].SinglesFromBdetLen[ibst];
+		// size_t maxAtoB = tidxmap.AdetToBdetSM[jast][end_idx-1];
+		for(size_t k=0; k < SinglesFromBLen; k++) {
+		  size_t jbst = exidx[task].SinglesFromBdetSM[ibst][k];
+		  if( start_idx >= end_idx ) break;
+		  auto itB = std::lower_bound(&tidxmap.AdetToBdetSM[jast][0]+start_idx,
+					      &tidxmap.AdetToBdetSM[jast][0]+end_idx,
+					      jbst);
+		  size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
+		  start_idx = idxb;
+		  if( idxb < end_idx ) {
+		    if( tidxmap.AdetToBdetSM[jast][idxb] == jbst ) {
+		      size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
+		      size_t odiff;
+		      ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+		      wb[idet] += eij * twk[jdet];
+		    }
+		  }
+		}
+	      }
+
+	      if( exidx[task].SelfFromAdetLen[iast] != 0 ) {
+		size_t jast = exidx[task].SelfFromAdetSM[iast][0];
+		
+		// single beta excitations
+		for(size_t jb=0; jb < exidx[task].SinglesFromBdetLen[ibst]; jb++) {
+		  size_t jbst = exidx[task].SinglesFromBdetSM[ibst][jb];
+		  auto itB = std::lower_bound(&tidxmap.AdetToBdetSM[jast][0],
+					      &tidxmap.AdetToBdetSM[jast][0]
+					      +tidxmap.AdetToDetLen[jast],
+					      jbst);
+		  if( itB != (&tidxmap.AdetToBdetSM[jast][0]+tidxmap.AdetToDetLen[jast]) ) {
+		    size_t idxa = std::distance(tidxmap.AdetToBdetSM[jast][0],itB);
+		    if( tidxmap.AdetToBdetSM[jast][idxa] != jbst ) continue;
+		    size_t jdet = tidxmap.AdetToDetSM[jast][idxa];
+		    size_t odiff;
+		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+		    wb[idet] += eij * twk[jdet];
+		  }
+		}
+
+		// double beta excitations
+		for(size_t jb = 0; jb < tidxmap.AdetToBdetLen[jast]; jb++) {
+		  size_t jdet = tidxmap.AdetToDetSM[jast][jb];
+		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
+		    size_t odiff;
+		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,
+				    I0,I1,I2,odiff);
+		    wb[idet] += eij * twk[jdet];
+		  }
+		}
+	      } // if there are same alpha
+
+	    } // corresponding beta string loop for bra-side basis
+	  } // alpha-based loop for bra-side basis
+	} // end omp threading
+
+	if( task != exidx.size()-1 ) {
+	  int slide = exidx[task].slide-exidx[task+1].slide;
+	  rwk.resize(twk.size());
+	  std::memcpy(rwk.data(),twk.data(),twk.size()*sizeof(ElemT));
+	  std::vector<std::vector<size_t>> rdet;
+	  DetIndexMap ridxmap;
+	  std::swap(rdet,tdet);
+	  std::swap(ridxmap,tidxmap);
+	  MpiSlide(rwk,twk,slide,b_comm);
+	  MpiSlide(rdet,tdet,slide,b_comm);
+	  MpiSlide(ridxmap,tidxmap,slide,b_comm);
+	}
+	
+      } // end task for loop
+
+      MpiAllreduce(wb,MPI_SUM,t_comm);
+      MpiAllreduce(wb,MPI_SUM,h_comm);
+      
+    } // end function for mult
+
+    template <typename ElemT>
+    void mult(const std::vector<ElemT> & hii,
 	      const std::vector<std::vector<size_t*>> & ih,
 	      const std::vector<std::vector<size_t*>> & jh,
 	      const std::vector<std::vector<ElemT*>> & hij,
@@ -27,36 +204,45 @@ namespace sbd {
       int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
       int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
       int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
-      
+
+      std::vector<ElemT> twk;
+      std::vector<ElemT> rwk;
+      if( slide.size() != 0 ) {
+	if( slide[0] != 0 ) {
+	  MpiSlide(wb,twk,-slide[0],b_comm);
+	} else {
+	  twk = wb;
+	}
+      }
+
+      if( mpi_rank_t == 0 ) {
+#pragma omp parallel for
+	for(size_t i=0; i < twk.size(); i++) {
+	  wb[i] += hii[i] * twk[i];
+	}
+      }
+
+      for(size_t task=0; task < slide.size(); task++) {
+#pragma omp parallel
+	{
+	  size_t thread_id = omp_get_thread_num();
+	  size_t num_threads = omp_get_num_threads();
+	  for(size_t k=0; k < len[task][thread_id]; k++) {
+	    wb[ih[task][thread_id][k]] += hij[task][thread_id][k]
+	      * twk[jh[task][thread_id][k]];
+	  }
+	}
+	if( task != slide.size() - 1 ) {
+	  int bslide = slide[task]-slide[task+1];
+	  rwk.resize(twk.size());
+	  std::memcpy(rwk.data(),twk.data(),twk.size()*sizeof(ElemT));
+	  MpiSlide(rwk,twk,bslide,b_comm);
+	}
+      }
+      MpiAllreduce(wb,MPI_SUM,t_comm);
+      MpiAllreduce(wb,MPI_SUM,h_comm);
     }
     
-    template <typename ElemT>
-    void mult(const std::vector<ElemT> & hii,
-	      const std::vector<ElemT> & wk,
-	      std::vector<ElemT> & wb,
-	      size_t bit_length,
-	      size_t norb,
-	      const std::vector<std::vector<size_t>> & det,
-	      const std::vector<std::vector<size_t>> & adet,
-	      const std::vector<std::vector<size_t>> & bdet,
-	      const DetIndexMap & idxmap,
-	      const std::vector<ExcitationLookup> & exidx,
-	      const ElemT & I0,
-	      const oneInt<ElemT> & I1,
-	      const twoInt<ElemT> & I2,
-	      MPI_Comm h_comm,
-	      MPI_Comm b_comm,
-	      MPI_Comm t_comm) {
-      
-      int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
-      int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
-      int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
-      int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
-      int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
-      int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
-      
-    }
-
   } // end namespace gdb
   
 } // end namespace sbd

@@ -148,7 +148,7 @@ namespace sbd {
 
     if( slide.size() != 0 ) {
       if( slide[0] != 0 ) {
-	MpiSlide(w,twk,slide[0],b_comm);
+	MpiSlide(w,twk,-slide[0],b_comm);
       } else {
 	twk = w;
       }

@@ -26,6 +26,7 @@ namespace sbd {
        Labels connected 
     */
     struct ExcitationLookup {
+      int slide;
       std::vector<size_t> storage;
       std::vector<size_t> SelfFromAdetLen;
       std::vector<size_t> SelfFromBdetLen;
@@ -429,6 +430,9 @@ namespace sbd {
       get_mpi_range(mpi_size_t,mpi_rank_t,task_begin,task_end);
       size_t task_size = task_end-task_begin;
       exidx.resize(task_size);
+      for(size_t task=task_begin; task < task_end; task++) {
+	exidx[task-task_begin].slide = static_cast<size_t>(task);
+      }
       
       std::vector<std::vector<size_t>> adet;
       std::vector<std::vector<size_t>> bdet;
@@ -441,8 +445,9 @@ namespace sbd {
       std::vector<std::vector<size_t>> ket_det;
       std::vector<std::vector<size_t>> ket_adet;
       std::vector<std::vector<size_t>> ket_bdet;
+      
       if ( task_begin != static_cast<size_t>(0) ) {
-	int slide = - static_cast<int>(task_begin);
+	int slide = - exidx[task-task_begin].slide;
 	MpiSlide(det,ket_det,slide,t_comm);
 	MpiSlide(adet,ket_adet,slide,t_comm);
 	MpiSlide(bdet,ket_bdet,slide,t_comm);
@@ -464,7 +469,7 @@ namespace sbd {
 	  std::swap(ket_det,send_det);
 	  std::swap(ket_adet,send_adet);
 	  std::swap(ket_bdet,send_bdet);
-	  int slide = -1;
+	  int slide = exidx[task-task_begin].slide - exidx[task+1-task_begin].slide;
 	  MpiSlide(send_det,ket_det,slide,t_comm);
 	  MpiSlide(send_adet,ket_adet,slide,t_comm);
 	  MpiSlide(send_bdet,ket_bdet,slide,t_comm);
