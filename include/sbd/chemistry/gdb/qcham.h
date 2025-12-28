@@ -23,8 +23,8 @@ namespace sbd {
 		   std::vector<std::vector<ElemT*>> & hij,
 		   std::vector<std::vector<size_t>> & len,
 		   std::vector<int> & slide,
-		   std::vector<std::vector<size_t>> storage_int,
-		   std::vector<std::vector<ElemT>> storage_elem,
+		   std::vector<std::vector<size_t>> & storage_int,
+		   std::vector<std::vector<ElemT>> & storage_elem,
 		   MPI_Comm h_comm,
 		   MPI_Comm b_comm,
 		   MPI_Comm t_comm) {

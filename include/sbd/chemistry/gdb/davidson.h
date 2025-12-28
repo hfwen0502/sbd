@@ -49,7 +49,6 @@ namespace sbd {
 		  MPI_Comm t_comm,
 		  int max_iteration,
 		  int num_block,
-		  size_t bit_length,
 		  RealT eps) {
       
       RealT eps_reg = 1.0e-12;
