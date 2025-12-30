@@ -1,7 +1,9 @@
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <chrono>
 #include <random>
+#include <deque>
 #include <unistd.h>
 
 #define _USE_MATH_DEFINES
@@ -37,7 +39,7 @@ int main(int argc, char * argv[]) {
     if( std::string(argv[i]) == "--detfiles" ) {
       std::stringstream ss(argv[++i]);
       std::string token;
-      while (std::getline(ss,token,",")) {
+      while (std::getline(ss,token,',')) {
 	detfiles.push_back(token);
       }
     }
@@ -91,7 +93,10 @@ int main(int argc, char * argv[]) {
   int b_comm_size = sbd_data.b_comm_size;
   int h_comm_size = mpi_size / (t_comm_size*b_comm_size);
   size_t bit_length = sbd_data.bit_length;
-  DetBasisCommunicator(comm,h_comm_size,b_comm_size,t_comm_size,
+  MPI_Comm h_comm;
+  MPI_Comm b_comm;
+  MPI_Comm t_comm;
+  sbd::gdb::DetBasisCommunicator(comm,h_comm_size,b_comm_size,t_comm_size,
 		       h_comm,b_comm,t_comm);
   int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
   int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
@@ -124,7 +129,10 @@ int main(int argc, char * argv[]) {
   int b_comm_size = sbd_data.b_comm_size;
   int h_comm_size = mpi_size / (t_comm_size*b_comm_size);
   size_t bit_length = sbd_data.bit_length;
-  DetBasisCommunicator(comm,h_comm_size,b_comm_size,t_comm_size,
+  MPI_Comm h_comm;
+  MPI_Comm b_comm;
+  MPI_Comm t_comm;
+  sbd::gdb::DetBasisCommunicator(comm,h_comm_size,b_comm_size,t_comm_size,
 		       h_comm,b_comm,t_comm);
   int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
   int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
@@ -132,20 +140,19 @@ int main(int argc, char * argv[]) {
   int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
   int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
   int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
-  std::vector<std::vector<size_t>> det;
   if( mpi_rank_h == 0 ) {
     if( mpi_rank_t == 0 ) {
-      load_basis_from_files(detfiles,det,bit_length,2*L,b_comm);
+      sbd::load_basis_from_files(detfiles,det,bit_length,2*L,b_comm);
       if( sbd_data.do_sort_det ) {
-	redistribution(det,bit_length,2*L,b_comm);
-	    reordering(det,bit_length,2*L,b_comm);
+	sbd::redistribution(det,bit_length,2*L,b_comm);
+	sbd::reordering(det,bit_length,2*L,b_comm);
       } else if ( sbd_data.do_redist_det ) {
-	redistribution(det,bit_length,2*L,b_comm);
+	sbd::redistribution(det,bit_length,2*L,b_comm);
       }
     }
-    MpiBcast(det,0,t_comm);
+    sbd::MpiBcast(det,0,t_comm);
   }
-  MpiBcast(det,0,h_comm);
+  sbd::MpiBcast(det,0,h_comm);
   /**
      call diag
   */
@@ -157,7 +164,7 @@ int main(int argc, char * argv[]) {
      end print
   */
   if( mpi_rank == 0 ) {
-    std::cout << " " << make_timestamp()
+    std::cout << " " << sbd::make_timestamp()
 	      << " sbd: Energy = " << energy << std::endl;
     std::cout << " sbd: density = ";
     for(size_t i=0; i < density.size()/2; i++) {
@@ -170,7 +177,7 @@ int main(int argc, char * argv[]) {
       std::cout << " " << sbd::makestring(codet[i],sbd_data.bit_length,L);
     }
     if( codet.size() > static_cast<size_t>(6) ) {
-      std::cout << " ... " << sbd::makestring(codet[i],sbd_data.bit_length,L);
+      std::cout << " ... " << sbd::makestring(codet[codet.size()-1],sbd_data.bit_length,L);
     }
     std::cout << std::endl;
   }

@@ -280,14 +280,14 @@ namespace sbd {
 	energy = GetReal(E);
       }
 
-      if( ratio != 0.0 ) {
+      if( sbd_data.ratio != 0.0 ) {
 	if( mpi_rank == 0 ) {
 	  std::cout << " " << make_timestamp()
 		    << " sbd: start carryover selection" << std::endl;
 	}
-	size_t n_kept = static_cast<size_t>(ratio * basis.size() * mpi_size_b);
+	size_t n_kept = static_cast<size_t>(sbd_data.ratio * basis.size() * mpi_size_b);
 	double truncated_weight = 0.0;
-	CarryOverBasis(w,basis,b_comm,n_kept,co_basis,truncated_weight);
+	CarryOverBasis(W,basis,b_comm,n_kept,co_basis,truncated_weight);
 	if( mpi_rank == 0 ) {
 	  std::cout << " " << make_timestamp()
 		    << " sbd: end carryover selection" << std::endl;
@@ -332,6 +332,18 @@ namespace sbd {
       int h_comm_size = mpi_size / (t_comm_size*b_comm_size);
       size_t bit_length = sbd_data.bit_length;
       size_t system_size = sbd_data.system_size;      
+      MPI_Comm h_comm;
+      MPI_Comm b_comm;
+      MPI_Comm t_comm;
+      setup_communicator(comm,
+			 h_comm_size,b_comm_size,t_comm_size,
+			 h_comm,b_comm,t_comm);
+      int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
+      int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
+      int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
+      int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
+      int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
+      int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
       /**
 	 Load Hamiltonian file
        */
@@ -354,18 +366,6 @@ namespace sbd {
 	std::cout << " " << make_timestamp()
 		  << " sbd: start load basis" << std::endl;
       }
-      MPI_Comm h_comm;
-      MPI_Comm b_comm;
-      MPI_Comm t_comm;
-      setup_communicator(comm,
-			 h_comm_size,b_comm_size,t_comm_size,
-			 h_comm,b_comm,t_comm);
-      int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
-      int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
-      int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
-      int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
-      int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
-      int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
       std::vector<std::vector<size_t>> basis;
       if( mpi_rank_h == 0 ) {
 	if( mpi_rank_t == 0 ) {

@@ -10,7 +10,7 @@ namespace sbd {
 
     template <typename ElemT, typename RealT>
     void CarryOverDet(const std::vector<ElemT> & w,
-		      const std::vector<size_t> & det,
+		      const std::vector<std::vector<size_t>> & det,
 		      MPI_Comm b_comm,
 		      size_t kept,
 		      std::vector<std::vector<size_t>> & rdet,
@@ -29,7 +29,7 @@ namespace sbd {
 #pragma omp parallel
       {
 	size_t thread_id = omp_get_thread_num();
-	for(size_t k=thraed_id; k < det.size(); k+=num_threads) {
+	for(size_t k=thread_id; k < det.size(); k+=num_threads) {
 	  if( ranking[k] < kept ) {
 	    local_size[thread_id]++;
 	  }
@@ -57,7 +57,7 @@ namespace sbd {
       }
       RealT keep_weight = 0.0;
       for(size_t tid=0; tid < num_threads; tid++) {
-	keep_weight += keep_weight_loca[tid];
+	keep_weight += keep_weight_local[tid];
       }
       RealT keep_weight_global = 0.0;
       MPI_Datatype DataT = GetMpiType<RealT>::MpiT;

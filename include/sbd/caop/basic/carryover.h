@@ -5,10 +5,12 @@
 #ifndef SBD_CAOP_BASIC_CARRYOVER_H
 #define SBD_CAOP_BASIC_CARRYOVER_H
 
+#include "sbd/framework/sort_array.h"
+
 namespace sbd {
 
-  void carryoverfilename(const std::string & carryovername,
-			 int index) {
+  std::string carryoverfilename(const std::string & carryovername,
+				int index) {
     std::ostringstream oss;
     oss << std::setw(6) << std::setfill('0') << index;
     std::string tag = oss.str();
@@ -18,7 +20,7 @@ namespace sbd {
 
   template <typename ElemT, typename RealT>
   void CarryOverBasis(const std::vector<ElemT> & w,
-		      const std::vector<size_t> & bs,
+		      const std::vector<std::vector<size_t>> & bs,
 		      MPI_Comm b_comm,
 		      size_t kept,
 		      std::vector<std::vector<size_t>> & rbs,
@@ -65,7 +67,7 @@ namespace sbd {
     }
     RealT keep_weight = 0.0;
     for(size_t tid=0; tid < num_threads; tid++) {
-      keep_weight += keep_weight_loca[tid];
+      keep_weight += keep_weight_local[tid];
     }
     RealT keep_weight_global = 0.0;
     MPI_Datatype DataT = GetMpiType<RealT>::MpiT;

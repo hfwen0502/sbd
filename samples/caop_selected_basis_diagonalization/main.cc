@@ -88,8 +88,9 @@ int main(int argc, char * argv[]) {
   
 
   double energy;
+  std::vector<std::vector<size_t>> cobasis;
   sbd::caop::diag<ElemType>(comm,sbd_data,hamfile,basisfiles,
-			    loadname,savename,energy);
+			    loadname,savename,energy,cobasis);
 
 
   MPI_Finalize();

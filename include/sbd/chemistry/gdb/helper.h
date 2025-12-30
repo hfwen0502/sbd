@@ -5,6 +5,9 @@
 #ifndef SBD_CHEMISTRY_GDB_HELPER_H
 #define SBD_CHEMISTRY_GDB_HELPER_H
 
+#include "sbd/framework/type_def.h"
+#include "sbd/framework/mpi_utility.h"
+
 namespace sbd {
 
   namespace gdb {
@@ -104,12 +107,10 @@ namespace sbd {
 			 std::vector<std::vector<size_t>> & adet_to_det,
 			 std::vector<std::vector<size_t>> & bdet_to_adet,
 			 std::vector<std::vector<size_t>> & bdet_to_det) {
-      adet_to_bdet.reisze(adet.size());
+      adet_to_bdet.resize(adet.size());
       adet_to_det.resize(adet.size());
       bdet_to_adet.resize(bdet.size());
       bdet_to_det.resize(bdet.size());
-      std::vector<size_t> adet_count(adet.size());
-      std::vector<size_t> bdet_count(bdet.size());
       for(size_t k=0; k < adet.size(); k++) {
 	adet_to_bdet[k].reserve(adet_count[k]);
 	adet_to_det[k].reserve(adet_count[k]);
@@ -168,7 +169,7 @@ namespace sbd {
       }
       size_t total_size = 2*aidx_size + 2*bidx_size;
       idxmap.storage.resize(total_size);
-      size_t * begin = idxmap.storage.begin();
+      size_t * begin = idxmap.storage.data();
       size_t counter = 0;
       for(size_t k=0; k < adet_to_det.size(); k++) {
 	idxmap.AdetToDetSM[k] = begin + counter;
@@ -195,7 +196,7 @@ namespace sbd {
       for(size_t k=0; k < adet_to_det.size(); k++) {
 	std::memcpy(idxmap.AdetToBdetSM[k],
 		    adet_to_bdet[k].data(),
-		    idxmap.AdetToBdetLen[k]*sizeof(size_t));
+		    idxmap.AdetToDetLen[k]*sizeof(size_t));
       }
       for(size_t k=0; k < bdet_to_det.size(); k++) {
 	std::memcpy(idxmap.BdetToDetSM[k],
@@ -275,7 +276,7 @@ namespace sbd {
 	total_size += singles_b[k].size();
       }
       exidx.storage.resize(total_size);
-      size_t * begin = exidx.storage.begin();
+      size_t * begin = exidx.storage.data();
       size_t counter = 0;
       for(size_t k=0; k < selfdet_a.size(); k++) {
 	exidx.SelfFromAdetSM[k] = begin + counter;
@@ -316,8 +317,8 @@ namespace sbd {
       }
     }
     
-    void DetIdxMapCopy(const DetIdxMap & idxmap,
-		       DetIdxMap & new_idxmap) {
+    void DetIndexMapCopy(const DetIndexMap & idxmap,
+			 DetIndexMap & new_idxmap) {
       new_idxmap.storage = idxmap.storage; // hard copy
       new_idxmap.AdetToDetLen = idxmap.AdetToDetLen;
       new_idxmap.BdetToDetLen = idxmap.BdetToDetLen;
@@ -325,7 +326,7 @@ namespace sbd {
       new_idxmap.AdetToBdetSM.resize(new_idxmap.AdetToDetLen.size());
       new_idxmap.BdetToDetSM.resize(new_idxmap.BdetToDetLen.size());
       new_idxmap.BdetToAdetSM.resize(new_idxmap.BdetToDetLen.size());
-      size_t * begin = new_idxmap.storage.begin();
+      size_t * begin = new_idxmap.storage.data();
       size_t counter = 0;
       for(size_t i=0; i < new_idxmap.AdetToDetLen.size(); i++) {
 	new_idxmap.AdetToDetSM[i] = begin + counter;
@@ -344,43 +345,43 @@ namespace sbd {
 	counter += new_idxmap.BdetToDetLen[i];
       }
     }
-    
+
     void MpiSlide(const DetIndexMap & send_map,
 		  DetIndexMap & recv_map,
 		  int slide,
 		  MPI_Comm comm) {
-      MpiSlide(send_map.AdetToDetLen,recv_map.AdetToDetLen,slide,comm);
-      MpiSlide(send_map.BdetToDetLen,recv_map.BdetToDetLen,slide,comm);
-      MpiSlide(send.storage,recv.storage,slide,comm);
+      sbd::MpiSlide(send_map.AdetToDetLen,recv_map.AdetToDetLen,slide,comm);
+      sbd::MpiSlide(send_map.BdetToDetLen,recv_map.BdetToDetLen,slide,comm);
+      sbd::MpiSlide(send_map.storage,recv_map.storage,slide,comm);
       size_t recv_size_a = 0;
       size_t recv_size_b = 0;
       for(size_t i=0; i < recv_map.AdetToDetLen.size(); i++) {
 	recv_size_a += recv_map.AdetToDetLen[i];
       }
-      for(size_t i=0; i < map_send.AdetToDetLen.size(); i++) {
+      for(size_t i=0; i < send_map.AdetToDetLen.size(); i++) {
 	recv_size_b += recv_map.BdetToDetLen[i];
       }
-      recv_map.AdetToDetSM(recv_map.AdetToDetLen.size());
-      recv_map.AdetToBdetSM(recv_map.AdetToBdetLen.size());
-      recv_map.BdetToDetSM(recv_map.BdetToDetLen.size());
-      recv_map.BdetToAdetSM(recv_map.BdetToAdetLen.size());
-      size_t * begin = recv.storage.data();
+      recv_map.AdetToDetSM.resize(recv_map.AdetToDetLen.size());
+      recv_map.AdetToBdetSM.resize(recv_map.AdetToDetLen.size());
+      recv_map.BdetToDetSM.resize(recv_map.BdetToDetLen.size());
+      recv_map.BdetToAdetSM.resize(recv_map.BdetToDetLen.size());
+      size_t * begin = recv_map.storage.data();
       size_t counter = 0;
       for(size_t i=0; i < recv_size_a; i++) {
 	recv_map.AdetToDetSM[i] = begin + counter;
-	counter += helper.AdetToDetLen[i];
+	counter += recv_map.AdetToDetLen[i];
       }
       for(size_t i=0; i < recv_size_a; i++) {
 	recv_map.AdetToBdetSM[i] = begin + counter;
-	counter += helper.AdetToDetLen[i];
+	counter += recv_map.AdetToDetLen[i];
       }
       for(size_t i=0; i < recv_size_b; i++) {
 	recv_map.BdetToDetSM[i] = begin + counter;
-	counter += helper.BdetToDetLen[i];
+	counter += recv_map.BdetToDetLen[i];
       }
       for(size_t i=0; i < recv_size_b; i++) {
 	recv_map.BdetToAdetSM[i] = begin + counter;
-	counter += helper.BdetToDetLen[i];
+	counter += recv_map.BdetToDetLen[i];
       }
     }
     
@@ -447,20 +448,20 @@ namespace sbd {
       std::vector<std::vector<size_t>> ket_bdet;
       
       if ( task_begin != static_cast<size_t>(0) ) {
-	int slide = - exidx[task-task_begin].slide;
-	MpiSlide(det,ket_det,slide,t_comm);
-	MpiSlide(adet,ket_adet,slide,t_comm);
-	MpiSlide(bdet,ket_bdet,slide,t_comm);
+	int slide = - exidx[0].slide;
+	sbd::MpiSlide(det,ket_det,slide,t_comm);
+	sbd::MpiSlide(adet,ket_adet,slide,t_comm);
+	sbd::MpiSlide(bdet,ket_bdet,slide,t_comm);
       } else {
 	ket_det = det;
-	ket_adet = ket_adet;
-	ket_bdet = ket_bdet;
+	ket_adet = adet;
+	ket_bdet = bdet;
       }
       
       for(size_t task=task_begin; task < task_end; task++) {
-	makeExcitationLookup(adet,bdet,adet_ket,bdet_ket,
+	makeExcitationLookup(adet,bdet,ket_adet,ket_bdet,
 			     bit_length,norb,
-			     exidx[task]);
+			     exidx[task-task_begin]);
 	if( task != task_end-1 ) {
 	  std::vector<std::vector<size_t>> send_det;
 	  std::vector<std::vector<size_t>> send_adet;
@@ -470,9 +471,9 @@ namespace sbd {
 	  std::swap(ket_adet,send_adet);
 	  std::swap(ket_bdet,send_bdet);
 	  int slide = exidx[task-task_begin].slide - exidx[task+1-task_begin].slide;
-	  MpiSlide(send_det,ket_det,slide,t_comm);
-	  MpiSlide(send_adet,ket_adet,slide,t_comm);
-	  MpiSlide(send_bdet,ket_bdet,slide,t_comm);
+	  sbd::MpiSlide(send_det,ket_det,slide,t_comm);
+	  sbd::MpiSlide(send_adet,ket_adet,slide,t_comm);
+	  sbd::MpiSlide(send_bdet,ket_bdet,slide,t_comm);
 	}
       }
     }

@@ -24,8 +24,8 @@ namespace sbd {
       double ratio = 0.0;
       double threshold = 0.01;
       size_t bit_length = 20;
-      bool do_sort_basis = false;
-      bool do_redist_basis = false;
+      bool do_sort_det = false;
+      bool do_redist_det = false;
     };
 
     SBD generate_sbd_data(int argc, char * argv[]) {
@@ -64,14 +64,14 @@ namespace sbd {
 	if ( std::string(argv[i]) == "--bit_length" ) {
 	  sbd_data.bit_length = std::atoi(argv[++i]);
 	}
-	if( std::string(argv[i]) == "--do_sort_basis" ) {
+	if( std::string(argv[i]) == "--do_sort_det" ) {
 	  if( std::atoi(argv[++i]) != 0 ) {
-	    sbd_data.do_sort_basis = true;
+	    sbd_data.do_sort_det = true;
 	  }
 	}
-	if( std::string(argv[i]) == "--do_redist_basis" ) {
+	if( std::string(argv[i]) == "--do_redist_det" ) {
 	  if( std::atoi(argv[++i]) != 0 ) {
-	    sbd_data.do_redist_basis = true;
+	    sbd_data.do_redist_det = true;
 	  }
 	}
       }
@@ -93,8 +93,8 @@ namespace sbd {
       std::cout << "# tolerance: " << sbd_data.eps << std::endl;
       std::cout << "# init method: " << sbd_data.init << std::endl;
       std::cout << "# bit length: " << sbd_data.bit_length << std::endl;
-      std::cout << "# do basis sort: " << sbd_data.do_sort_basis << std::endl;
-      std::cout << "# do redistribution of basis: " << sbd_data.do_redist_basis << std::endl;
+      std::cout << "# do basis sort: " << sbd_data.do_sort_det << std::endl;
+      std::cout << "# do redistribution of basis: " << sbd_data.do_redist_det << std::endl;
       if( sbd_data.do_rdm != 0.0 ) {
 	std::cout << "# do rdm: " << sbd_data.do_rdm << std::endl;
       }
@@ -154,8 +154,8 @@ namespace sbd {
       }
       auto time_start_model = std::chrono::high_resolution_clock::now();
       double I0;
-      std::oneInt<ElemT> I1;
-      std::twoInt<ElemT> I2;
+      sbd::oneInt<ElemT> I1;
+      sbd::twoInt<ElemT> I2;
       sbd::SetupIntegrals(fcidump,L,N,I0,I1,I2);
       auto time_end_model = std::chrono::high_resolution_clock::now();
       auto elapsed_model_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_model-time_start_model).count();
@@ -206,9 +206,9 @@ namespace sbd {
       auto time_start_init = std::chrono::high_resolution_clock::now();
       std::vector<ElemT> w;
       if( loadname.empty() ) {
-	BasisInitVector(w,det,h_comm,b_comm,t_comm,init);
+	sbd::gdb::BasisInitVector(w,det,h_comm,b_comm,t_comm,init);
       } else {
-	LoadWavefunction(loadname,det,h_comm,b_comm,t_comm,w);
+	sbd::LoadWavefunction(loadname,det,h_comm,b_comm,t_comm,w);
       }
       auto time_end_init = std::chrono::high_resolution_clock::now();
       auto elapsed_init_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_init-time_start_init).count();
@@ -231,7 +231,7 @@ namespace sbd {
 	}
 	auto time_start_mkham = std::chrono::high_resolution_clock::now();
 	std::vector<ElemT> hii;
-	makeQChamDiagTerms(bdet,bit_length,L,
+	makeQChamDiagTerms(det,bit_length,L,
 			   idxmap,exidx,I0,I1,I2,hii,
 			   h_comm,b_comm,t_comm);
 	auto time_end_mkham = std::chrono::high_resolution_clock::now();
@@ -253,11 +253,12 @@ namespace sbd {
 	Davidson(hii,w,det,bit_length,static_cast<size_t>(L),
 		 idxmap,exidx,I0,I1,I2,
 		 h_comm,b_comm,t_comm,
-		 max_it,max_nb,eps,max_time);
+		 max_it,max_nb,eps);
 	auto time_end_david = std::chrono::high_resolution_clock::now();
 	auto elapsed_david_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_david-time_start_david).count();
 	auto elapsed_diag_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_david-time_start_mkham).count();
 	double elapsed_david = 1.0e-6 * elapsed_david_count;
+	double elapsed_diag = 1.0e-6 * elapsed_diag_count;
 	if( mpi_rank == 0 ) {
 	  std::cout << " " << make_timestamp()
 		    << " sbd: end davidson [Elapsed time "
@@ -275,7 +276,7 @@ namespace sbd {
 	}
 	auto time_start_mult = std::chrono::high_resolution_clock::now();
 	std::vector<ElemT> v(w.size(),ElemT(0.0));
-	mult(hii,w,v,det,bit_length,static_cast<size_t>(L),
+	mult(hii,w,v,bit_length,static_cast<size_t>(L),det,
 	     idxmap,exidx,I0,I1,I2,
 	     h_comm,b_comm,t_comm);
 	ElemT E;
@@ -303,7 +304,6 @@ namespace sbd {
 	  
 	}
 	auto time_start_mkham = std::chrono::high_resolution_clock::now();
-	std::vector<ElemT> hii;
 	std::vector<ElemT> hii;
 	std::vector<std::vector<size_t*>> ih;
 	std::vector<std::vector<size_t*>> jh;
@@ -334,7 +334,7 @@ namespace sbd {
 	}
 	auto time_start_david = std::chrono::high_resolution_clock::now();
 	sbd::gdb::Davidson(hii,ih,jh,hij,len,slide,w,
-			   h_comm,b_comm,t_comm,max_it,num_nb,eps);
+			   h_comm,b_comm,t_comm,max_it,max_nb,eps);
 	auto time_end_david = std::chrono::high_resolution_clock::now();
 	auto elapsed_david_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_david-time_start_david).count();
 	auto elapsed_diag_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_david-time_start_mkham).count();
@@ -403,7 +403,7 @@ namespace sbd {
 	}
 	auto time_end_occd = std::chrono::high_resolution_clock::now();
 	auto elapsed_occd_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_occd-time_start_occd).count();
-	double elapsed_rdm = 1.0e-6 * elapsed_occd_count;
+	double elapsed_occd = 1.0e-6 * elapsed_occd_count;
 	if( mpi_rank == 0 ) {
 	  std::cout << " " << make_timestamp()
 		    << " sbd: end occupation density calculation [Elapsed time "
@@ -551,6 +551,9 @@ namespace sbd {
       int b_comm_size = sbd_data.b_comm_size;
       int h_comm_size = mpi_size / (t_comm_size*b_comm_size);
       size_t bit_length = sbd_data.bit_length;
+      MPI_Comm h_comm;
+      MPI_Comm b_comm;
+      MPI_Comm t_comm;
       DetBasisCommunicator(comm,h_comm_size,b_comm_size,t_comm_size,
 			   h_comm,b_comm,t_comm);
       int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);

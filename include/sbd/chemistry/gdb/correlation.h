@@ -48,12 +48,12 @@ namespace sbd {
       std::vector<std::vector<size_t>> tdet;
 
       if( exidx[0].slide != 0 ) {
-	MpiSlide(idxmap,tidxmap,-exidx[0].slide,b_comm);
-	MpiSlide(wk,twk,-exidx[0].slide,b_comm);
-	MpiSlide(det,tdet,-exidx[0].slide,b_comm);
+	sbd::gdb::MpiSlide(idxmap,tidxmap,-exidx[0].slide,b_comm);
+	sbd::MpiSlide(w,tw,-exidx[0].slide,b_comm);
+	sbd::MpiSlide(det,tdet,-exidx[0].slide,b_comm);
       } else {
 	DetIndexMapCopy(idxmap,tidxmap);
-	twk = wk;
+	tw = w;
 	tdet = det;
       }
 
@@ -68,10 +68,10 @@ namespace sbd {
 	num_threads = omp_get_num_threads();
 	size_t thread_id = omp_get_thread_num();
 	size_t i_start = thread_id;
-	size_t i_end   = twk.size();
+	size_t i_end   = tw.size();
 	if( mpi_rank_t == 0 ) {
 #pragma omp for
-	  for(size_t i=0; i < twk.size(); i+=num_threads) {
+	  for(size_t i=0; i < tw.size(); i+=num_threads) {
 	    if( ( i % mpi_size_h ) == mpi_rank_h ) {
 	      ZeroDiffCorrelation(det[i],w[i],bit_length,norb,
 				  onebody_t[thread_id],
@@ -86,23 +86,23 @@ namespace sbd {
 	{
 	  size_t thread_id = omp_get_thread_num();
 	  size_t ia_begin = thread_id;
-	  size_t ia_end   = exidx[task].AdetToDetLen.size();
+	  size_t ia_end   = idxmap.AdetToDetLen.size();
 	  std::vector<int> c(2,0);
 	  std::vector<int> d(2,0);
 
 	  // alpha-beta excitaiton
 	  for(size_t ia=ia_begin; ia < ia_end; ia+=num_threads) {
-	    for(size_t ib=0; ib < idxmap.AdetToDetLen[i].size(); ib++) {
+	    for(size_t ib=0; ib < idxmap.AdetToDetLen[ia]; ib++) {
 	      size_t iast = ia;
 	      size_t ibst = idxmap.AdetToBdetSM[ia][ib];
 	      size_t idet = idxmap.AdetToDetSM[ia][ib];
-	      if( idet % mpi_size_h != mpi_rank ) continue;
+	      if( idet % mpi_size_h != mpi_rank_h ) continue;
 
 	      // single alpha excitations
-	      if( exidx[task].SelfFromBdetLen[ibst].size() != 0 ) {
+	      if( exidx[task].SelfFromBdetLen[ibst] != 0 ) {
 		size_t jbst = exidx[task].SelfFromBdetSM[ibst][0];
 		for(size_t ja=0; ja < exidx[task].SinglesFromAdetLen[ia]; ja++) {
-		  size_t jast = helper.SinglesFromAdetSM[ia][ja];
+		  size_t jast = exidx[task].SinglesFromAdetSM[ia][ja];
 		  auto itA = std::lower_bound(&tidxmap.BdetToAdetSM[jbst][0],
 					      &tidxmap.BdetToAdetSM[jbst][0]
 					      +tidxmap.BdetToDetLen[jbst],
@@ -110,7 +110,7 @@ namespace sbd {
 		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst]) ) {
 		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
 		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
-		    CorrelationTermAddition(det[idet],tdet[jdet],wb[idet],twk[jdet],
+		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,
 					    onebody_t[thread_id],twobody_t[thread_id]);
 		  }
@@ -120,7 +120,7 @@ namespace sbd {
 		for(size_t ja=0; ja < tidxmap.BdetToDetLen[jbst]; ja++) {
 		  size_t jdet = tidxmap.BdetToDetSM[jbst][ja];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
-		    CorrelationTermAddition(det[idet],tdet[jdet],wb[idet],twk[jdet],
+		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,
 					    onebody_t[thread_id],twobody_t[thread_id]);
 		  }
@@ -130,7 +130,7 @@ namespace sbd {
 
 	      // alpha-beta two-particle excitations
 	      for(size_t ja=0; ja < exidx[task].SinglesFromAdetLen[ia]; ja++) {
-		size_t jast = helper.SinglesFromAdetSM[ia][ja];
+		size_t jast = exidx[task].SinglesFromAdetSM[ia][ja];
 		size_t start_idx = 0;
 		size_t end_idx = tidxmap.AdetToDetLen[jast];
 		size_t SinglesFromBLen = exidx[task].SinglesFromBdetLen[ibst];
@@ -146,7 +146,7 @@ namespace sbd {
 		  if( idxb < end_idx ) {
 		    if( tidxmap.AdetToBdetSM[jast][idxb] == jbst ) {
 		      size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
-		      CorrelationTermAddition(det[idet],tdet[jdet],wb[idet],twk[jdet],
+		      CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					      bit_length,norb,c,d,
 					      onebody_t[thread_id],twobody_t[thread_id]);
 		    }
@@ -165,20 +165,20 @@ namespace sbd {
 					      +tidxmap.AdetToDetLen[jast],
 					      jbst);
 		  if( itB != (&tidxmap.AdetToBdetSM[jast][0]+tidxmap.AdetToDetLen[jast]) ) {
-		    size_t idxa = std::distance(tidxmap.AdetToBdetSM[jast][0],itB);
+		    size_t idxa = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
 		    if( tidxmap.AdetToBdetSM[jast][idxa] != jbst ) continue;
 		    size_t jdet = tidxmap.AdetToDetSM[jast][idxa];
-		    CorrelationTermAddition(det[idet],tdet[jdet],wb[idet],twk[jdet],
+		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,
 					    onebody_t[thread_id],twobody_t[thread_id]);
 		  }
 		}
 
 		// double beta excitations
-		for(size_t jb = 0; jb < tidxmap.AdetToBdetLen[jast]; jb++) {
+		for(size_t jb = 0; jb < tidxmap.AdetToDetLen[jast]; jb++) {
 		  size_t jdet = tidxmap.AdetToDetSM[jast][jb];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
-		    CorrelationTermAddition(det[idet],tdet[jdet],wb[idet],twk[jdet],
+		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,
 					    onebody_t[thread_id],twobody_t[thread_id]);
 		  }
@@ -190,15 +190,15 @@ namespace sbd {
 
 	if( task != exidx.size()-1 ) {
 	  int slide = exidx[task].slide-exidx[task+1].slide;
-	  rwk.resize(twk.size());
-	  std::memcpy(rwk.data(),twk.data(),twk.size()*sizeof(ElemT));
+	  rw.resize(tw.size());
+	  std::memcpy(rw.data(),tw.data(),tw.size()*sizeof(ElemT));
 	  std::vector<std::vector<size_t>> rdet;
 	  DetIndexMap ridxmap;
 	  std::swap(rdet,tdet);
 	  std::swap(ridxmap,tidxmap);
-	  MpiSlide(rwk,twk,slide,b_comm);
-	  MpiSlide(rdet,tdet,slide,b_comm);
-	  MpiSlide(ridxmap,tidxmap,slide,b_comm);
+	  sbd::MpiSlide(rw,tw,slide,b_comm);
+	  sbd::MpiSlide(rdet,tdet,slide,b_comm);
+	  sbd::gdb::MpiSlide(ridxmap,tidxmap,slide,b_comm);
 	}
       } // end for(size_t task=0; task < exidx.size(); task++)
 

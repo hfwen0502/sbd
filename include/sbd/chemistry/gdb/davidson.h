@@ -10,7 +10,7 @@ namespace sbd {
     
     template <typename ElemT>
     void BasisInitVector(std::vector<ElemT> & w,
-			 std::vector<std::vector<size_t>> & det,
+			 const std::vector<std::vector<size_t>> & det,
 			 MPI_Comm h_comm,
 			 MPI_Comm b_comm,
 			 MPI_Comm t_comm,
@@ -80,7 +80,7 @@ namespace sbd {
       for(int it=0; it < max_iteration; it++) {
 	
 #pragma omp parallel for
-	for(size_t is=0; is < W.size(); is++) {
+	for(size_t is=0; is < w.size(); is++) {
 	  v[0][is] = w[is];
 	}
 	
@@ -263,7 +263,7 @@ namespace sbd {
       for(int it=0; it < max_iteration; it++) {
 	
 #pragma omp parallel for
-	for(size_t is=0; is < W.size(); is++) {
+	for(size_t is=0; is < w.size(); is++) {
 	  v[0][is] = w[is];
 	}
 	
