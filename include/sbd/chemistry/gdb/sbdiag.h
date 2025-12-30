@@ -379,6 +379,36 @@ namespace sbd {
 	 Evaluation of expectation values
       */
       if( do_rdm == 0 ) {
+	if( mpi_rank == 0 ) {
+	  std::cout << " " << make_timestamp()
+		    << " sbd: start occupation density calculation"
+		    << std::endl;
+	}
+	auto time_start_occd = std::chrono::high_resolution_clock::now();
+	if( mpi_rank_t == 0 ) {
+	  size_t oidx_start = 0;
+	  size_t oidx_end   = static_cast<size_t>(L);
+	  get_mpi_range(mpi_size_h,mpi_rank_h,oidx_start,oidx_end);
+	  size_t oidx_size = oidx_end - oidx_start;
+	  std::vector<int> oidx(oidx_size);
+	  std::iota(oidx.begin(),oidx.end(),static_cast<int>(oidx_start));
+	  std::vector<double> res_density;
+	  OccupationDensity(oidx,w,det,bit_length,b_comm,res_density);
+	  density.resize(2*L,0.0);
+	  for(size_t io=0; io < oidx.size(); io++) {
+	    density[2*oidx[io]+0] = res_density[2*io+0];
+	    density[2*oidx[io]+1] = res_density[2*io+1];
+	  }
+	  MpiAllreduce(density,MPI_SUM,h_comm);
+	}
+	auto time_end_occd = std::chrono::high_resolution_clock::now();
+	auto elapsed_occd_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_occd-time_start_occd).count();
+	double elapsed_rdm = 1.0e-6 * elapsed_occd_count;
+	if( mpi_rank == 0 ) {
+	  std::cout << " " << make_timestamp()
+		    << " sbd: end occupation density calculation [Elapsed time "
+		    << elapsed_occd << " (sec)]" << std::endl;
+	}
       } else {
 	/**
 	   do_rdm != 0: calculate all one- and two-particle rdm
