@@ -124,6 +124,10 @@ int main(int argc, char * argv[]) {
   /**
      setup determinants
   */
+  if( mpi_rank == 0 ) {
+    std::cout << " " << sbd::make_timestamp()
+	      << " start setup determinant " << std::endl;
+  }
   std::vector<std::vector<size_t>> det;
   int t_comm_size = sbd_data.t_comm_size;
   int b_comm_size = sbd_data.b_comm_size;
@@ -153,6 +157,31 @@ int main(int argc, char * argv[]) {
     sbd::MpiBcast(det,0,t_comm);
   }
   sbd::MpiBcast(det,0,h_comm);
+  for(int rank_h=0; rank_h < mpi_size_h; rank_h++) {
+    for(int rank_b=0; rank_b < mpi_size_b; rank_b++) {
+      for(int rank_t=0; rank_t < mpi_size_t; rank_t++) {
+	if( mpi_rank_h == rank_h &&
+	    mpi_rank_b == rank_b &&
+	    mpi_rank_t == rank_t ) {
+	  std::cout << " " << sbd::make_timestamp()
+		    << " end setup determinant at rank ("
+		    << mpi_rank_h << ","
+		    << mpi_rank_b << ","
+		    << mpi_rank_t << "): det =";
+	  for(size_t i=0; i < std::min(static_cast<size_t>(4),det.size()); i++) {
+	    std::cout << ( (i==0) ? " " : "," ) << sbd::makestring(det[i],sbd_data.bit_length,2*L);
+	  }
+	  if( det.size() > 4 ) {
+	    std::cout << " ... " << sbd::makestring(det[det.size()-1],sbd_data.bit_length,2*L);
+	  }
+	  std::cout << ", |det|=" << det.size() << std::endl;
+	}
+	MPI_Barrier(t_comm);
+      }
+      MPI_Barrier(b_comm);
+    }
+    MPI_Barrier(h_comm);
+  }
   /**
      call diag
   */

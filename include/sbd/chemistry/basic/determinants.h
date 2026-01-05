@@ -333,7 +333,7 @@ namespace sbd {
     if( adet_size != adet.size() ) {
       adet.resize(adet_size);
     }
-    
+    std::fill(adet.begin(),adet.end(),static_cast<size_t>(0));
     for (size_t i = 0; i < norb; ++i) {
       bool occ = getocc(det, bit_length, 2 * i);  //
       if (occ) {
@@ -350,7 +350,7 @@ namespace sbd {
     if( bdet_size != bdet.size() ) {
       bdet.resize(bdet_size);
     }
-    
+    std::fill(bdet.begin(),bdet.end(),static_cast<size_t>(0));
     for (size_t i = 0; i < norb; ++i) {
       bool occ = getocc(det, bit_length, 2 * i + 1);
       if (occ) {

@@ -76,7 +76,7 @@ namespace sbd {
 	if( adet_sorted[k] != adet[u] ) {
 	  adet_count[u] = count;
 	  u++;
-	  count = 0;
+	  count = 1;
 	} else {
 	  count++;
 	}
@@ -88,7 +88,7 @@ namespace sbd {
 	if( bdet_sorted[k] != bdet[u] ) {
 	  bdet_count[u] = count;
 	  u++;
-	  count=0;
+	  count=1;
 	} else {
 	  count++;
 	}
@@ -120,13 +120,29 @@ namespace sbd {
 	bdet_to_det[k].reserve(bdet_count[k]);
       }
       size_t hdet_size = (norb + bit_length - 1) / bit_length;
-      std::vector<size_t> adet_temp(hdet_size);
-      std::vector<size_t> bdet_temp(hdet_size);
+      std::vector<size_t> adet_temp(hdet_size,0);
+      std::vector<size_t> bdet_temp(hdet_size,0);
       for(size_t i=0; i < det.size(); i++) {
 	getAdet(det[i],bit_length,norb,adet_temp);
 	getBdet(det[i],bit_length,norb,bdet_temp);
-	auto itia = std::lower_bound(adet.begin(),adet.end(),adet_temp);
-	auto itib = std::lower_bound(bdet.begin(),bdet.end(),bdet_temp);
+	auto itia = std::lower_bound(adet.begin(),adet.end(),
+				     adet_temp,
+				     [](const std::vector<size_t> & lhs,
+					const std::vector<size_t> & rhs) {
+				       return lhs < rhs;
+				     });
+	auto itib = std::lower_bound(bdet.begin(),bdet.end(),
+				     bdet_temp,
+				     [](const std::vector<size_t> & lhs,
+					const std::vector<size_t> & rhs) {
+				       return lhs < rhs;
+				     });
+	if( itia == adet.end() ) {
+	  std::cout << " unexpected situation happened in adet" << std::endl;
+	}
+	if( itib == bdet.end() ) {
+	  std::cout << " unexpected situation happened in bdet" << std::endl;
+	}
 	size_t ia = std::distance(adet.begin(),itia);
 	size_t ib = std::distance(bdet.begin(),itib);
 	adet_to_bdet[ia].push_back(ib);
@@ -228,8 +244,8 @@ namespace sbd {
 	  if( d == 0 ) zcount++;
 	  if( d == 2 ) scount++;
 	}
-	samedet.reserve(zcount);
-	singles.reserve(scount);
+	samedet[i].reserve(zcount);
+	singles[i].reserve(scount);
 	for(size_t j=0; j < hdet_ket.size(); j++) {
 	  int d = difference(hdet_bra[i],hdet_ket[j],bit_length,norb);
 	  if( d == 0 ) {
@@ -252,8 +268,12 @@ namespace sbd {
       std::vector<std::vector<size_t>> singles_a;
       std::vector<std::vector<size_t>> selfdet_b;
       std::vector<std::vector<size_t>> singles_b;
-      makeExcitationLookup(adet_bra,adet_ket,bit_length,norb,selfdet_a,singles_a);
-      makeExcitationLookup(bdet_bra,bdet_ket,bit_length,norb,selfdet_b,singles_b);
+      makeExcitationLookup(adet_bra,adet_ket,
+			   bit_length,norb,
+			   selfdet_a,singles_a);
+      makeExcitationLookup(bdet_bra,bdet_ket,
+			   bit_length,norb,
+			   selfdet_b,singles_b);
       exidx.SelfFromAdetLen.resize(selfdet_a.size());
       exidx.SinglesFromAdetLen.resize(singles_a.size());
       exidx.SelfFromBdetLen.resize(selfdet_b.size());
@@ -278,6 +298,10 @@ namespace sbd {
       exidx.storage.resize(total_size);
       size_t * begin = exidx.storage.data();
       size_t counter = 0;
+      exidx.SelfFromAdetSM.resize(selfdet_a.size());
+      exidx.SinglesFromAdetSM.resize(singles_a.size());
+      exidx.SelfFromBdetSM.resize(selfdet_b.size());
+      exidx.SinglesFromBdetSM.resize(singles_b.size());
       for(size_t k=0; k < selfdet_a.size(); k++) {
 	exidx.SelfFromAdetSM[k] = begin + counter;
 	counter += exidx.SelfFromAdetLen[k];
@@ -358,7 +382,7 @@ namespace sbd {
       for(size_t i=0; i < recv_map.AdetToDetLen.size(); i++) {
 	recv_size_a += recv_map.AdetToDetLen[i];
       }
-      for(size_t i=0; i < send_map.AdetToDetLen.size(); i++) {
+      for(size_t i=0; i < recv_map.BdetToDetLen.size(); i++) {
 	recv_size_b += recv_map.BdetToDetLen[i];
       }
       recv_map.AdetToDetSM.resize(recv_map.AdetToDetLen.size());
@@ -367,19 +391,19 @@ namespace sbd {
       recv_map.BdetToAdetSM.resize(recv_map.BdetToDetLen.size());
       size_t * begin = recv_map.storage.data();
       size_t counter = 0;
-      for(size_t i=0; i < recv_size_a; i++) {
+      for(size_t i=0; i < recv_map.AdetToDetLen.size(); i++) {
 	recv_map.AdetToDetSM[i] = begin + counter;
 	counter += recv_map.AdetToDetLen[i];
       }
-      for(size_t i=0; i < recv_size_a; i++) {
+      for(size_t i=0; i < recv_map.AdetToDetLen.size(); i++) {
 	recv_map.AdetToBdetSM[i] = begin + counter;
 	counter += recv_map.AdetToDetLen[i];
       }
-      for(size_t i=0; i < recv_size_b; i++) {
+      for(size_t i=0; i < recv_map.BdetToDetLen.size(); i++) {
 	recv_map.BdetToDetSM[i] = begin + counter;
 	counter += recv_map.BdetToDetLen[i];
       }
-      for(size_t i=0; i < recv_size_b; i++) {
+      for(size_t i=0; i < recv_map.BdetToDetLen.size(); i++) {
 	recv_map.BdetToAdetSM[i] = begin + counter;
 	counter += recv_map.BdetToDetLen[i];
       }
@@ -425,14 +449,15 @@ namespace sbd {
       int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
       int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
       int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
+
       
       size_t task_begin = 0;
-      size_t task_end   = static_cast<size_t>(mpi_size_t);
+      size_t task_end   = static_cast<size_t>(mpi_size_b);
       get_mpi_range(mpi_size_t,mpi_rank_t,task_begin,task_end);
       size_t task_size = task_end-task_begin;
       exidx.resize(task_size);
       for(size_t task=task_begin; task < task_end; task++) {
-	exidx[task-task_begin].slide = static_cast<size_t>(task);
+	exidx[task-task_begin].slide = static_cast<int>(task);
       }
       
       std::vector<std::vector<size_t>> adet;
@@ -446,19 +471,38 @@ namespace sbd {
       std::vector<std::vector<size_t>> ket_det;
       std::vector<std::vector<size_t>> ket_adet;
       std::vector<std::vector<size_t>> ket_bdet;
-      
       if ( task_begin != static_cast<size_t>(0) ) {
 	int slide = - exidx[0].slide;
-	sbd::MpiSlide(det,ket_det,slide,t_comm);
-	sbd::MpiSlide(adet,ket_adet,slide,t_comm);
-	sbd::MpiSlide(bdet,ket_bdet,slide,t_comm);
+	sbd::MpiSlide(det,ket_det,slide,b_comm);
+	sbd::MpiSlide(adet,ket_adet,slide,b_comm);
+	sbd::MpiSlide(bdet,ket_bdet,slide,b_comm);
       } else {
 	ket_det = det;
 	ket_adet = adet;
 	ket_bdet = bdet;
       }
-      
+
       for(size_t task=task_begin; task < task_end; task++) {
+#ifdef SBD_DEBUG_HELPER
+	if( mpi_rank_h == 0 ) {
+	  if( mpi_rank_b == 0 ) {
+	    if( mpi_rank_t == 0 ) {
+	      std::cout << " " << make_timestamp()
+			<< " rank (" << mpi_rank_h
+			<< "," << mpi_rank_b
+			<< "," << mpi_rank_t
+			<< "), task " << task
+			<< ", ket_adet[ket_adet.size()-1] = "
+			<< makestring(ket_adet[ket_adet.size()-1],bit_length,norb)
+			<< ", ket_bdet[ket_bdet.size()-1] = "
+			<< makestring(ket_bdet[ket_bdet.size()-1],bit_length,norb)
+			<< ", ket_det[ket_det.size()-1] = "
+			<< makestring(ket_det[ket_det.size()-1],bit_length,2*norb)
+			<< std::endl;
+	    }
+	  }
+	}
+#endif
 	makeExcitationLookup(adet,bdet,ket_adet,ket_bdet,
 			     bit_length,norb,
 			     exidx[task-task_begin]);
@@ -471,9 +515,9 @@ namespace sbd {
 	  std::swap(ket_adet,send_adet);
 	  std::swap(ket_bdet,send_bdet);
 	  int slide = exidx[task-task_begin].slide - exidx[task+1-task_begin].slide;
-	  sbd::MpiSlide(send_det,ket_det,slide,t_comm);
-	  sbd::MpiSlide(send_adet,ket_adet,slide,t_comm);
-	  sbd::MpiSlide(send_bdet,ket_bdet,slide,t_comm);
+	  sbd::MpiSlide(send_det,ket_det,slide,b_comm);
+	  sbd::MpiSlide(send_adet,ket_adet,slide,b_comm);
+	  sbd::MpiSlide(send_bdet,ket_bdet,slide,b_comm);
 	}
       }
     }

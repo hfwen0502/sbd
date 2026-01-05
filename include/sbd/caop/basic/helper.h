@@ -5,6 +5,8 @@
 #ifndef SBD_CAOP_BASIC_HELPER_H
 #define SBD_CAOP_BASIC_HELPER_H
 
+#include <numeric>
+
 namespace sbd {
   
   void setup_communicator(MPI_Comm comm,
