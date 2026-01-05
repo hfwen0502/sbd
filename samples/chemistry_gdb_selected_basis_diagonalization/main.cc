@@ -203,10 +203,10 @@ int main(int argc, char * argv[]) {
     std::cout << std::endl;
     std::cout << " sbd: carryover dets = ";
     for(size_t i=0; i < std::min(codet.size(),static_cast<size_t>(6)); i++) {
-      std::cout << " " << sbd::makestring(codet[i],sbd_data.bit_length,L);
+      std::cout << " " << sbd::makestring(codet[i],sbd_data.bit_length,2*L);
     }
     if( codet.size() > static_cast<size_t>(6) ) {
-      std::cout << " ... " << sbd::makestring(codet[codet.size()-1],sbd_data.bit_length,L);
+      std::cout << " ... " << sbd::makestring(codet[codet.size()-1],sbd_data.bit_length,2*L);
     }
     std::cout << std::endl;
   }
