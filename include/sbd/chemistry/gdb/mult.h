@@ -55,42 +55,6 @@ namespace sbd {
 	}
       }
 
-#ifdef SBD_DEBUG_MULT
-      for(int rank_h=0; rank_h < mpi_size_h; rank_h++) {
-	for(int rank_b=0; rank_b < mpi_size_b; rank_b++) {
-	  for(int rank_t=0; rank_t < mpi_size_t; rank_t++) {
-	    if( mpi_rank_h == rank_h &&
-		mpi_rank_b == rank_b &&
-		mpi_rank_t == rank_t ) {
-	      std::cout << " " << make_timestamp()
-			<< " sbd: mult, wave function after applying diagonal term at rank ("
-			<< mpi_rank_h << ","
-			<< mpi_rank_b << ","
-			<< mpi_rank_t << "):";
-	      for(size_t is=0; is < static_cast<size_t>(2); is++) {
-		std::cout << (( is == 0 ) ? " " : ",")
-			  << wb[is];
-	      }
-	      if( mpi_size_b == 1 ) {
-		std::cout << ", ...";
-		for(size_t is=wb.size()/2-2; is < wb.size()/2+2; is++) {
-		  std::cout << "," << wb[is];
-		}
-	      }
-	      std::cout << ", ...";
-	      for(size_t is=wb.size()-2; is < wb.size(); is++) {
-		std::cout << "," << wb[is];
-	      }
-	      std::cout << std::endl;
-	    }
-	    MPI_Barrier(t_comm);
-	  }
-	  MPI_Barrier(b_comm);
-	}
-	MPI_Barrier(h_comm);
-      }
-#endif
-
       for(size_t task=0; task < exidx.size(); task++) {
 #pragma omp parallel
 	{
@@ -111,6 +75,8 @@ namespace sbd {
 		size_t jbst = exidx[task].SelfFromBdetSM[ibst][0];
 		for(size_t ja=0; ja < exidx[task].SinglesFromAdetLen[ia]; ja++) {
 		  size_t jast = exidx[task].SinglesFromAdetSM[ia][ja];
+		  size_t * address_begin = &tidxmap.BdetToAdetSM[jbst][0];
+		  size_t * address_end   = &tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst];
 		  auto itA = std::lower_bound(&tidxmap.BdetToAdetSM[jbst][0],
 					      &tidxmap.BdetToAdetSM[jbst][0]
 					      +tidxmap.BdetToDetLen[jbst],

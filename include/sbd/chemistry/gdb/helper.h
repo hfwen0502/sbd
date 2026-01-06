@@ -270,7 +270,7 @@ namespace sbd {
       std::vector<std::vector<size_t>> singles_b;
       makeExcitationLookup(adet_bra,adet_ket,
 			   bit_length,norb,
-			   selfdet_a,singles_a);
+			   selfdet_a, singles_a);
       makeExcitationLookup(bdet_bra,bdet_ket,
 			   bit_length,norb,
 			   selfdet_b,singles_b);
@@ -506,6 +506,31 @@ namespace sbd {
 	makeExcitationLookup(adet,bdet,ket_adet,ket_bdet,
 			     bit_length,norb,
 			     exidx[task-task_begin]);
+#ifdef SBD_DEBUG_HELPER
+	for(int rank_h=0; rank_h < mpi_size_h; rank_h++) {
+	  for(int rank_b=0; rank_b < mpi_size_b; rank_b++) {
+	    for(int rank_t=0; rank_t < mpi_size_t; rank_t++) {
+	      if( mpi_rank_h == rank_h &&
+		  mpi_rank_b == rank_b &&
+		  mpi_rank_t == rank_t ) {
+		std::cout << " " << make_timestamp()
+			  << " rank (" << mpi_rank_h
+			  << "," << mpi_rank_b
+			  << "," << mpi_rank_t
+			  << "), sample for ExcitationLookup (SinglesFromAdetLen[0] for task"
+			  << task << ":";
+		for(size_t k=0; k < exidx[task-task_begin].SinglesFromAdetLen[0]; k++) {
+		  std::cout << " " << exidx[task-task_begin].SinglesFromAdetSM[0][k];
+		}
+		std::cout << std::endl;
+	      }
+	      MPI_Barrier(t_comm);
+	    }
+	    MPI_Barrier(b_comm);
+	  }
+	  MPI_Barrier(h_comm);
+	}
+#endif
 	if( task != task_end-1 ) {
 	  std::vector<std::vector<size_t>> send_det;
 	  std::vector<std::vector<size_t>> send_adet;
