@@ -348,7 +348,7 @@ namespace sbd {
 
       int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
       int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
-      hii.resize(det.size());
+      hii.resize(det.size(),ElemT(0.0));
 #pragma omp parallel for
       for(size_t k=0; k < det.size(); k++) {
 	if( (k%mpi_size_h) != mpi_rank_h ) continue;

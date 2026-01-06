@@ -47,17 +47,49 @@ namespace sbd {
 	tdet = det;
       }
 
-      size_t num_threads = 1;
-#pragma omp parallel
-      {
-	num_threads = omp_get_num_threads();
-	if( mpi_rank_t == 0 ) {
-#pragma omp for
-	  for(size_t i=0; i < twk.size(); i++) {
-	    wb[i] += hii[i] * twk[i];
-	  }
+      size_t num_threads = omp_get_max_threads();
+      if( mpi_rank_t == 0 ) {
+#pragma omp parallel for
+	for(size_t i=0; i < twk.size(); i++) {
+	  wb[i] += hii[i] * twk[i];
 	}
       }
+
+#ifdef SBD_DEBUG_MULT
+      for(int rank_h=0; rank_h < mpi_size_h; rank_h++) {
+	for(int rank_b=0; rank_b < mpi_size_b; rank_b++) {
+	  for(int rank_t=0; rank_t < mpi_size_t; rank_t++) {
+	    if( mpi_rank_h == rank_h &&
+		mpi_rank_b == rank_b &&
+		mpi_rank_t == rank_t ) {
+	      std::cout << " " << make_timestamp()
+			<< " sbd: mult, wave function after applying diagonal term at rank ("
+			<< mpi_rank_h << ","
+			<< mpi_rank_b << ","
+			<< mpi_rank_t << "):";
+	      for(size_t is=0; is < static_cast<size_t>(2); is++) {
+		std::cout << (( is == 0 ) ? " " : ",")
+			  << wb[is];
+	      }
+	      if( mpi_size_b == 1 ) {
+		std::cout << ", ...";
+		for(size_t is=wb.size()/2-2; is < wb.size()/2+2; is++) {
+		  std::cout << "," << wb[is];
+		}
+	      }
+	      std::cout << ", ...";
+	      for(size_t is=wb.size()-2; is < wb.size(); is++) {
+		std::cout << "," << wb[is];
+	      }
+	      std::cout << std::endl;
+	    }
+	    MPI_Barrier(t_comm);
+	  }
+	  MPI_Barrier(b_comm);
+	}
+	MPI_Barrier(h_comm);
+      }
+#endif
 
       for(size_t task=0; task < exidx.size(); task++) {
 #pragma omp parallel
@@ -174,6 +206,7 @@ namespace sbd {
 	  DetIndexMap ridxmap;
 	  std::swap(rdet,tdet);
 	  std::swap(ridxmap,tidxmap);
+	  DetIndexMapCopy(tidxmap,ridxmap);
 	  sbd::MpiSlide(rwk,twk,slide,b_comm);
 	  sbd::MpiSlide(rdet,tdet,slide,b_comm);
 	  sbd::gdb::MpiSlide(ridxmap,tidxmap,slide,b_comm);
