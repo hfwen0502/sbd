@@ -109,6 +109,7 @@ namespace sbd {
 					      jast);
 		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst]) ) {
 		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
+		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
 		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
 		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,

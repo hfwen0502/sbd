@@ -75,14 +75,13 @@ namespace sbd {
 		size_t jbst = exidx[task].SelfFromBdetSM[ibst][0];
 		for(size_t ja=0; ja < exidx[task].SinglesFromAdetLen[ia]; ja++) {
 		  size_t jast = exidx[task].SinglesFromAdetSM[ia][ja];
-		  size_t * address_begin = &tidxmap.BdetToAdetSM[jbst][0];
-		  size_t * address_end   = &tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst];
 		  auto itA = std::lower_bound(&tidxmap.BdetToAdetSM[jbst][0],
 					      &tidxmap.BdetToAdetSM[jbst][0]
 					      +tidxmap.BdetToDetLen[jbst],
 					      jast);
-		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst]) ) {
+		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst])) {
 		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
+		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
 		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
 		    size_t od;
 		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);
@@ -139,9 +138,9 @@ namespace sbd {
 					      +tidxmap.AdetToDetLen[jast],
 					      jbst);
 		  if( itB != (&tidxmap.AdetToBdetSM[jast][0]+tidxmap.AdetToDetLen[jast]) ) {
-		    size_t idxa = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
-		    if( tidxmap.AdetToBdetSM[jast][idxa] != jbst ) continue;
-		    size_t jdet = tidxmap.AdetToDetSM[jast][idxa];
+		    size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
+		    if( tidxmap.AdetToBdetSM[jast][idxb] != jbst ) continue;
+		    size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
 		    size_t odiff;
 		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
 		    wb[idet] += eij * twk[jdet];
@@ -171,7 +170,7 @@ namespace sbd {
 	  std::vector<std::vector<size_t>> rdet;
 	  DetIndexMap ridxmap;
 	  std::swap(rdet,tdet);
-	  std::swap(ridxmap,tidxmap);
+	  // std::swap(ridxmap,tidxmap);
 	  DetIndexMapCopy(tidxmap,ridxmap);
 	  sbd::MpiSlide(rwk,twk,slide,b_comm);
 	  sbd::MpiSlide(rdet,tdet,slide,b_comm);

@@ -102,6 +102,8 @@ namespace sbd {
 						 +tidxmap.BdetToDetLen[jbst],
 						 jast);
 		  if( itidxa != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst]) ) {
+		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itidxa);
+		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
 		    len[task][thread_id]++;
 		  }
 		}
@@ -223,6 +225,7 @@ namespace sbd {
 						 jast);
 		  if( itidxa != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst]) ) {
 		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itidxa);
+		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
 		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
 		    size_t od;
 		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);

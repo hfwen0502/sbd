@@ -41,6 +41,98 @@ namespace sbd {
       std::vector<size_t*> SinglesFromBdetSM;
     };
     
+    void dumpDetIndexMap(std::string filename,
+			 const DetIndexMap & idxmap) {
+      std::ofstream ofs(filename);
+      ofs << " DetIndexMap: storage size = " << idxmap.storage.size() << std::endl;
+      for(size_t i=0; i < idxmap.AdetToDetLen.size(); i++) {
+	ofs << " AdetToDetSM[" << i << "]:";
+	for(size_t k=0; k < idxmap.AdetToDetLen[i]; k++) {
+	  ofs << " " << idxmap.AdetToDetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      for(size_t i=0; i < idxmap.AdetToDetLen.size(); i++) {
+	ofs << " AdetToBdetSM[" << i << "]:";
+	for(size_t k=0; k < idxmap.AdetToDetLen[i]; k++) {
+	  ofs << " " << idxmap.AdetToBdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      for(size_t i=0; i < idxmap.BdetToDetLen.size(); i++) {
+	ofs << " BdetToDetSM[" << i << "]:";
+	for(size_t k=0; k < idxmap.BdetToDetLen[i]; k++) {
+	  ofs << " " << idxmap.BdetToDetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      for(size_t i=0; i < idxmap.BdetToDetLen.size(); i++) {
+	ofs << " BdetToAdetSM[" << i << "]:";
+	for(size_t k=0; k < idxmap.BdetToDetLen[i]; k++) {
+	  ofs << " " << idxmap.BdetToAdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      ofs.close();
+    }
+
+    void dumpExcitationLookup(std::string filename,
+			      const ExcitationLookup & exidx) {
+      std::ofstream ofs(filename);
+      ofs << " ExcitationLookup: storage size = " << exidx.storage.size() << std::endl;
+      for(size_t i=0; i < exidx.SelfFromAdetLen.size(); i++) {
+	ofs << " SelfFromAdetSM[" << i << "]:";
+	for(size_t k=0; k < exidx.SelfFromAdetLen[i]; k++) {
+	  ofs << " " << exidx.SelfFromAdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      for(size_t i=0; i < exidx.SinglesFromAdetLen.size(); i++) {
+	ofs << " SinglesFromAdetSM[" << i << "]:";
+	for(size_t k=0; k < exidx.SinglesFromAdetLen[i]; k++) {
+	  ofs << " " << exidx.SinglesFromAdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      for(size_t i=0; i < exidx.SelfFromBdetLen.size(); i++) {
+	ofs << " SelfFromBdetSM[" << i << "]:";
+	for(size_t k=0; k < exidx.SelfFromBdetLen[i]; k++) {
+	  ofs << " " << exidx.SelfFromBdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      for(size_t i=0; i < exidx.SinglesFromBdetLen.size(); i++) {
+	ofs << " SinglesFromBdetSM[" << i << "]:";
+	for(size_t k=0; k < exidx.SinglesFromBdetLen[i]; k++) {
+	  ofs << " " << exidx.SinglesFromBdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      ofs.close();
+    }
+
+#ifdef SBD_DEBUG_HELPER
+    std::string dumpfilename(const std::string & filename,
+			     int mpi_rank_h, int mpi_rank_b, int mpi_rank_t, int task) {
+      std::ostringstream oss_h;
+      oss_h << std::setw(3) << std::setfill('0') << mpi_rank_h;
+      std::string tag_h = oss_h.str();
+      std::ostringstream oss_b;
+      oss_b << std::setw(3) << std::setfill('0') << mpi_rank_b;
+      std::string tag_b = oss_b.str();
+      std::ostringstream oss_t;
+      oss_t << std::setw(3) << std::setfill('0') << mpi_rank_t;
+      std::string tag_t = oss_t.str();
+      std::ostringstream oss_i;
+      oss_i << std::setw(3) << std::setfill('0') << task;
+      std::string tag_i = oss_i.str();
+      std::string resname = filename
+	+ "-" + tag_h + "-" + tag_b + "-" + tag_t
+	+ "-" + tag_i + ".txt";
+      return resname;
+    }
+#endif
+    
     void getHalfDets(const std::vector<std::vector<size_t>> & det,
 		     size_t bit_length,
 		     size_t norb,
@@ -346,10 +438,10 @@ namespace sbd {
       new_idxmap.storage = idxmap.storage; // hard copy
       new_idxmap.AdetToDetLen = idxmap.AdetToDetLen;
       new_idxmap.BdetToDetLen = idxmap.BdetToDetLen;
-      new_idxmap.AdetToDetSM.resize(new_idxmap.AdetToDetLen.size());
-      new_idxmap.AdetToBdetSM.resize(new_idxmap.AdetToDetLen.size());
-      new_idxmap.BdetToDetSM.resize(new_idxmap.BdetToDetLen.size());
-      new_idxmap.BdetToAdetSM.resize(new_idxmap.BdetToDetLen.size());
+      new_idxmap.AdetToDetSM.resize(idxmap.AdetToDetLen.size());
+      new_idxmap.AdetToBdetSM.resize(idxmap.AdetToDetLen.size());
+      new_idxmap.BdetToDetSM.resize(idxmap.BdetToDetLen.size());
+      new_idxmap.BdetToAdetSM.resize(idxmap.BdetToDetLen.size());
       size_t * begin = new_idxmap.storage.data();
       size_t counter = 0;
       for(size_t i=0; i < new_idxmap.AdetToDetLen.size(); i++) {
@@ -377,14 +469,6 @@ namespace sbd {
       sbd::MpiSlide(send_map.AdetToDetLen,recv_map.AdetToDetLen,slide,comm);
       sbd::MpiSlide(send_map.BdetToDetLen,recv_map.BdetToDetLen,slide,comm);
       sbd::MpiSlide(send_map.storage,recv_map.storage,slide,comm);
-      size_t recv_size_a = 0;
-      size_t recv_size_b = 0;
-      for(size_t i=0; i < recv_map.AdetToDetLen.size(); i++) {
-	recv_size_a += recv_map.AdetToDetLen[i];
-      }
-      for(size_t i=0; i < recv_map.BdetToDetLen.size(); i++) {
-	recv_size_b += recv_map.BdetToDetLen[i];
-      }
       recv_map.AdetToDetSM.resize(recv_map.AdetToDetLen.size());
       recv_map.AdetToBdetSM.resize(recv_map.AdetToDetLen.size());
       recv_map.BdetToDetSM.resize(recv_map.BdetToDetLen.size());
@@ -482,60 +566,35 @@ namespace sbd {
 	ket_bdet = bdet;
       }
 
+#ifdef SBD_DEBUG_HELPER
+      DetIndexMap ket_idxmap;
+      if ( task_begin != static_cast<size_t>(0) ) {
+	int slide = - exidx[0].slide;
+	sbd::gdb::MpiSlide(idxmap,ket_idxmap,slide,b_comm);
+      } else {
+	DetIndexMapCopy(idxmap,ket_idxmap);
+      }
+#endif
+
       for(size_t task=task_begin; task < task_end; task++) {
 #ifdef SBD_DEBUG_HELPER
-	if( mpi_rank_h == 0 ) {
-	  if( mpi_rank_b == 0 ) {
-	    if( mpi_rank_t == 0 ) {
-	      std::cout << " " << make_timestamp()
-			<< " rank (" << mpi_rank_h
-			<< "," << mpi_rank_b
-			<< "," << mpi_rank_t
-			<< "), task " << task
-			<< ", ket_adet[ket_adet.size()-1] = "
-			<< makestring(ket_adet[ket_adet.size()-1],bit_length,norb)
-			<< ", ket_bdet[ket_bdet.size()-1] = "
-			<< makestring(ket_bdet[ket_bdet.size()-1],bit_length,norb)
-			<< ", ket_det[ket_det.size()-1] = "
-			<< makestring(ket_det[ket_det.size()-1],bit_length,2*norb)
-			<< std::endl;
-	    }
-	  }
-	}
+	std::string idxmap_task_file = dumpfilename(std::string("idxmap"),
+						    mpi_rank_h,mpi_rank_b,mpi_rank_t,task);
+	dumpDetIndexMap(idxmap_task_file,
+			ket_idxmap);
 #endif
 	makeExcitationLookup(adet,bdet,ket_adet,ket_bdet,
 			     bit_length,norb,
 			     exidx[task-task_begin]);
 #ifdef SBD_DEBUG_HELPER
-	for(int rank_h=0; rank_h < mpi_size_h; rank_h++) {
-	  for(int rank_b=0; rank_b < mpi_size_b; rank_b++) {
-	    for(int rank_t=0; rank_t < mpi_size_t; rank_t++) {
-	      if( mpi_rank_h == rank_h &&
-		  mpi_rank_b == rank_b &&
-		  mpi_rank_t == rank_t ) {
-		std::cout << " " << make_timestamp()
-			  << " rank (" << mpi_rank_h
-			  << "," << mpi_rank_b
-			  << "," << mpi_rank_t
-			  << "), sample for ExcitationLookup (SinglesFromAdetLen[0] for task"
-			  << task << ":";
-		for(size_t k=0; k < exidx[task-task_begin].SinglesFromAdetLen[0]; k++) {
-		  std::cout << " " << exidx[task-task_begin].SinglesFromAdetSM[0][k];
-		}
-		std::cout << std::endl;
-	      }
-	      MPI_Barrier(t_comm);
-	    }
-	    MPI_Barrier(b_comm);
-	  }
-	  MPI_Barrier(h_comm);
-	}
+	std::string exidx_task_file = dumpfilename(std::string("exidx"),
+						   mpi_rank_h,mpi_rank_b,mpi_rank_t,task);
+	dumpExcitationLookup(exidx_task_file,exidx[task-task_begin]);
 #endif
 	if( task != task_end-1 ) {
 	  std::vector<std::vector<size_t>> send_det;
 	  std::vector<std::vector<size_t>> send_adet;
 	  std::vector<std::vector<size_t>> send_bdet;
-	  DetIndexMap send_idxmap;
 	  std::swap(ket_det,send_det);
 	  std::swap(ket_adet,send_adet);
 	  std::swap(ket_bdet,send_bdet);
@@ -543,6 +602,10 @@ namespace sbd {
 	  sbd::MpiSlide(send_det,ket_det,slide,b_comm);
 	  sbd::MpiSlide(send_adet,ket_adet,slide,b_comm);
 	  sbd::MpiSlide(send_bdet,ket_bdet,slide,b_comm);
+#ifdef SBD_DEBUG_HELPER
+	  DetIndexMap send_idxmap;
+	  sbd::gdb::MpiSlide(send_idxmap,ket_idxmap,slide,b_comm);
+#endif
 	}
       }
     }
