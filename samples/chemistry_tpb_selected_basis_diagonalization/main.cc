@@ -27,31 +27,30 @@ int main(int argc, char * argv[]) {
   auto sbd_data = sbd::tpb::generate_sbd_data(argc,argv);
 
   std::string adetfile("alphadets.txt");
+  std::string bdetfile;
   std::string fcidumpfile("fcidump.txt");
-  std::string loadname("");
-  std::string savename("");
-  std::string carryoverfile("");
+  std::string loadname;
+  std::string savename;
+  std::string carryoverfile;
   
   for(int i=0; i < argc; i++) {
     if( std::string(argv[i]) == "--adetfile" ) {
-      adetfile = std::string(argv[i+1]);
-      i++;
+      adetfile = std::string(argv[++i]);
+    }
+    if( std::string(argv[i]) == "--bdetfile" ) {
+      bdetfile = std::string(argv[++i]);
     }
     if( std::string(argv[i]) == "--fcidump" ) {
-      fcidumpfile = std::string(argv[i+1]);
-      i++;
+      fcidumpfile = std::string(argv[++i]);
     }
     if( std::string(argv[i]) == "--loadname" ) {
-      loadname = std::string(argv[i+1]);
-      i++;
+      loadname = std::string(argv[++i]);
     }
     if( std::string(argv[i]) == "--savename" ) {
-      savename = std::string(argv[i+1]);
-      i++;
+      savename = std::string(argv[++i]);
     }
     if( std::string(argv[i]) == "--carryoverfile" ) {
-      carryoverfile = std::string(argv[i+1]);
-      i++;
+      carryoverfile = std::string(argv[++i]);
     }
   }
   
@@ -114,22 +113,43 @@ int main(int argc, char * argv[]) {
    */
   std::vector<std::vector<size_t>> adet;
   std::vector<std::vector<size_t>> bdet;
-  if( mpi_rank == 0 ) {
-    sbd::LoadAlphaDets(adetfile,adet,sbd_data.bit_length,L);
-    sbd::sort_bitarray(adet);
-  }
-
-  sbd::MpiBcast(adet,0,comm);
-  bdet = adet;
-  if( sbd_data.do_shuffle != 0 ) {
+  if( bdetfile.empty() ) {
     if( mpi_rank == 0 ) {
-      unsigned int taxi = 1729;
-      unsigned int magic = 137;
-      sbd::ShuffleDet(adet,taxi);
-      sbd::ShuffleDet(bdet,magic);
+      sbd::LoadAlphaDets(adetfile,adet,sbd_data.bit_length,L);
+      sbd::sort_bitarray(adet);
+    }
+    
+    sbd::MpiBcast(adet,0,comm);
+    bdet = adet;
+    if( sbd_data.do_shuffle != 0 ) {
+      if( mpi_rank == 0 ) {
+	unsigned int taxi = 1729;
+	unsigned int magic = 137;
+	sbd::ShuffleDet(adet,taxi);
+	sbd::ShuffleDet(bdet,magic);
+      }
+      sbd::MpiBcast(adet,0,comm);
+      sbd::MpiBcast(bdet,0,comm);
+    }
+  } else {
+    if( mpi_rank == 0 ) {
+      sbd::LoadAlphaDets(adetfile,adet,sbd_data.bit_length,L);
+      sbd::sort_bitarray(adet);
+      sbd::LoadAlphaDets(bdetfile,bdet,sbd_data.bit_length,L);
+      sbd::sort_bitarray(bdet);
     }
     sbd::MpiBcast(adet,0,comm);
     sbd::MpiBcast(bdet,0,comm);
+    if( sbd_data.do_shuffle != 0 ) {
+      if( mpi_rank == 0 ) {
+	unsigned int taxi = 1729;
+	unsigned int magic = 137;
+	sbd::ShuffleDet(adet,taxi);
+	sbd::ShuffleDet(bdet,magic);
+      }
+      sbd::MpiBcast(adet,0,comm);
+      sbd::MpiBcast(bdet,0,comm);
+    }
   }
 
   /**
@@ -156,7 +176,7 @@ int main(int argc, char * argv[]) {
       std::cout << " ... " << sbd::makestring(cobits[cobits.size()-1],sbd_data.bit_length,L);
     }
     std::cout << std::endl;
-    if( carryoverfile != std::string("") ) {
+    if( !carryoverfile.empty() ) {
       std::ofstream ofs_co(carryoverfile);
       for(size_t i=0; i < cobits.size(); i++) {
 	ofs_co << sbd::makestring(cobits[i],sbd_data.bit_length,L) << std::endl;

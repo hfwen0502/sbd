@@ -8,10 +8,7 @@
 namespace sbd {
 
 
-
-  /**
-     Function for adding diagonal contribution
-   */
+  /*
   template <typename ElemT>
   void ZeroDiffCorrelation(const std::vector<size_t> & DetI,
 			   ElemT WeightI,
@@ -43,9 +40,6 @@ namespace sbd {
     }
   }
 
-  /**
-     Function for adding one-occupation different contribution
-   */
   template <typename ElemT>
   void OneDiffCorrelation(const std::vector<size_t> & DetI,
 			  const ElemT WeightI,
@@ -85,9 +79,6 @@ namespace sbd {
     }
   }
 
-  /**
-     Function for adding two-occupation different contribution
-   */
   template <typename ElemT>
   void TwoDiffCorrelation(const std::vector<size_t> & DetI,
 			  const ElemT WeightI,
@@ -129,9 +120,6 @@ namespace sbd {
 
   }
 
-  /**
-     Function for adding the terms to the resulting correlation
-   */
   template <typename ElemT>
   void CorrelationTermAddition(const std::vector<size_t> & DetI,
 			       const std::vector<size_t> & DetJ,
@@ -187,6 +175,7 @@ namespace sbd {
       TwoDiffCorrelation(DetI,WeightI,WeightJ,bit_length,norb,c[0],c[1],d[0],d[1],onebody,twobody);
     }
   }
+  */
 
   /**
      Function to evaluate the two-particle correlation functions
@@ -205,8 +194,6 @@ namespace sbd {
 		   MPI_Comm t_comm,
 		   std::vector<std::vector<ElemT>> & onebody,
 		   std::vector<std::vector<ElemT>> & twobody) {
-
-    
 
     onebody.resize(2);
     twobody.resize(4);

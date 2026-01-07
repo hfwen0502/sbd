@@ -9,6 +9,8 @@
 
 #define SBD_MAX_THREADS 192
 
+#include <random>
+
 namespace sbd {
 
   template <typename ElemT>
