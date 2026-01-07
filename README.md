@@ -12,6 +12,7 @@ Sample usage examples are provided in the `/samples` directory.
 
 - **v1.0.0**: Initial public release corresponding to the arXiv submission.
 - **v1.1.0**: Feature additions, refactoring, and bug fixes
+- **v1.2.0**: Feature additions (sbd for general determinant), and bug fixes
 
 ## Requirement
 
@@ -25,9 +26,11 @@ Sample usage examples are provided in the `/samples` directory.
 
 ## How to Compile the Sample Codes
 
-- The sample code for parallelized selected basis diagonalization is located in `sample/selected_basis_diagonalization`.
+- The sample code for parallelized selected basis diagonalization for tensor-product basis is located in `samples/chemistry_tpb_selected_basis_diagonalization`.
 - Edit the configuration file to suit your environment and build it with the make command.
 - For more information and options for the executable, see README.md in the same directory.
+- From v1.1.0, the sample code for parallelized selected basis diagonalization for general Hamiltonian written by creation/annihilation operator is added in `samples/caop_selected_basis_diagonalization`.
+- From v1.2.0, the sample code for parallelized selected basis diagonalization for quantum chemistry Hamiltonian in the general determinant basis is added in `samples/chemistry_gdb_selected_basis_diagonalization`.
 
 ## Documentation
 

@@ -76,7 +76,7 @@ namespace sbd {
 
     if( slide.size() != 0 ) {
       if( slide[0] != 0 ) {
-	MpiSlide(bs,tbs,slide[0],b_comm);
+	MpiSlide(bs,tbs,-slide[0],b_comm);
       } else {
 	tbs = bs;
       }
