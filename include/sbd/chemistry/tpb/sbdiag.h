@@ -229,7 +229,7 @@ namespace sbd {
       /**
 	 Diagonalization
       */
-      if( method == 0 ) {
+      if( method == 0 || method == 2 ) {
 
 	/**
 	   Default method 0: Calculation without storing hamiltonian elements
@@ -244,17 +244,33 @@ namespace sbd {
 #ifdef SBD_THRUST
 	device_data.Init(adet, bdet, bit_length, static_cast<size_t>(L), helper, I0, I1, I2,
 	                 sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants);
-	sbd::Davidson(hii, W, device_data,
-		      adet_comm_size, bdet_comm_size,
-		      h_comm,b_comm,t_comm,
-		      max_it,max_nb,eps,max_time);
+	if( method == 0 ) {
+		sbd::Davidson(hii, W, device_data,
+				adet_comm_size, bdet_comm_size,
+				h_comm,b_comm,t_comm,
+				max_it,max_nb,eps,max_time);
+	} else {
+		sbd::Lanczos(hii, W, device_data,
+				adet_comm_size, bdet_comm_size,
+				h_comm,b_comm,t_comm,
+				max_it,max_nb,eps);
+	}
 #else
-	sbd::Davidson(hii,W,
-		      adet,bdet,bit_length,static_cast<size_t>(L),
-		      adet_comm_size,bdet_comm_size,helper,
-		      I0,I1,I2,
-		      h_comm,b_comm,t_comm,
-		      max_it,max_nb,eps,max_time);
+	if( method == 0 ) {
+	  sbd::Davidson(hii,W,
+			adet,bdet,bit_length,static_cast<size_t>(L),
+			adet_comm_size,bdet_comm_size,helper,
+			I0,I1,I2,
+			h_comm,b_comm,t_comm,
+			max_it,max_nb,eps,max_time);
+	} else if ( method == 2 ) {
+	  sbd::Lanczos(hii,W,
+		       adet,bdet,bit_length,static_cast<size_t>(L),
+		       adet_comm_size,bdet_comm_size,helper,
+		       I0,I1,I2,
+		       h_comm,b_comm,t_comm,
+		       max_it,max_nb,eps);
+	}
 #endif
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
@@ -304,8 +320,7 @@ namespace sbd {
 	  std::cout << " Energy = " << E << std::endl;
 	}
 	energy = E;
-
-      } else if ( method == 1 ) {
+      } else if ( method == 1 || method == 3 ) {
 
 	/**
 	   Method 1: Calculation with storing hamiltonian elements
@@ -340,31 +355,52 @@ namespace sbd {
     auto time_end_mkham = std::chrono::high_resolution_clock::now();
 	auto elapsed_mkham_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mkham-time_start_mkham).count();
 	double elapsed_mkham = 0.000001 * elapsed_mkham_count;
-	std::cout << " Elapsed time for make Hamiltonian " << elapsed_mkham << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for make Hamiltonian " << elapsed_mkham << " (sec) " << std::endl;
+	}
 
 	auto time_start_davidson = std::chrono::high_resolution_clock::now();
 	sbd::BasisInitVector(W,adet,bdet,adet_comm_size,bdet_comm_size,h_comm,b_comm,t_comm,init);
 #ifdef SBD_THRUST
-	sbd::Davidson(hii, W, device_data,
-		      adet_comm_size, bdet_comm_size,
-		      h_comm,b_comm,t_comm,
-		      max_it,max_nb,eps,max_time);
+	if( method < 2 ) {
+		sbd::Davidson(hii, W, device_data,
+				adet_comm_size, bdet_comm_size,
+				h_comm,b_comm,t_comm,
+				max_it,max_nb,eps,max_time);
+	} else {
+		sbd::Lanczos(hii, W, device_data,
+				adet_comm_size, bdet_comm_size,
+				h_comm,b_comm,t_comm,
+				max_it,max_nb,eps);
+	}
 #else
-	sbd::Davidson(hii,ih,jh,hij,len,tasktype,
-		      adetshift,bdetshift,adet_comm_size,bdet_comm_size,
-		      W,
-		      h_comm,b_comm,t_comm,
-		      max_it,max_nb,bit_length,eps);
+	if( method == 1 ) {
+	  sbd::Davidson(hii,ih,jh,hij,len,tasktype,
+			adetshift,bdetshift,adet_comm_size,bdet_comm_size,
+			W,
+			h_comm,b_comm,t_comm,
+			max_it,max_nb,bit_length,eps);
+	} else if ( method == 3 ) {
+	  sbd::Lanczos(hii,ih,jh,hij,len,tasktype,
+		       adetshift,bdetshift,adet_comm_size,bdet_comm_size,
+		       W,
+		       h_comm,b_comm,t_comm,
+		       max_it,max_nb,bit_length,eps);
+	}
 #endif
 	auto time_end_davidson = std::chrono::high_resolution_clock::now();
 	auto elapsed_davidson_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_davidson-time_start_davidson).count();
 	double elapsed_davidson = 0.000001 * elapsed_davidson_count;
-	std::cout << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for davidson " << elapsed_davidson << " (sec) " << std::endl;
+	}
 
 	auto time_end_diag = std::chrono::high_resolution_clock::now();
 	auto elapsed_diag_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_diag-time_start_diag).count();
 	double elapsed_diag = 0.000001 * elapsed_diag_count;
-	std::cout << " Elapsed time for diagonalization " << elapsed_diag << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for diagonalization " << elapsed_diag << " (sec) " << std::endl;
+	}
 
 	/**
 	   Evaluation of Hamiltonian expectation value
@@ -386,7 +422,9 @@ namespace sbd {
 	auto time_end_mult = std::chrono::high_resolution_clock::now();
 	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
 	double elapsed_mult = 0.000001 * elapsed_mult_count;
-	std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
+	}
 
 	double E = 0.0;
 	sbd::InnerProduct(W,C,E,b_comm);
@@ -599,6 +637,7 @@ namespace sbd {
 
       if( mpi_rank == 0 ) {
 	sbd::LoadAlphaDets(adetfile,adet,sbd_data.bit_length,L);
+	sbd::sort_bitarray(adet);
       }
 
       if( do_shuffle == 0 ) {

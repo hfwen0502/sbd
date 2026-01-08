@@ -11,9 +11,10 @@
 #include "sbd/framework/mpi_utility_thrust.h"
 #include "sbd/chemistry/tpb/mult_thrust.h"
 #include "sbd/chemistry/tpb/davidson_thrust.h"
+#include "sbd/chemistry/tpb/lanczos_thrust.h"
 #endif
 #include "sbd/chemistry/tpb/davidson.h"
-
+#include "sbd/chemistry/tpb/lanczos.h"
 #include "sbd/chemistry/tpb/occupation.h"
 #include "sbd/chemistry/tpb/correlation.h"
 #ifdef SBD_THRUST
