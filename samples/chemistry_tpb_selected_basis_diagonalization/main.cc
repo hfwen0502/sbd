@@ -174,7 +174,7 @@ int main(int argc, char * argv[]) {
     }
     std::cout << std::endl;
     std::cout << " Sample-based diagonalization: carryover bitstrings = ";
-    for(size_t i=0; i < std::min(co_adet).size(),static_cast<size_t>(6)); i++) {
+    for(size_t i=0; i < std::min(co_adet.size(),static_cast<size_t>(6)); i++) {
       std::cout << " " << sbd::makestring(co_adet[i],sbd_data.bit_length,L);
     }
     if( co_adet.size() > static_cast<size_t>(6) ) {

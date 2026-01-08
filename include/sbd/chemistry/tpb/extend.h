@@ -18,13 +18,13 @@ namespace sbd {
 			     size_t norb,
 			     size_t adet_comm_size,
 			     size_t bdet_comm_size,
-			     MPI_Comm b_comm,
+			     MPI_Comm comm,
 			     RealT cutoff,
 			     std::vector<std::vector<size_t>> & res_adet,
 			     std::vector<std::vector<size_t>> & res_bdet) {
 
-    int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
-    int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
+    int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
+    int mpi_size; MPI_Comm_size(comm,&mpi_size);
 
     size_t adet_begin = 0;
     size_t adet_end   = adet.size();
@@ -32,9 +32,9 @@ namespace sbd {
     size_t bdet_end   = bdet.size();
     int a_comm_size = static_cast<int>(adet_comm_size);
     int b_comm_size = static_cast<int>(bdet_comm_size);
-    assert( mpi_size_b == a_comm_size * b_comm_size );
-    int a_comm_rank = mpi_rank_b / b_comm_size;
-    int b_comm_rank = mpi_rank_b % b_comm_size;
+    assert( mpi_size == a_comm_size * b_comm_size );
+    int a_comm_rank = mpi_rank / b_comm_size;
+    int b_comm_rank = mpi_rank % b_comm_size;
 
     get_mpi_range(a_comm_size,a_comm_rank,adet_begin,adet_end);
     get_mpi_range(b_comm_size,b_comm_rank,bdet_begin,bdet_end);
@@ -53,14 +53,14 @@ namespace sbd {
       }
     }
 
-    MpiAllreduce(adet_count,MPI_SUM,b_comm);
-    MpiAllreduce(bdet_count,MPI_SUM,b_comm);
+    MpiAllreduce(adet_count,MPI_SUM,comm);
+    MpiAllreduce(bdet_count,MPI_SUM,comm);
 
     size_t num_one_a = static_cast<size_t>(bitcount(adet[0],bit_length,norb));
     size_t num_one_b = static_cast<size_t>(bitcount(bdet[0],bit_length,norb));
     
-    size_t max_single_from_a = norb * (norb-num_one_a);
-    size_t max_single_from_b = norb * (norb-num_one_b);
+    size_t max_single_from_a = num_one_a * (norb-num_one_a);
+    size_t max_single_from_b = num_one_b * (norb-num_one_b);
 
     size_t reduced_adet_size = 0;
     size_t reduced_bdet_size = 0;
@@ -78,10 +78,8 @@ namespace sbd {
     size_t max_single_adet = max_single_from_a * reduced_adet_size + reduced_adet_size;
     size_t max_single_bdet = max_single_from_a * reduced_bdet_size + reduced_bdet_size;
 
-    std::vector<std::vector<size_t>> new_adet_local;
-    std::vector<std::vector<size_t>> new_bdet_local;
-    new_adet_local.reserve(max_single_adet);
-    new_bdet_local.reserve(max_single_bdet);
+    std::vector<std::vector<size_t>> new_adet_local(max_single_adet);
+    std::vector<std::vector<size_t>> new_bdet_local(max_single_bdet);
 
     size_t ia_count = 0;
     for(size_t ia=adet_begin; ia < adet_end; ia++) {
@@ -91,11 +89,12 @@ namespace sbd {
     }
 
     std::vector<std::vector<size_t>> hdet_ex(max_single_from_a);
-    std::vector<int> open_base(norb);
-    std::vector<int> closed_base(norb);
+    std::vector<int> open_adet(norb-num_one_a);
+    std::vector<int> closed_adet(num_one_a);
     for(size_t ia=0; ia < reduced_adet_size; ia++) {
-      int nc = getOpenClosed(new_adet_local[ia],bit_length,norb,open_base,closed_base);
-      single_from_hdet(new_adet_local[ia],bit_length,norb,open_base,closed_base,hdet_ex);
+      int nc = getOpenClosed(new_adet_local[ia],bit_length,norb,open_adet,closed_adet);
+      size_t numc = static_cast<size_t>(nc);
+      single_from_hdet(new_adet_local[ia],bit_length,norb,numc,open_adet,closed_adet,hdet_ex);
       for(size_t k=0; k < hdet_ex.size(); k++) {
 	new_adet_local[ia_count++] = hdet_ex[k];
       }
@@ -108,33 +107,52 @@ namespace sbd {
       }
     }
     hdet_ex.resize(max_single_from_b);
+    std::vector<int> open_bdet(norb-num_one_b);
+    std::vector<int> closed_bdet(num_one_b);
     for(size_t ib=0; ib < reduced_bdet_size; ib++) {
-      int nc = getOpenClosed(new_bdet_local[ib],bit_length,norb,open_base,closed_base);
-      single_from_hdet(new_bdet_local[ib],bit_length,norb,open_base,closed_base,hdet_ex);
+      int nc = getOpenClosed(new_bdet_local[ib],bit_length,norb,open_bdet,closed_bdet);
+      size_t numc = static_cast<size_t>(nc);
+      single_from_hdet(new_bdet_local[ib],bit_length,norb,numc,open_bdet,closed_bdet,hdet_ex);
       for(size_t k=0; k < hdet_ex.size(); k++) {
 	new_bdet_local[ib_count++] = hdet_ex[k];
       }
     }
 
-    // perform mpi sort accross nodes
-
+#ifdef SBD_DEBUG_EXTEND
+    for(int rank=0; rank < mpi_size; rank++) {
+      if( mpi_rank == rank ) {
+	std::cout << " end construct excitation before sorting at rank "
+		  << mpi_rank << "(" << a_comm_rank << "," << b_comm_rank
+		  << "): new det sizes = "
+		  << new_adet_local.size()
+		  << "," << new_bdet_local.size() << std::endl;
+      }
+      MPI_Barrier(comm);
+    }
+    sleep(1);
+#endif
     MPI_Comm adet_comm;
     MPI_Comm bdet_comm;
     
-    MPI_Comm_split(b_comm,b_comm_rank,a_comm_rank,&adet_comm);
-    MPI_Comm_split(b_comm,a_comm_rank,b_comm_rank,&bdet_comm);
+    MPI_Comm_split(comm,b_comm_rank,a_comm_rank,&adet_comm);
+    MPI_Comm_split(comm,a_comm_rank,b_comm_rank,&bdet_comm);
 
     std::vector<std::vector<std::vector<size_t>>> temp_adet(adet_comm_size);
     std::vector<std::vector<std::vector<size_t>>> temp_bdet(bdet_comm_size);
 
-    for(int rank=0; rank < static_cast<int>(adet_comm_size); rank++) {
+    for(int rank=0; rank < a_comm_size; rank++) {
       if( rank == a_comm_rank ) {
 	temp_adet[rank] = new_adet_local;
+#ifdef SBD_DEBUG_EXTEND
+	std::cout << " temp_adet[" << rank
+		  << "] at bcast root rank " << a_comm_rank
+		  << ": size = " << temp_adet[rank].size() << std::endl;
+#endif
       }
       MpiBcast(temp_adet[rank],rank,adet_comm);
     }
 
-    for(int rank=0; rank < static_cast<int>(bdet_comm_size); rank++) {
+    for(int rank=0; rank < b_comm_size; rank++) {
       if( rank == b_comm_rank ) {
 	temp_bdet[rank] = new_bdet_local;
       }
@@ -180,12 +198,12 @@ namespace sbd {
 			     size_t norb,
 			     const size_t adet_comm_size,
 			     const size_t bdet_comm_size,
-			     MPI_Comm b_comm,
+			     MPI_Comm comm,
 			     std::vector<std::vector<size_t>> & res_adet,
 			     std::vector<std::vector<size_t>> & res_bdet) {
     
-    int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
-    int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
+    int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
+    int mpi_size; MPI_Comm_size(comm,&mpi_size);
 
     size_t adet_begin = 0;
     size_t adet_end   = adet.size();
@@ -193,9 +211,9 @@ namespace sbd {
     size_t bdet_end   = bdet.size();
     int a_comm_size = static_cast<int>(adet_comm_size);
     int b_comm_size = static_cast<int>(bdet_comm_size);
-    assert( mpi_size_b == a_comm_size * b_comm_size );
-    int a_comm_rank = mpi_rank_b / b_comm_size;
-    int b_comm_rank = mpi_rank_b % b_comm_size;
+    assert( mpi_size == a_comm_size * b_comm_size );
+    int a_comm_rank = mpi_rank / b_comm_size;
+    int b_comm_rank = mpi_rank % b_comm_size;
 
     get_mpi_range(a_comm_size,a_comm_rank,adet_begin,adet_end);
     get_mpi_range(b_comm_size,b_comm_rank,bdet_begin,bdet_end);
@@ -206,28 +224,26 @@ namespace sbd {
     size_t num_one_a = static_cast<size_t>(bitcount(adet[0],bit_length,norb));
     size_t num_one_b = static_cast<size_t>(bitcount(bdet[0],bit_length,norb));
     
-    size_t max_single_from_a = norb * (norb-num_one_a);
-    size_t max_single_from_b = norb * (norb-num_one_b);
+    size_t max_single_from_a = num_one_a * (norb-num_one_a);
+    size_t max_single_from_b = num_one_b * (norb-num_one_b);
 
     size_t max_single_adet = max_single_from_a * adet_size + adet_size;
     size_t max_single_bdet = max_single_from_a * bdet_size + bdet_size;
 
-    std::vector<std::vector<size_t>> new_adet_local;
-    std::vector<std::vector<size_t>> new_bdet_local;
-    new_adet_local.reserve(max_single_adet);
-    new_bdet_local.reserve(max_single_bdet);
+    std::vector<std::vector<size_t>> new_adet_local(max_single_adet);
+    std::vector<std::vector<size_t>> new_bdet_local(max_single_bdet);
 
     size_t ia_count = 0;
     for(size_t ia=adet_begin; ia < adet_end; ia++) {
       new_adet_local[ia_count++] = adet[ia];
     }
-
     std::vector<std::vector<size_t>> hdet_ex(max_single_from_a);
-    std::vector<int> open_base(norb);
-    std::vector<int> closed_base(norb);
+    std::vector<int> open_adet(norb-num_one_a);
+    std::vector<int> closed_adet(num_one_a);
     for(size_t ia=0; ia < adet_size; ia++) {
-      int nc = getOpenClosed(new_adet_local[ia],bit_length,norb,open_base,closed_base);
-      single_from_hdet(new_adet_local[ia],bit_length,norb,open_base,closed_base,hdet_ex);
+      int nc = getOpenClosed(new_adet_local[ia],bit_length,norb,open_adet,closed_adet);
+      size_t numc = static_cast<size_t>(nc);
+      single_from_hdet(new_adet_local[ia],bit_length,norb,numc,open_adet,closed_adet,hdet_ex);
       for(size_t k=0; k < hdet_ex.size(); k++) {
 	new_adet_local[ia_count++] = hdet_ex[k];
       }
@@ -238,35 +254,60 @@ namespace sbd {
       new_bdet_local[ib_count++] = bdet[ib];
     }
     hdet_ex.resize(max_single_from_b);
+    std::vector<int> open_bdet(norb-num_one_a);
+    std::vector<int> closed_bdet(num_one_a);
     for(size_t ib=0; ib < bdet_size; ib++) {
-      int nc = getOpenClosed(new_bdet_local[ib],bit_length,norb,open_base,closed_base);
-      single_from_hdet(new_bdet_local[ib],bit_length,norb,open_base,closed_base,hdet_ex);
+      int nc = getOpenClosed(new_bdet_local[ib],bit_length,norb,open_bdet,closed_bdet);
+      size_t numc = static_cast<size_t>(nc);
+      single_from_hdet(new_bdet_local[ib],bit_length,norb,numc,open_bdet,closed_bdet,hdet_ex);
       for(size_t k=0; k < hdet_ex.size(); k++) {
 	new_bdet_local[ib_count++] = hdet_ex[k];
       }
     }
 
-    // perform mpi sort accross nodes
-
+#ifdef SBD_DEBUG_EXTEND
+    for(int rank=0; rank < mpi_size; rank++) {
+      if( mpi_rank == rank ) {
+	std::cout << " end construct excitation before sorting at rank "
+		  << mpi_rank << "(" << a_comm_rank << "," << b_comm_rank
+		  << "): new det sizes = "
+		  << new_adet_local.size()
+		  << "," << new_bdet_local.size() << std::endl;
+      }
+      MPI_Barrier(comm);
+    }
+    sleep(1);
+#endif
     MPI_Comm adet_comm;
     MPI_Comm bdet_comm;
-    
-    MPI_Comm_split(b_comm,b_comm_rank,a_comm_rank,&adet_comm);
-    MPI_Comm_split(b_comm,a_comm_rank,b_comm_rank,&bdet_comm);
+    MPI_Comm_split(comm,b_comm_rank,a_comm_rank,&adet_comm);
+    MPI_Comm_split(comm,a_comm_rank,b_comm_rank,&bdet_comm);
 
     std::vector<std::vector<std::vector<size_t>>> temp_adet(adet_comm_size);
     std::vector<std::vector<std::vector<size_t>>> temp_bdet(bdet_comm_size);
 
-    for(int rank=0; rank < static_cast<int>(adet_comm_size); rank++) {
-      if( rank == a_comm_rank ) {
-	temp_adet[rank] = new_adet_local;
+    for(int rank=0; rank < a_comm_size; rank++) {
+      if( a_comm_rank == rank ) {
+	temp_adet[rank].resize(new_adet_local.size());
+	for(size_t k=0; k < new_adet_local.size(); k++) {
+	  temp_adet[rank][k].resize(new_adet_local[k].size());
+	  for(size_t l=0; l < new_adet_local[k].size(); l++) {
+	    temp_adet[rank][k][l] = new_adet_local[k][l];
+	  }
+	}
       }
       MpiBcast(temp_adet[rank],rank,adet_comm);
     }
 
-    for(int rank=0; rank < static_cast<int>(bdet_comm_size); rank++) {
-      if( rank == b_comm_rank ) {
-	temp_bdet[rank] = new_bdet_local;
+    for(int rank=0; rank < b_comm_size; rank++) {
+      if( b_comm_rank == rank ) {
+	temp_bdet[rank].resize(new_bdet_local.size());
+	for(size_t k=0; k < new_bdet_local.size(); k++) {
+	  temp_bdet[rank][k].resize(new_bdet_local[k].size());
+	  for(size_t l=0; l < new_bdet_local[k].size(); l++) {
+	    temp_bdet[rank][k][l] = new_bdet_local[k][l];
+	  }
+	}
       }
       MpiBcast(temp_bdet[rank],rank,bdet_comm);
     }

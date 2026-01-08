@@ -9,11 +9,11 @@ namespace sbd {
   void single_from_hdet(const std::vector<size_t> & hdet_base,
 			size_t bit_length,
 			size_t norb,
+			size_t num_closed,
 			const std::vector<int> & open_base,
 			const std::vector<int> & closed_base,
 			std::vector<std::vector<size_t>> & hdet_ex) {
     // supporsed that open and closed are obtained priory by using getOpenClosed function for hdet_base.
-    size_t num_closed = closed_base.size();
     size_t num_ex = num_closed * (norb - num_closed);
     hdet_ex.resize(num_ex);
     size_t ex_count = 0;
@@ -33,7 +33,8 @@ namespace sbd {
     std::vector<int> open_base(norb);
     std::vector<int> closed_base(norb);
     int nc = getOpenClosed(hdet,bit_length,norb,open_base,closed_base);
-    single_from_hdet(hdet,bit_length,norb,open_base,closed_base,edet);
+    size_t numc = static_cast<size_t>(nc);
+    single_from_hdet(hdet,bit_length,norb,numc,open_base,closed_base,edet);
   }
   
 }
