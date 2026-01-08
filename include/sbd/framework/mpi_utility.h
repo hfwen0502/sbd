@@ -7,6 +7,10 @@
 #ifndef SBD_FRAMEWORK_MPI_UTILITY_H
 #define SBD_FRAMEWORK_MPI_UTILITY_H
 
+#include <type_traits>
+#include <limits>
+#include <stdexcept>
+
 #include "mpi.h"
 
 namespace sbd {
@@ -474,12 +478,20 @@ namespace sbd {
   
   template <typename ElemT>
   void MpiAllreduce(std::vector<ElemT> & A, MPI_Op op, MPI_Comm comm) {
-    MPI_Datatype DataT = GetMpiType<ElemT>::MpiT;
+    MPI_Datatype DataT;
+    if constexpr (std::is_same_v<ElemT,size_t>) {
+      DataT = SBD_MPI_SIZE_T;
+    } else {
+      DataT = GetMpiType<ElemT>::MpiT;
+    }
     std::vector<ElemT> B(A);
 #if MPI_VERSION >= 4
     MPI_Allreduce_c(B.data(),A.data(),A.size(),DataT,op,comm);
 #else
-    MPI_Allreduce(B.data(),A.data(),A.size(),DataT,op,comm);
+    if (A.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::runtime_error("MPI_Allreduce: count exceeds INT_MAX (MPI<4). Use MPI-4 *_c API.");
+    }
+    MPI_Allreduce(B.data(),A.data(),static_cast<int>(A.size()),DataT,op,comm);
 #endif
   }
 

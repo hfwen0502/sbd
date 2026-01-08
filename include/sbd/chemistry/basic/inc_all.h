@@ -6,6 +6,7 @@
 #include "sbd/chemistry/basic/helpers.h"
 #include "sbd/chemistry/basic/qcham.h"
 #include "sbd/chemistry/basic/correlation.h"
+#include "sbd/chemistry/basic/excitatin.h"
 #include "sbd/chemistry/basic/makeintegrals.h"
 #include "sbd/chemistry/basic/makedeterminants.h"
 
