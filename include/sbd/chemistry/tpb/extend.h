@@ -21,7 +21,8 @@ namespace sbd {
 			     MPI_Comm comm,
 			     RealT cutoff,
 			     std::vector<std::vector<size_t>> & res_adet,
-			     std::vector<std::vector<size_t>> & res_bdet) {
+			     std::vector<std::vector<size_t>> & res_bdet,
+			     RealT & total_weight) {
 
     int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
     int mpi_size; MPI_Comm_size(comm,&mpi_size);
@@ -43,10 +44,13 @@ namespace sbd {
     size_t bdet_size = bdet_end - bdet_begin;
     std::vector<size_t> adet_count(adet.size(),0);
     std::vector<size_t> bdet_count(bdet.size(),0);
+    RealT total_weight_local = 0.0;
     for(size_t ia=adet_begin; ia < adet_end; ia++) {
       for(size_t ib=bdet_begin; ib < bdet_end; ib++) {
 	size_t idx = (ia - adet_begin) * bdet_size + ib - bdet_begin;
-	if( std::abs(w[idx]) > cutoff ) {
+	RealT weight = GetReal(Conjugate(w[idx])*w[idx]);
+	if( weight > cutoff ) {
+	  total_weight_local += weight;
 	  adet_count[ia]++;
 	  bdet_count[ib]++;
 	}
@@ -55,6 +59,8 @@ namespace sbd {
 
     MpiAllreduce(adet_count,MPI_SUM,comm);
     MpiAllreduce(bdet_count,MPI_SUM,comm);
+    MPI_Allreduce(&total_weight_local,&total_weight,1,
+		  GetMpiType<RealT>::MpiT,MPI_SUM,comm);
 
     size_t num_one_a = static_cast<size_t>(bitcount(adet[0],bit_length,norb));
     size_t num_one_b = static_cast<size_t>(bitcount(bdet[0],bit_length,norb));
