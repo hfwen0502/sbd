@@ -251,25 +251,25 @@ public:
         if (blockStart == blockEnd) {
             // the case where start and end is same block
             size_t mask = ((size_t(1) << bitEnd) - 1) ^ ((size_t(1) << bitStart) - 1);
-            nonZeroBits += pop_count_kernel(dets[blockStart] & mask);
+            nonZeroBits += __popcll(dets[blockStart] & mask);
         }
         else {
             // 2. Handle the partial bits in the start block
             if (bitStart != 0) {
                 size_t mask = ~((size_t(1) << bitStart) - 1); // count after bitStart
-                nonZeroBits += pop_count_kernel(dets[blockStart] & mask);
+                nonZeroBits += __popcll(dets[blockStart] & mask);
                 blockStart++;
             }
 
             // 3. Handle full blocks in between
             for (size_t i = blockStart; i < blockEnd; i++) {
-                nonZeroBits += pop_count_kernel(dets[i]);
+                nonZeroBits += __popcll(dets[i]);
             }
 
             // 4. Handle the partial bits in the end block
             if (bitEnd != 0) {
                 size_t mask = (size_t(1) << bitEnd) - 1; // count before bitEnd
-                nonZeroBits += pop_count_kernel(dets[blockEnd] & mask);
+                nonZeroBits += __popcll(dets[blockEnd] & mask);
             }
         }
 
