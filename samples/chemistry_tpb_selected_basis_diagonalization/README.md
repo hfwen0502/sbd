@@ -87,6 +87,12 @@ Below is an explanation of each command-line option.
   For `--carryover_type 1` and `2` (used only when `--carryover_ratio is set to 0`), half-determinants are ranked by their weights, and the selection is truncated such that the cumulative weight reaches 1 - carryover_threshold.  
   For `--carryover_type 3`, this value is used as a direct cutoff on determinant weights; determinants with weights smaller than carryover_threshold are
   discarded.
+- `--carryover_adetfile <str>`:  
+  output file for carryover alpha-determinant bitstrings. When specified, the carryover alpha-determinants generated according to `--carryover_type` are written to the given file in text format.
+  If not specified, no alpha-determinant carryover bitstrings are dumped.
+- `--carryover_bdetfile <str>`:  
+  Output file for carryover beta-determinant bitstrings. When specified, the carryover beta-determinants generated according to `--carryover_type` are written to the given file in text format.  
+  If not specified, no beta-determinant carryover bitstrings are dumped.  
 - `--shuffle <int>`:  
   Whether to shuffle the order of input half-determinants. If set to 0, no shuffling is performed; otherwise, the input is shuffled.
 - `--rdm <int>`:  
