@@ -7,6 +7,10 @@
 #ifndef SBD_FRAMEWORK_MPI_UTILITY_H
 #define SBD_FRAMEWORK_MPI_UTILITY_H
 
+#include <type_traits>
+#include <limits>
+#include <stdexcept>
+
 #include "mpi.h"
 
 namespace sbd {
@@ -190,6 +194,7 @@ namespace sbd {
   void MpiBcast(std::vector<std::vector<size_t>> & config,
 		int root,
 		MPI_Comm comm) {
+
     size_t c_num;
     int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
     int mpi_size; MPI_Comm_size(comm,&mpi_size);
@@ -198,6 +203,7 @@ namespace sbd {
     }
     MPI_Bcast(&c_num,1,SBD_MPI_SIZE_T,root,comm);
     if( c_num != 0 ) {
+      
       size_t c_len;
       if( mpi_rank == root ) {
 	c_len = config[0].size();
@@ -212,7 +218,7 @@ namespace sbd {
 	  }
 	}
       }
-      MPI_Bcast(config_transfer.data(),total_size,SBD_MPI_SIZE_T,root,comm);
+      MPI_Bcast(config_transfer.data(),static_cast<int>(total_size),SBD_MPI_SIZE_T,root,comm);
       if( mpi_rank != root ) {
 	config = std::vector<std::vector<size_t>>(c_num,std::vector<size_t>(c_len));
 	for(size_t n=0; n < c_num; n++) {
@@ -474,12 +480,20 @@ namespace sbd {
   
   template <typename ElemT>
   void MpiAllreduce(std::vector<ElemT> & A, MPI_Op op, MPI_Comm comm) {
-    MPI_Datatype DataT = GetMpiType<ElemT>::MpiT;
+    MPI_Datatype DataT;
+    if constexpr (std::is_same_v<ElemT,size_t>) {
+      DataT = SBD_MPI_SIZE_T;
+    } else {
+      DataT = GetMpiType<ElemT>::MpiT;
+    }
     std::vector<ElemT> B(A);
 #if MPI_VERSION >= 4
     MPI_Allreduce_c(B.data(),A.data(),A.size(),DataT,op,comm);
 #else
-    MPI_Allreduce(B.data(),A.data(),A.size(),DataT,op,comm);
+    if (A.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::runtime_error("MPI_Allreduce: count exceeds INT_MAX (MPI<4). Use MPI-4 *_c API.");
+    }
+    MPI_Allreduce(B.data(),A.data(),static_cast<int>(A.size()),DataT,op,comm);
 #endif
   }
 

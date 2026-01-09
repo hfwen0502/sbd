@@ -23,6 +23,7 @@ namespace sbd {
       int init = 0;
       int do_shuffle = 0;
       int do_rdm = 0;
+      int carryover_type = 0;
       double ratio = 0.0;
       double threshold = 0.01;
       
@@ -36,60 +37,49 @@ namespace sbd {
       SBD sbd_data;
       for(int i=0; i < argc; i++) {
 	if( std::string(argv[i]) == "--adet_comm_size" ) {
-	  sbd_data.adet_comm_size = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.adet_comm_size = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--bdet_comm_size" ) {
-	  sbd_data.bdet_comm_size = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.bdet_comm_size = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--task_comm_size" ) {
-	  sbd_data.task_comm_size = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.task_comm_size = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--method" ) {
-	  sbd_data.method = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.method = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--iteration" ) {
-	  sbd_data.max_it = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.max_it = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--block" ) {
-	  sbd_data.max_nb = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.max_nb = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--tolerance" ) {
-	  sbd_data.eps = std::atof(argv[i+1]);
-	  i++;
+	  sbd_data.eps = std::atof(argv[++i]);
+	}
+	if( std::string(argv[i]) == "--carryover_type" ) {
+	  sbd_data.carryover_type = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--carryover_ratio" ) {
-	  sbd_data.ratio = std::atof(argv[i+1]);
-	  i++;
+	  sbd_data.ratio = std::atof(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--carryover_threshold" ) {
-	  sbd_data.threshold = std::atof(argv[i+1]);
-	  i++;
+	  sbd_data.threshold = std::atof(argv[++i]);
 	}
         if( std::string(argv[i]) == "--max_time" ) { 
-          sbd_data.max_time = std::atof(argv[i+1]);
-          i++;
+          sbd_data.max_time = std::atof(argv[++i]);
         }
 	if( std::string(argv[i]) == "--shuffle" ) {
-	  sbd_data.do_shuffle = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.do_shuffle = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--rdm" ) {
-	  sbd_data.do_rdm = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.do_rdm = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--bit_length" ) {
-	  sbd_data.bit_length = std::atoi(argv[i+1]);
-	  i++;
+	  sbd_data.bit_length = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--dump_matrix_form_wf" ) {
-	  sbd_data.dump_matrix_form_wf = std::string(argv[i+1]);
-	  i++;
+	  sbd_data.dump_matrix_form_wf = std::string(argv[++i]);
 	}
       }
       return sbd_data;
@@ -119,7 +109,8 @@ namespace sbd {
 	      const std::string & savename,
 	      double & energy,
 	      std::vector<double> & density,
-	      std::vector<std::vector<size_t>> & carryover_bitstrings,
+	      std::vector<std::vector<size_t>> & co_adet,
+	      std::vector<std::vector<size_t>> & co_bdet,
 	      std::vector<std::vector<double>> & one_p_rdm,
 	      std::vector<std::vector<double>> & two_p_rdm) {
 
@@ -458,23 +449,44 @@ namespace sbd {
       /**
 	 Evaluation of carry-over bit-strings
        */
-      if ( ratio == 0.0 ) {
-
-	sbd::CarryOverAlphaDet(W,adet,bdet,
-			       adet_comm_size,bdet_comm_size,
-			       b_comm,carryover_bitstrings,threshold);
-	
-      } else {
-
-	size_t n_kept = static_cast<size_t>(ratio * adet.size());
-	double truncated_weight = 0.0;
-	sbd::CarryOverAlphaDet(W,adet,bdet,
-			       adet_comm_size,bdet_comm_size,
-			       b_comm,n_kept,carryover_bitstrings,truncated_weight);
-	if( mpi_rank == 0 ) {
-	  std::cout << " truncated weight in carry-over = " << truncated_weight << std::endl;
+      if ( sbd_data.carryover_type == 1 || sbd_data.carryover_type == 2 ) {
+	if ( ratio == 0.0 ) {
+	  sbd::CarryOverAdet(W,adet,bdet,
+			     adet_comm_size,bdet_comm_size,
+			     b_comm,co_adet,threshold);
+	  sbd::CarryOverBdet(W,adet,bdet,
+			     adet_comm_size,bdet_comm_size,
+			     b_comm,co_bdet,threshold);
+	} else {
+	  size_t n_kept_a = static_cast<size_t>(ratio * adet.size());
+	  double truncated_weight = 0.0;
+	  sbd::CarryOverAdet(W,adet,bdet,
+			     adet_comm_size,bdet_comm_size,
+			     b_comm,n_kept_a,co_adet,truncated_weight);
+	  if( mpi_rank == 0 ) {
+	    std::cout << " truncated weight in carry-over for alpha-det = " << truncated_weight << std::endl;
+	  }
+	  size_t n_kept_b = static_cast<size_t>(ratio * bdet.size());
+	  sbd::CarryOverBdet(W,adet,bdet,
+			     adet_comm_size,bdet_comm_size,
+			     b_comm,n_kept_b,co_bdet,truncated_weight);
+	  if( mpi_rank == 0 ) {
+	    std::cout << " truncated weight in carry-over for beta-det = " << truncated_weight << std::endl;
+	  }
 	}
-	
+	if( sbd_data.carryover_type == 2 ) {
+	  std::vector<std::vector<size_t>> res_adet;
+	  std::vector<std::vector<size_t>> res_bdet;
+	  sbd::SinglesExtendHalfdets(co_adet,co_bdet,bit_length,L,
+				     adet_comm_size,bdet_comm_size,b_comm,
+				     res_adet,res_bdet);
+	  co_adet = res_adet;
+	  co_bdet = res_bdet;
+	}
+      } else if ( sbd_data.carryover_type == 3 ) {
+	sbd::SinglesExtendHalfdets(W,adet,bdet,bit_length,L,
+				   adet_comm_size,bdet_comm_size,b_comm,
+				   threshold,co_adet,co_bdet);
       }
 
       /**
@@ -523,7 +535,8 @@ namespace sbd {
 	      const std::string & savename,
 	      double & energy,
 	      std::vector<double> & density,
-	      std::vector<std::vector<size_t>> & carryover_bitstrings,
+	      std::vector<std::vector<size_t>> & co_adet,
+	      std::vector<std::vector<size_t>> & co_bdet,
 	      std::vector<std::vector<double>> & one_p_rdm,
 	      std::vector<std::vector<double>> & two_p_rdm) {
 
@@ -606,7 +619,7 @@ namespace sbd {
 
       diag(comm,sbd_data,fcidump,adet,bdet,
 	   loadname,savename,
-	   energy,density,carryover_bitstrings,
+	   energy,density,co_adet,co_bdet,
 	   one_p_rdm,two_p_rdm);
       
     } // end diag for file-name version

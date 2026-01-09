@@ -31,7 +31,8 @@ int main(int argc, char * argv[]) {
   std::string fcidumpfile("fcidump.txt");
   std::string loadname;
   std::string savename;
-  std::string carryoverfile;
+  std::string carryover_adetfile;
+  std::string carryover_bdetfile;
   
   for(int i=0; i < argc; i++) {
     if( std::string(argv[i]) == "--adetfile" ) {
@@ -49,8 +50,11 @@ int main(int argc, char * argv[]) {
     if( std::string(argv[i]) == "--savename" ) {
       savename = std::string(argv[++i]);
     }
-    if( std::string(argv[i]) == "--carryoverfile" ) {
-      carryoverfile = std::string(argv[++i]);
+    if( std::string(argv[i]) == "--carryover_adetfile" ) {
+      carryover_adetfile = std::string(argv[++i]);
+    }
+    if( std::string(argv[i]) == "--carryover_bdetfile" ) {
+      carryover_bdetfile = std::string(argv[++i]);
     }
   }
   
@@ -58,7 +62,8 @@ int main(int argc, char * argv[]) {
   int N;
   double energy;
   std::vector<double> density;
-  std::vector<std::vector<size_t>> cobits;
+  std::vector<std::vector<size_t>> co_adet;
+  std::vector<std::vector<size_t>> co_bdet;
   std::vector<std::vector<double>> one_p_rdm;
   std::vector<std::vector<double>> two_p_rdm;
   sbd::FCIDump fcidump;
@@ -71,7 +76,7 @@ int main(int argc, char * argv[]) {
      sample-based diagonalization using fcidump file and adet file
    */
   sbd::tpb::diag(comm,sbd_data,fcifumpfile,adetfile,loadname,savename,
-		 energy,density,cobits,one_p_rdm,two_p_rdm);
+		 energy,density,co_adet,co_bdet,one_p_rdm,two_p_rdm);
 
   /**
      Get L (number of orbitals) and N (number of electrons) from fcidump data for output
@@ -156,7 +161,7 @@ int main(int argc, char * argv[]) {
      sample-based diagonalization using data for fcidump, adet, bdet.
    */
   sbd::tpb::diag(comm,sbd_data,fcidump,adet,bdet,loadname,savename,
-		 energy,density,cobits,one_p_rdm,two_p_rdm);
+		 energy,density,co_adet,co_bdet,one_p_rdm,two_p_rdm);
   
 #endif
 
@@ -168,18 +173,26 @@ int main(int argc, char * argv[]) {
 		<< density[2*i]+density[2*i+1];
     }
     std::cout << std::endl;
-    std::cout << " Sample-based diagonalization: carryover bitstrings = ";
-    for(size_t i=0; i < std::min(cobits.size(),static_cast<size_t>(6)); i++) {
-      std::cout << " " << sbd::makestring(cobits[i],sbd_data.bit_length,L);
+    std::cout << " Sample-based diagonalization: carryover bitstrings = [";
+    for(size_t i=0; i < std::min(co_adet.size(),static_cast<size_t>(4)); i++) {
+      std::cout << ((i==0) ? "" : ", ") << sbd::makestring(co_adet[i],sbd_data.bit_length,L);
     }
-    if( cobits.size() > static_cast<size_t>(6) ) {
-      std::cout << " ... " << sbd::makestring(cobits[cobits.size()-1],sbd_data.bit_length,L);
+    if( co_adet.size() > static_cast<size_t>(4) ) {
+      std::cout << " ..., " << sbd::makestring(co_adet[co_adet.size()-1],sbd_data.bit_length,L);
     }
-    std::cout << std::endl;
-    if( !carryoverfile.empty() ) {
-      std::ofstream ofs_co(carryoverfile);
-      for(size_t i=0; i < cobits.size(); i++) {
-	ofs_co << sbd::makestring(cobits[i],sbd_data.bit_length,L) << std::endl;
+    std::cout << "], size = " << co_adet.size() << std::endl;
+    
+    if( !carryover_adetfile.empty() ) {
+      std::ofstream ofs_co(carryover_adetfile);
+      for(size_t i=0; i < co_adet.size(); i++) {
+	ofs_co << sbd::makestring(co_adet[i],sbd_data.bit_length,L) << std::endl;
+      }
+      ofs_co.close();
+    }
+    if( !carryover_bdetfile.empty() ) {
+      std::ofstream ofs_co(carryover_bdetfile);
+      for(size_t i=0; i < co_bdet.size(); i++) {
+	ofs_co << sbd::makestring(co_bdet[i],sbd_data.bit_length,L) << std::endl;
       }
       ofs_co.close();
     }
