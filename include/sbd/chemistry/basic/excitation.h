@@ -22,6 +22,7 @@ namespace sbd {
 	hdet_ex[ex_count] = hdet_base;
 	setocc(hdet_ex[ex_count],bit_length,closed_base[j],false);
 	setocc(hdet_ex[ex_count],bit_length,open_base[k],true);
+	ex_count++;
       }
     }
   }

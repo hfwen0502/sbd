@@ -194,6 +194,7 @@ namespace sbd {
   void MpiBcast(std::vector<std::vector<size_t>> & config,
 		int root,
 		MPI_Comm comm) {
+
     size_t c_num;
     int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
     int mpi_size; MPI_Comm_size(comm,&mpi_size);
@@ -202,6 +203,7 @@ namespace sbd {
     }
     MPI_Bcast(&c_num,1,SBD_MPI_SIZE_T,root,comm);
     if( c_num != 0 ) {
+      
       size_t c_len;
       if( mpi_rank == root ) {
 	c_len = config[0].size();
@@ -216,7 +218,7 @@ namespace sbd {
 	  }
 	}
       }
-      MPI_Bcast(config_transfer.data(),total_size,SBD_MPI_SIZE_T,root,comm);
+      MPI_Bcast(config_transfer.data(),static_cast<int>(total_size),SBD_MPI_SIZE_T,root,comm);
       if( mpi_rank != root ) {
 	config = std::vector<std::vector<size_t>>(c_num,std::vector<size_t>(c_len));
 	for(size_t n=0; n < c_num; n++) {

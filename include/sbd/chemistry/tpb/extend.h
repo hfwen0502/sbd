@@ -118,19 +118,6 @@ namespace sbd {
       }
     }
 
-#ifdef SBD_DEBUG_EXTEND
-    for(int rank=0; rank < mpi_size; rank++) {
-      if( mpi_rank == rank ) {
-	std::cout << " end construct excitation before sorting at rank "
-		  << mpi_rank << "(" << a_comm_rank << "," << b_comm_rank
-		  << "): new det sizes = "
-		  << new_adet_local.size()
-		  << "," << new_bdet_local.size() << std::endl;
-      }
-      MPI_Barrier(comm);
-    }
-    sleep(1);
-#endif
     MPI_Comm adet_comm;
     MPI_Comm bdet_comm;
     
@@ -143,11 +130,6 @@ namespace sbd {
     for(int rank=0; rank < a_comm_size; rank++) {
       if( rank == a_comm_rank ) {
 	temp_adet[rank] = new_adet_local;
-#ifdef SBD_DEBUG_EXTEND
-	std::cout << " temp_adet[" << rank
-		  << "] at bcast root rank " << a_comm_rank
-		  << ": size = " << temp_adet[rank].size() << std::endl;
-#endif
       }
       MpiBcast(temp_adet[rank],rank,adet_comm);
     }
@@ -265,19 +247,6 @@ namespace sbd {
       }
     }
 
-#ifdef SBD_DEBUG_EXTEND
-    for(int rank=0; rank < mpi_size; rank++) {
-      if( mpi_rank == rank ) {
-	std::cout << " end construct excitation before sorting at rank "
-		  << mpi_rank << "(" << a_comm_rank << "," << b_comm_rank
-		  << "): new det sizes = "
-		  << new_adet_local.size()
-		  << "," << new_bdet_local.size() << std::endl;
-      }
-      MPI_Barrier(comm);
-    }
-    sleep(1);
-#endif
     MPI_Comm adet_comm;
     MPI_Comm bdet_comm;
     MPI_Comm_split(comm,b_comm_rank,a_comm_rank,&adet_comm);

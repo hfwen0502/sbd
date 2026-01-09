@@ -173,14 +173,14 @@ int main(int argc, char * argv[]) {
 		<< density[2*i]+density[2*i+1];
     }
     std::cout << std::endl;
-    std::cout << " Sample-based diagonalization: carryover bitstrings = ";
-    for(size_t i=0; i < std::min(co_adet.size(),static_cast<size_t>(6)); i++) {
-      std::cout << " " << sbd::makestring(co_adet[i],sbd_data.bit_length,L);
+    std::cout << " Sample-based diagonalization: carryover bitstrings = [";
+    for(size_t i=0; i < std::min(co_adet.size(),static_cast<size_t>(4)); i++) {
+      std::cout << ((i==0) ? "" : ", ") << sbd::makestring(co_adet[i],sbd_data.bit_length,L);
     }
-    if( co_adet.size() > static_cast<size_t>(6) ) {
-      std::cout << " ... " << sbd::makestring(co_adet[co_adet.size()-1],sbd_data.bit_length,L);
+    if( co_adet.size() > static_cast<size_t>(4) ) {
+      std::cout << " ..., " << sbd::makestring(co_adet[co_adet.size()-1],sbd_data.bit_length,L);
     }
-    std::cout << std::endl;
+    std::cout << "], size = " << co_adet.size() << std::endl;
     
     if( !carryover_adetfile.empty() ) {
       std::ofstream ofs_co(carryover_adetfile);
