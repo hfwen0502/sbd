@@ -484,9 +484,14 @@ namespace sbd {
 	  co_bdet = res_bdet;
 	}
       } else if ( sbd_data.carryover_type == 3 ) {
+	double total_weight = 0.0;
 	sbd::SinglesExtendHalfdets(W,adet,bdet,bit_length,L,
 				   adet_comm_size,bdet_comm_size,b_comm,
-				   threshold,co_adet,co_bdet);
+				   threshold,co_adet,co_bdet,total_weight);
+	if( mpi_rank == 0 ) {
+	  std::cout << " percentage of wf used in augmentation: "
+		    << total_weight*100.0 << std::endl;
+	}
       }
 
       /**
