@@ -9,17 +9,34 @@
 #include <mpi.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <numeric>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
+#include <limits>
 
 namespace sbd {
 
   namespace detail_mpi_sort_array {
     // ---- small MPI helpers (uint64) ----
+
+    inline std::size_t sbd_mul_div_floor(std::size_t a, std::size_t b, std::size_t den) {
+#ifdef SBD_TRADMODE
+      long double x = (long double)a * (long double)b / (long double)den;
+      
+      if (x <= 0.0L) return 0;
+      long double maxv = (long double)std::numeric_limits<std::size_t>::max();
+      if (x >= maxv) return std::numeric_limits<std::size_t>::max();
+      
+      return (std::size_t)x; // floor
+#else
+      // Clang/GCC: exactly for clang type
+      return (std::size_t)(((__int128)a * (__int128)b) / (__int128)den);
+#endif
+    }    
     
     inline uint64_t u64_sum_allreduce(uint64_t x, MPI_Comm comm) {
       uint64_t y = 0;
@@ -134,8 +151,13 @@ namespace sbd {
   void mpi_find_ranking(const std::vector<RealT> & w,
 			std::vector<size_t> & ranking,
 			MPI_Comm comm) {
+#ifdef SBD_TRADMODE
+    static_assert(std::is_floating_point<RealT>::value,
+                  "mpi_sort_array: RealT must be a real floating-point type (float/double).");
+#else
     static_assert(std::is_floating_point_v<RealT>,
                   "mpi_sort_array: RealT must be a real floating-point type (float/double).");
+#endif
     
     using namespace detail_mpi_sort_array;
     
@@ -159,7 +181,7 @@ namespace sbd {
     
     // Local sort descending
     std::sort(local.begin(), local.end(),
-              [](const auto& a, const auto& b){ return record_less_desc<RealT>(a, b); });
+              [](const auto& a, const auto& b){ return detail_mpi_sort_array::record_less_desc<RealT>(a, b); });
     
     // ---- Sample sort: choose splitters ----
     const int P = world_size;
@@ -172,7 +194,9 @@ namespace sbd {
       samples.reserve((size_t)s);
       for (int k = 1; k <= s; ++k) {
 	// evenly spaced (avoid endpoints)
-	uint64_t pos = (uint64_t)(((__int128)k * local.size()) / (s + 1));
+	// uint64_t pos = (uint64_t)(((__int128)k * local.size()) / (s + 1));
+
+	auto pos = sbd_mul_div_floor(k, local.size(), s+1);
 	if (pos >= (uint64_t)local.size()) pos = (uint64_t)local.size() - 1;
 	samples.push_back(local[(size_t)pos].v);
       }
@@ -200,7 +224,12 @@ namespace sbd {
     if (P > 1 && !all_samples.empty()) {
       std::sort(all_samples.begin(), all_samples.end(), std::greater<RealT>()); // descending
       for (int i = 1; i < P; ++i) {
-	int idx = (int)(((__int128)i * all_samples.size()) / P);
+	// int idx = (int)(((__int128)i * all_samples.size()) / P);
+	const std::size_t idx_u = sbd_mul_div_floor((std::size_t)i,
+						    (std::size_t)all_samples.size(),
+						    (std::size_t)P);
+	const std::size_t idx_clamped = (idx_u < all_samples.size()) ? idx_u : (all_samples.size() ? all_samples.size() - 1 : 0);
+	int idx = (int)idx_clamped;
 	if (idx < 0) idx = 0;
 	if (idx >= (int)all_samples.size()) idx = (int)all_samples.size() - 1;
 	splitters.push_back(all_samples[(size_t)idx]);
@@ -255,7 +284,7 @@ namespace sbd {
     
     // Now each rank owns a value-range segment; sort locally
     std::sort(recvbuf.begin(), recvbuf.end(),
-              [](const auto& a, const auto& b){ return record_less_desc<RealT>(a, b); });
+              [](const auto& a, const auto& b){ return detail_mpi_sort_array::record_less_desc<RealT>(a, b); });
     
     // ---- Compute global rank offset for this rank’s segment ----
     uint64_t my_segment = (uint64_t)recvbuf.size();
