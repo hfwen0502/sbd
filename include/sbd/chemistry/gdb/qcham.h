@@ -326,7 +326,7 @@ namespace sbd {
 	  std::vector<std::vector<size_t>> rdet;
 	  DetIndexMap ridxmap;
 	  std::swap(rdet,tdet);
-	  std::swap(ridxmap,tidxmap);
+	  DetIndexMapCopy(tidxmap,ridxmap);
 	  sbd::MpiSlide(rdet,tdet,shift,b_comm);
 	  sbd::gdb::MpiSlide(ridxmap,tidxmap,shift,b_comm);
 	}
