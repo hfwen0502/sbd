@@ -63,15 +63,13 @@ namespace sbd {
       std::vector<std::vector<std::vector<ElemT>>> onebody_t(num_threads,onebody);
       std::vector<std::vector<std::vector<ElemT>>> twobody_t(num_threads,twobody);
 
+      if( mpi_rank_t == 0 ) {
 #pragma omp parallel
-      {
-	num_threads = omp_get_num_threads();
-	size_t thread_id = omp_get_thread_num();
-	size_t i_start = thread_id;
-	size_t i_end   = tw.size();
-	if( mpi_rank_t == 0 ) {
-#pragma omp for
-	  for(size_t i=0; i < tw.size(); i+=num_threads) {
+	{
+	  size_t thread_id = omp_get_thread_num();
+	  size_t i_start = thread_id;
+	  size_t i_end   = tw.size();
+	  for(size_t i=i_start; i < i_end; i+=num_threads) {
 	    if( ( i % mpi_size_h ) == mpi_rank_h ) {
 	      ZeroDiffCorrelation(det[i],w[i],bit_length,norb,
 				  onebody_t[thread_id],
@@ -196,7 +194,7 @@ namespace sbd {
 	  std::vector<std::vector<size_t>> rdet;
 	  DetIndexMap ridxmap;
 	  std::swap(rdet,tdet);
-	  std::swap(ridxmap,tidxmap);
+	  DetIndexMapCopy(tidxmap,ridxmap);
 	  sbd::MpiSlide(rw,tw,slide,b_comm);
 	  sbd::MpiSlide(rdet,tdet,slide,b_comm);
 	  sbd::gdb::MpiSlide(ridxmap,tidxmap,slide,b_comm);
