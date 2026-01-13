@@ -49,7 +49,26 @@ namespace sbd {
       return true; // empty 
     }
     return line[first] == '#'; // comment
-  }  
+  }
+
+#ifdef SBD_TRADMODE
+  template <class T> struct is_std_complex : std::false_type {};
+  template <class U> struct is_std_complex<std::complex<U>> : std::true_type {};
+  
+  template <typename ElemT, typename TermT, typename ProductOp, typename GeneralOp>
+  inline void apply_sy_impl(TermT& term, int index, std::true_type /*is_complex*/) {
+    ProductOp pCr(Cr(index));
+    ProductOp pAn(An(index));
+    GeneralOp gCr(ElemT(0.0, -0.5), pCr);
+    GeneralOp gAn(ElemT(0.0,  0.5), pAn);
+    term *= gCr + gAn;
+  }
+  
+  template <typename ElemT, typename TermT, typename ProductOp, typename GeneralOp>
+  inline void apply_sy_impl(TermT&, int, std::false_type /*is_complex*/) {
+    throw std::runtime_error("Sy operator requires complex coefficient type");
+  }
+#endif
   
   template <typename ElemT>
   void load_GeneralOp_from_file(const std::string & filename,
@@ -168,6 +187,13 @@ namespace sbd {
 		}
 		
 	      case OpTokenKind::Sy:
+#ifdef SBD_TRADMODE
+		apply_sy_impl<ElemT,
+			      decltype(term),
+			      ProductOp,
+			      GeneralOp<ElemT>>(term, index, is_std_complex<ElemT>{});
+		break;
+#else
 		if constexpr (std::is_same_v<ElemT,std::complex<float>> ||
 			      std::is_same_v<ElemT,std::complex<double>>) {
 		  ProductOp pCr(Cr(index));
@@ -180,6 +206,7 @@ namespace sbd {
 					   "Sy operator requires complex coefficient type");
 		}
 		break;
+#endif
 		
 	      case OpTokenKind::Sz:
 		term *= Sz<ElemT>(index);
