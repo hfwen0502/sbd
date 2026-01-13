@@ -157,6 +157,7 @@ int main(int argc, char * argv[]) {
     sbd::MpiBcast(det,0,t_comm);
   }
   sbd::MpiBcast(det,0,h_comm);
+#ifdef SBD_DEBUG
   for(int rank_h=0; rank_h < mpi_size_h; rank_h++) {
     for(int rank_b=0; rank_b < mpi_size_b; rank_b++) {
       for(int rank_t=0; rank_t < mpi_size_t; rank_t++) {
@@ -182,6 +183,7 @@ int main(int argc, char * argv[]) {
     }
     MPI_Barrier(h_comm);
   }
+#endif
   /**
      call diag
   */
