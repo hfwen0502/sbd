@@ -152,6 +152,8 @@ namespace sbd {
 	  }
 	}
       }
+      RealT NormW;
+      Normalize(W,NormW,b_comm);
       if( stop_it ) {
 	break;
       }
@@ -301,6 +303,8 @@ namespace sbd {
 	  }
 	}
       }
+      RealT NormW;
+      Normalize(W,NormW,b_comm);
       if( stop_it ) {
 	break;
       }

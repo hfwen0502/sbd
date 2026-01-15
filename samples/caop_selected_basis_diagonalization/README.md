@@ -51,9 +51,9 @@ Below is an explanation of each command-line option.
   Set to `1` to include fermionic sign factors; set to `0` to ignore them.
 - `--init` (int):  
   Specifies how to initial state is generated. Currently, only `0` (a random initial vector) is supported.
-- `--sort_basis` (int):  
+- `--do_sort_basis` (int):  
   Set to `1` to sort the bitstrings loaded from `basisfiles` across all nodes. This is manly used when the input files contain overlapping bitstrings. Set to `0` if sorting is unnecessary.
-- `--redist_basis` (int):  
+- `--do_redist_basis` (int):  
   Set to `1` to redistribute the bitstrings from `basisfiles` uniformly across the nodes specified by `b_comm_size`. Set to `0` if redistribution is unnecessary. Note: If `--sort_basis` is set to `1`, uniform redistribution is performed automatically, and this option is ignored.
 
 ---

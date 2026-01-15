@@ -64,6 +64,8 @@ namespace sbd {
     int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
     int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
 
+    w.resize(basis.size(),ElemT(0.0));
+
     if( mpi_rank_h == 0 ) {
 
       if( mpi_rank_t == 0 ) {
@@ -78,7 +80,7 @@ namespace sbd {
 	  ifs.read(reinterpret_cast<char *>(&load_basis_length),sizeof(size_t));
 	  load_basis.resize(load_basis_size);
 	  for(size_t i=0; i < load_basis_size; i++) {
-	    load_basis.resize(load_basis_length);
+	    load_basis[i].resize(load_basis_length);
 	    ifs.read(reinterpret_cast<char *>(load_basis[i].data()),sizeof(size_t)*load_basis_length);
 	  }
 	  load_w.resize(load_basis_size);

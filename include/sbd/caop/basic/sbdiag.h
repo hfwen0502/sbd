@@ -275,7 +275,7 @@ namespace sbd {
 	InnerProduct(W,C,E,b_comm);
 	if( mpi_rank == 0 ) {
 	  std::cout << " " << make_timestamp()
-		    << " Energy = " << E << std::endl;
+		    << " Energy = " << GetReal(E) << std::endl;
 	}
 	energy = GetReal(E);
       }
