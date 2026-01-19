@@ -174,6 +174,7 @@ int main(int argc, char * argv[]) {
 	ofs_co << sbd::makestring(cobits[i],sbd_data.bit_length,L) << std::endl;
       }
       ofs_co.close();
+    }
 
 #ifdef SBD_PREFECT
     std::cout << "Davidson energy: " << energy << std::endl;
@@ -210,7 +211,6 @@ int main(int argc, char * argv[]) {
     }
     ofs_co_bin.close();
 #endif  //SBD_PREFECT
-    }
 
     if( one_p_rdm.size() != 0 ) {
 
