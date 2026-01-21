@@ -21,6 +21,7 @@
 #include "sbd/chemistry/tpb/correlation_thrust.h"
 #endif
 #include "sbd/chemistry/tpb/rdmat.h"
+#include "sbd/chemistry/tpb/extend.h"
 #include "sbd/chemistry/tpb/restart.h"
 #include "sbd/chemistry/tpb/sbdiag.h"
 

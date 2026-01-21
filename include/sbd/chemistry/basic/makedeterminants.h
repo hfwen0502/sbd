@@ -179,7 +179,7 @@ namespace sbd {
       }
     } else if ( sbd::get_extension(adetfile) == std::string("bin") ) {
       adet = sbd::DecodeAlphaDets(adetfile,total_bit_length);
-      sbd::change_bitlength(8,adet,bit_length);
+      sbd::change_bitlength(1,adet,bit_length);
     }
     sbd::sort_bitarray(adet);
   }

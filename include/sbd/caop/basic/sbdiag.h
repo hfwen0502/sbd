@@ -26,6 +26,7 @@ namespace sbd {
       bool sign = false;
       bool do_sort_basis = false;
       bool do_redist_basis = false;
+      double ratio = 0.0;
     };
 
     SBD generate_sbd_data(int argc, char * argv[]) {
@@ -63,12 +64,12 @@ namespace sbd {
 	if( std::string(argv[i]) == "--init" ) {
 	  sbd_data.init = std::atoi(argv[++i]);
 	}
-	if( std::string(argv[i]) == "--sort_basis" ) {
+	if( std::string(argv[i]) == "--do_sort_basis" ) {
 	  if( std::atoi(argv[++i]) != 0 ) {
 	    sbd_data.do_sort_basis = true;
 	  }
 	}
-	if( std::string(argv[i]) == "--redist_basis" ) {
+	if( std::string(argv[i]) == "--do_redist_basis" ) {
 	  if( std::atoi(argv[++i]) != 0 ) {
 	    sbd_data.do_redist_basis = true;
 	  }
@@ -100,6 +101,7 @@ namespace sbd {
       std::cout << "# fermion sign: " << sbd_data.sign << std::endl;
       std::cout << "# do basis sort: " << sbd_data.do_sort_basis << std::endl;
       std::cout << "# do redistribution of basis: " << sbd_data.do_redist_basis << std::endl;
+      std::cout << "# carryover ratio: " << sbd_data.ratio << std::endl;
     }
     
     template <typename ElemT>
@@ -109,7 +111,8 @@ namespace sbd {
 	      const std::vector<std::vector<size_t>> & basis,
 	      const std::string & loadname,
 	      const std::string & savename,
-	      double & energy) {
+	      double & energy,
+	      std::vector<std::vector<size_t>> & co_basis) {
       
       int mpi_master = 0;
       int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
@@ -272,10 +275,23 @@ namespace sbd {
 	InnerProduct(W,C,E,b_comm);
 	if( mpi_rank == 0 ) {
 	  std::cout << " " << make_timestamp()
-		    << " Energy = " << E << std::endl;
+		    << " Energy = " << GetReal(E) << std::endl;
 	}
 	energy = GetReal(E);
-	
+      }
+
+      if( sbd_data.ratio != 0.0 ) {
+	if( mpi_rank == 0 ) {
+	  std::cout << " " << make_timestamp()
+		    << " sbd: start carryover selection" << std::endl;
+	}
+	size_t n_kept = static_cast<size_t>(sbd_data.ratio * basis.size() * mpi_size_b);
+	double truncated_weight = 0.0;
+	CarryOverBasis(W,basis,b_comm,n_kept,co_basis,truncated_weight);
+	if( mpi_rank == 0 ) {
+	  std::cout << " " << make_timestamp()
+		    << " sbd: end carryover selection" << std::endl;
+	}
       }
 
       /**
@@ -295,6 +311,7 @@ namespace sbd {
        @param[in] loadname: load filename for wavefunction data. if string is empty, use HF det as a initial state.
        @param[in] savename: save filename for wavefunction data. if string is empty, do not save.
        @param[out] energy: obtained energy after davidson method
+       @param[out] co_basis: carryover basis
      */
     template <typename ElemT>
     void diag(const MPI_Comm & comm,
@@ -303,7 +320,8 @@ namespace sbd {
 	      const std::vector<std::string> & basisfiles,
 	      const std::string & loadname,
 	      const std::string & savename,
-	      double & energy) {
+	      double & energy,
+	      std::vector<std::vector<size_t>> & co_basis) {
 
       int mpi_master = 0;
       int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
@@ -313,8 +331,7 @@ namespace sbd {
       int b_comm_size = sbd_data.b_comm_size;
       int h_comm_size = mpi_size / (t_comm_size*b_comm_size);
       size_t bit_length = sbd_data.bit_length;
-      size_t system_size = sbd_data.system_size;
-      
+      size_t system_size = sbd_data.system_size;      
       MPI_Comm h_comm;
       MPI_Comm b_comm;
       MPI_Comm t_comm;
@@ -327,18 +344,28 @@ namespace sbd {
       int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
       int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
       int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
-      
       /**
 	 Load Hamiltonian file
        */
+      if( mpi_rank == 0 ) {
+	std::cout << " " << make_timestamp()
+		  << " sbd: start load Hamiltonian" << std::endl;
+      }
       GeneralOp<ElemT> hamiltonian;
       bool sign;
       load_GeneralOp_from_file(hamiltonianfile,hamiltonian,sign,
 			       h_comm,b_comm,t_comm);
-
+      if( mpi_rank == 0 ) {
+	std::cout << " " << make_timestamp()
+		  << " sbd: end load Hamiltonian" << std::endl;
+      }
       /**
 	 Load basis data
        */
+      if( mpi_rank == 0 ) {
+	std::cout << " " << make_timestamp()
+		  << " sbd: start load basis" << std::endl;
+      }
       std::vector<std::vector<size_t>> basis;
       if( mpi_rank_h == 0 ) {
 	if( mpi_rank_t == 0 ) {
@@ -355,9 +382,12 @@ namespace sbd {
 	MpiBcast(basis,0,t_comm);
       }
       MpiBcast(basis,0,h_comm);
-
-      diag(comm,sbd_data,hamiltonian,basis,loadname,savename,energy);
-      
+      if( mpi_rank == 0 ) {
+	std::cout << " " << make_timestamp()
+		  << " sbd: end load basis" << std::endl;
+      }
+      diag(comm,sbd_data,hamiltonian,basis,loadname,savename,
+	   energy,co_basis);
     }
   }
 }
