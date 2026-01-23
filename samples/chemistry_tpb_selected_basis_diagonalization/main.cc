@@ -13,7 +13,6 @@
 #include "mpi.h"
 
 
-
 int main(int argc, char * argv[]) {
 
   int provided;
@@ -24,6 +23,19 @@ int main(int argc, char * argv[]) {
   int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
   int mpi_size; MPI_Comm_size(comm,&mpi_size);
 
+#ifdef SBD_THRUST
+  int numDevices, myDevice;
+#ifdef __CUDACC__
+  cudaGetDeviceCount(&numDevices);
+  myDevice = mpi_rank % numDevices;
+  cudaSetDevice(myDevice);
+#else
+  hipGetDeviceCount(&numDevices);
+  myDevice = mpi_rank % numDevices;
+  hipSetDevice(myDevice);
+#endif
+#endif
+
   auto sbd_data = sbd::tpb::generate_sbd_data(argc,argv);
 
   std::string adetfile("alphadets.txt");
@@ -33,7 +45,7 @@ int main(int argc, char * argv[]) {
   std::string savename;
   std::string carryover_adetfile;
   std::string carryover_bdetfile;
-  
+
   for(int i=0; i < argc; i++) {
     if( std::string(argv[i]) == "--adetfile" ) {
       adetfile = std::string(argv[++i]);
@@ -57,7 +69,7 @@ int main(int argc, char * argv[]) {
       carryover_bdetfile = std::string(argv[++i]);
     }
   }
-  
+
   int L;
   int N;
   double energy;
@@ -69,7 +81,7 @@ int main(int argc, char * argv[]) {
   sbd::FCIDump fcidump;
 
   std::cout.precision(16);
-  
+
 #ifdef SBD_FILEIN
 
   /**
@@ -103,7 +115,7 @@ int main(int argc, char * argv[]) {
     fcidump = sbd::LoadFCIDump(fcidumpfile);
   }
   sbd::MpiBcast(fcidump,0,comm);
-  
+
   for(const auto & [key,value] : fcidump.header) {
     if( key == std::string("NORB") ) {
       L = std::atoi(value.c_str());
@@ -123,7 +135,7 @@ int main(int argc, char * argv[]) {
       sbd::LoadAlphaDets(adetfile,adet,sbd_data.bit_length,L);
       sbd::sort_bitarray(adet);
     }
-    
+
     sbd::MpiBcast(adet,0,comm);
     bdet = adet;
     if( sbd_data.do_shuffle != 0 ) {
@@ -162,7 +174,7 @@ int main(int argc, char * argv[]) {
    */
   sbd::tpb::diag(comm,sbd_data,fcidump,adet,bdet,loadname,savename,
 		 energy,density,co_adet,co_bdet,one_p_rdm,two_p_rdm);
-  
+
 #endif
 
   if( mpi_rank == 0 ) {
@@ -181,7 +193,7 @@ int main(int argc, char * argv[]) {
       std::cout << " ..., " << sbd::makestring(co_adet[co_adet.size()-1],sbd_data.bit_length,L);
     }
     std::cout << "], size = " << co_adet.size() << std::endl;
-    
+
     if( !carryover_adetfile.empty() ) {
       std::ofstream ofs_co(carryover_adetfile);
       for(size_t i=0; i < co_adet.size(); i++) {
@@ -196,7 +208,43 @@ int main(int argc, char * argv[]) {
       }
       ofs_co.close();
     }
-    
+
+#ifdef SBD_PREFECT
+    std::cout << "Davidson energy: " << energy << std::endl;
+    std::ofstream ofs_energy("davidson_energy.txt");
+    ofs_energy.precision(16);
+    ofs_energy << energy << std::endl;
+    ofs_energy.close();
+    std::ofstream ofs_occa("occ_a.txt");
+    ofs_occa.precision(16);
+    std::ofstream ofs_occb("occ_b.txt");
+    ofs_occb.precision(16);
+    for(size_t i=0; i < density.size()/2; i++) {
+      ofs_occa << density[2*i] << std::endl;
+      ofs_occb << density[2*i + 1] << std::endl;
+    }
+    ofs_occa.close();
+    ofs_occb.close();
+    std::cout << "Number of carryover determinants: " << cobits.size() << std::endl;
+    std::ofstream ofs_co_bin("carryover.bin", std::ios::binary);
+    const size_t bytes_per_config = (L + 7) / 8;
+    std::vector<uint8_t> bytes(bytes_per_config);
+    for (size_t i = 0; i < cobits.size(); ++i) {
+      std::fill(bytes.begin(), bytes.end(), 0);
+      for (size_t j = 0; j < L; ++j) {
+        size_t rev_idx = L - 1 - j;                 // sbd::makestring order
+        size_t pw = rev_idx % sbd_data.bit_length;  // position in word
+        size_t bw = rev_idx / sbd_data.bit_length;  // index of word
+        bool bit = (cobits[i][bw] >> pw) & 1ULL;
+        size_t pb = 7 - (j % 8);                    // big-endian bit order
+        size_t bb = j / 8;                          // index of byte
+        bytes[bb] |= static_cast<uint8_t>(bit << pb);
+      }
+      ofs_co_bin.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    }
+    ofs_co_bin.close();
+#endif  //SBD_PREFECT
+
     if( one_p_rdm.size() != 0 ) {
 
       double onebody = 0.0;
@@ -205,7 +253,7 @@ int main(int argc, char * argv[]) {
       sbd::oneInt<double> I1;
       sbd::twoInt<double> I2;
       sbd::SetupIntegrals(fcidump,L,N,I0,I1,I2);
-      
+
       auto time_start_dump = std::chrono::high_resolution_clock::now();
       std::ofstream ofs_one("1pRDM.txt");
       ofs_one.precision(16);
@@ -239,7 +287,7 @@ int main(int argc, char * argv[]) {
 	  }
 	}
       }
-      
+
       time_end_dump = std::chrono::high_resolution_clock::now();
       elapsed_dump_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_dump-time_start_dump).count();
       elapsed_dump = 0.000001 * elapsed_dump_count;
@@ -247,7 +295,7 @@ int main(int argc, char * argv[]) {
       std::cout << " One-Body energy = " << onebody << std::endl;
       std::cout << " Two-Body energy = " << twobody << std::endl;
       std::cout << " One-Body + Two-Body energy = " << onebody + twobody << std::endl;
-      
+
     }
   }
 

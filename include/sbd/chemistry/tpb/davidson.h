@@ -14,15 +14,15 @@ namespace sbd {
 /**
 
    --- b_comm --- color rule: y = const
-   
-    o -- o -- o -- o
 
     o -- o -- o -- o
 
     o -- o -- o -- o
-    
+
+    o -- o -- o -- o
+
 x = 0    1    2    3
-   
+
    --- t_comm --- color rule: x = const
                       y
     o    o    o    o  2
@@ -36,9 +36,9 @@ x = 0    1    2    3
 
    - h_comm is the communicator in direction
      perpendicular to b_comm times k_comm plane.
-     
+
  */
-  
+
 /**
    Initializer for the wave function
    @tparam ElemT: Type of elements for the Hamiltonian and the wave functions
@@ -49,8 +49,8 @@ x = 0    1    2    3
    @param[in] t_comm: Communicator to split the operation in column basis when performing the Hamiltonian operations
    @param[in] init: Select type of initial state. init==0 corresponds to the HF solution. init==1 is the random state.
  */
-  
-  
+
+
   template <typename ElemT>
   void BasisInitVector(std::vector<ElemT> & W,
 		       const std::vector<TaskHelpers> helper,
@@ -98,8 +98,8 @@ x = 0    1    2    3
    @param[in] t_comm: Communicator to split the operation in column basis when performing the Hamiltonian operations
    @param[in] init: Select type of initial state. init==0 corresponds to the HF solution. init==1 is the random state.
  */
-  
-  
+
+
   template <typename ElemT>
   void BasisInitVector(std::vector<ElemT> & W,
 		       const std::vector<std::vector<size_t>> & adet,
@@ -110,7 +110,7 @@ x = 0    1    2    3
 		       MPI_Comm b_comm,
 		       MPI_Comm t_comm,
 		       int init) {
-    
+
     int mpi_rank_h; MPI_Comm_rank(h_comm,&mpi_rank_h);
     int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
     int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
@@ -162,7 +162,7 @@ x = 0    1    2    3
      @param[in] num_block: Maximum size of Litz vector space
      @param[in] eps: error torelance (norm of the residual vector)
    */
-  
+
   template <typename ElemT, typename RealT>
   void Davidson(const std::vector<ElemT> & hii,
 		const std::vector<std::vector<size_t*>> & ih,
@@ -220,7 +220,6 @@ x = 0    1    2    3
     bool do_continue = true;
 
     for(int it=0; it < max_iteration; it++) {
-
 #pragma omp parallel for
       for(size_t is=0; is < W.size(); is++) {
 	C[0][is] = W[is];
@@ -249,7 +248,7 @@ x = 0    1    2    3
 	}
 	std::cout << " ... " << C[ib][W.size()-1] << std::endl;
 #endif
-	
+
 	for(int jb=0; jb <= ib; jb++) {
 	  InnerProduct(C[jb],HC[ib],H[jb+nb*ib],b_comm);
 	  H[ib+nb*jb] = Conjugate(H[jb+nb*ib]);
@@ -289,7 +288,6 @@ x = 0    1    2    3
 	  R[is] += E[0]*W[is];
 	}
 
-	
 	// #ifdef SBD_FUAGKUPATCH
 	MpiAllreduce(W,MPI_SUM,t_comm);
 	MpiAllreduce(W,MPI_SUM,h_comm);
@@ -331,11 +329,11 @@ x = 0    1    2    3
 		std::cout << " " << E[p];
 	      }
 	      std::cout << std::endl;
-	    }	
+	    }
 	  }
 	}
 #endif
-	
+
 	if( norm_R < eps ) {
 	  do_continue = false;
 	  break;
@@ -368,7 +366,7 @@ x = 0    1    2    3
 
 	}
       } // end for(int ib=0; ib < nb; ib++)
-      
+
       if( !do_continue ) {
 	break;
       }
@@ -378,7 +376,7 @@ x = 0    1    2    3
       for(size_t is=0; is < W.size(); is++) {
 	C[0][is] = W[is];
       }
-      
+
     } // end for(int it=0; it < max_iteration; it++)
 
     free(H);
@@ -410,7 +408,7 @@ x = 0    1    2    3
      @param[in] num_block: Maximum size of Litz vector space
      @param[in] eps: error torelance (norm of the residual vector)
   */
-  
+
   template <typename ElemT, typename RealT>
   void Davidson(const std::vector<ElemT> & hii,
 		std::vector<ElemT> & W,
@@ -482,6 +480,9 @@ x = 0    1    2    3
 	     adet_comm_size,bdet_comm_size,
 	     helper,I0,I1,I2,
 	     h_comm,b_comm,t_comm);
+    ElemT t;
+    InnerProduct(HC[ib], HC[ib], t, b_comm);
+    std::cout << "  dot(HC) = " << t << std::endl;
 
 #ifdef SBD_DEBUG_DAVIDSON
 	std::cout << " (h,b,t) = ("
@@ -499,7 +500,7 @@ x = 0    1    2    3
 	}
 	std::cout << " ... " << C[ib][W.size()-1] << std::endl;
 #endif
-	
+
 	for(int jb=0; jb <= ib; jb++) {
 	  InnerProduct(C[jb],HC[ib],H[jb+nb*ib],b_comm);
 	  H[ib+nb*jb] = Conjugate(H[jb+nb*ib]);
@@ -583,7 +584,7 @@ x = 0    1    2    3
 	  }
 	}
 #endif
-	
+
 	if( norm_R < eps ) {
 	  do_continue = false;
 	  break;
@@ -616,7 +617,7 @@ x = 0    1    2    3
 
 	}
       } // end for(int ib=0; ib < nb; ib++)
-      
+
       if( !do_continue ) {
 	break;
       }
@@ -626,7 +627,7 @@ x = 0    1    2    3
       for(size_t is=0; is < W.size(); is++) {
 	C[0][is] = W[is];
       }
-      
+
     } // end for(int it=0; it < max_iteration; it++)
 
     free(H);
@@ -635,6 +636,7 @@ x = 0    1    2    3
 
   }
 
+#ifndef SBD_THRUST
   /**
      Davidson method for the direct multiplication using TaskHelpers, specialized for the SQD loop calculation.
      @tparam ElemT: Type of the Hamiltonian and wave functions
@@ -754,7 +756,7 @@ x = 0    1    2    3
 	}
 	std::cout << " ... " << C[ib][W.size()-1] << std::endl;
 #endif
-	
+
 	for(int jb=0; jb <= ib; jb++) {
 	  InnerProduct(C[jb],HC[ib],H[jb+nb*ib],b_comm);
 	  H[ib+nb*jb] = Conjugate(H[jb+nb*ib]);
@@ -816,7 +818,7 @@ x = 0    1    2    3
           R[is] *= volp;
 	}
 	// #endif
-	
+
 	RealT norm_W;
 	Normalize(W,norm_W,b_comm);
 
@@ -842,11 +844,11 @@ x = 0    1    2    3
 		std::cout << " " << E[p];
 	      }
 	      std::cout << std::endl;
-	    }	
+	    }
 	  }
 	}
 #endif
-	
+
 	if( norm_R < eps ) {
 	  do_continue = false;
 	  break;
@@ -903,10 +905,10 @@ x = 0    1    2    3
           if (mpi_rank_h + mpi_rank_t + mpi_rank_b == 0) std::cerr << "halting iterations due to max_time limit" << std::endl;
 	  break;
 	}
-	
-	
+
+
       } // end for(int ib=0; ib < nb; ib++)
-      
+
       if( !do_continue ) {
 	break;
       }
@@ -916,7 +918,7 @@ x = 0    1    2    3
       for(size_t is=0; is < W.size(); is++) {
 	C[0][is] = W[is];
       }
-      
+
     } // end for(int it=0; it < max_iteration; it++)
 
     free(H);
@@ -924,8 +926,9 @@ x = 0    1    2    3
     free(E);
 
   }
+#endif	// SBD_THRUST
 
-  
+
 }
 
 #endif

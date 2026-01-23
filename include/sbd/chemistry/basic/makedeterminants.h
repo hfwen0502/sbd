@@ -1,6 +1,6 @@
 /**
 @file sbd/chemistry/basic/makedeterminants.h
-@brief Setup the set of determinants from 
+@brief Setup the set of determinants from
 */
 #ifndef SBD_CHEMISTRY_BASIC_MAKEDETERMINANTS_H
 #define SBD_CHEMISTRY_BASIC_MAKEDETERMINANTS_H
@@ -14,7 +14,7 @@ namespace sbd {
 			 const size_t L,
 			 std::vector<std::vector<size_t>> & Det,
 			 MPI_Comm comm) {
-    
+
     int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
     int mpi_size; MPI_Comm_size(comm,&mpi_size);
 
@@ -41,7 +41,7 @@ namespace sbd {
 			 const size_t L,
 			 std::vector<std::vector<size_t>> & Det,
 			 MPI_Comm comm) {
-    
+
     int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
     int mpi_size; MPI_Comm_size(comm,&mpi_size);
 
@@ -50,7 +50,7 @@ namespace sbd {
     size_t na_begin = 0;
     size_t na_end = NcA;
     get_mpi_range(mpi_size,mpi_rank,na_begin,na_end);
-    
+
     Det.resize((na_end-na_begin)*NcB);
     for(size_t na=na_begin; na < na_end; na++) {
       for(size_t nb=0; nb < NcB; nb++) {
@@ -59,7 +59,7 @@ namespace sbd {
     }
   }
 
-  
+
   std::vector<std::vector<size_t>>
   DecodeAlphaDets(const std::string& filename,
 		  size_t norb) {
@@ -68,21 +68,21 @@ namespace sbd {
     if (!file) {
       throw std::runtime_error("Failed to open file");
     }
-    
+
     // byte number of each bit array
     size_t byte_length = (norb + 7) / 8;
-    
+
     // output vector for bit array
     std::vector<std::vector<size_t>> all_bit_sequences;
-    
+
     // decode reading the file
     std::vector<uint8_t> buffer(byte_length);  // buffa of each bit array
     while (file.read(reinterpret_cast<char*>(buffer.data()), byte_length)) {
       // decode the one bit array
       std::vector<size_t> bit_sequence;
       size_t bit_index = 0;
-      
-      
+
+
       for (size_t byte : buffer) {
 	for (int i = 7; i >= 0; --i) { // decode from higher bit
 	  if ( 8*byte_length-norb <= bit_index ) {
@@ -98,12 +98,12 @@ namespace sbd {
       for(int i=0; i < bit_sequence.size(); i++) {
 	reverse_bit_sequence[i] = bit_sequence[bit_sequence.size()-i-1];
       }
-      
+
       // store the decoded bit array
       // all_bit_sequences.push_back(bit_sequence);
       all_bit_sequences.push_back(reverse_bit_sequence);
     }
-    
+
     return all_bit_sequences;
   }
 
@@ -156,7 +156,7 @@ namespace sbd {
      @param[in] bit_length: length of bit string managed by a size_t
      @param[in] L: total length of bit string
    */
-  
+
   void LoadAlphaDets(const std::string & adetfile,
 		     std::vector<std::vector<size_t>> & adet,
 		     size_t bit_length,
@@ -184,8 +184,8 @@ namespace sbd {
     sbd::sort_bitarray(adet);
   }
 
-  
-  
+
+
 }
 
 #endif
