@@ -172,8 +172,6 @@ namespace sbd {
     helper.DoublesBetaCrAn.resize(braBetaSize);
 
     // count single and double excitations to save memory
-    std::vector<int> cr(2);
-    std::vector<int> an(2);
 
 #pragma omp parallel for
     for(size_t ia=braAlphaStart; ia < braAlphaEnd; ia++) {
@@ -184,6 +182,8 @@ namespace sbd {
         else if ( d == 4 ) dcount++;
       }
 
+      std::vector<int> cr(2);
+      std::vector<int> an(2);
       helper.SinglesFromAlpha[ia-braAlphaStart].reserve(scount);
       helper.SinglesAlphaCrAn[ia-braAlphaStart].reserve(2*scount);
       helper.DoublesFromAlpha[ia-braAlphaStart].reserve(dcount);
@@ -220,6 +220,8 @@ namespace sbd {
       helper.SinglesBetaCrAn[ib-braBetaStart].reserve(2*scount);
       helper.DoublesFromBeta[ib-braBetaStart].reserve(dcount);
       helper.DoublesBetaCrAn[ib-braBetaStart].reserve(4*dcount);
+      std::vector<int> cr(2);
+      std::vector<int> an(2);
 
       for(size_t jb=ketBetaStart; jb < ketBetaEnd; jb++) {
         int d = difference(bdets[ib],bdets[jb],bit_length,norb);
@@ -279,16 +281,16 @@ namespace sbd {
   size_t SizeOfVector(TaskHelpers & helper) {
     size_t count = 0;
     for(size_t i=0; i < helper.SinglesFromAlpha.size(); i++) {
-      count += 3*helper.SinglesFromAlpha[i].size();
+      count += helper.SinglesFromAlpha[i].size();
     }
     for(size_t i=0; i < helper.DoublesFromAlpha.size(); i++) {
-      count += 5*helper.DoublesFromAlpha[i].size();
+      count += helper.DoublesFromAlpha[i].size();
     }
     for(size_t i=0; i < helper.SinglesFromBeta.size(); i++) {
-      count += 3*helper.SinglesFromBeta[i].size();
+      count += helper.SinglesFromBeta[i].size();
     }
     for(size_t i=0; i < helper.DoublesFromBeta.size(); i++) {
-      count += 5*helper.DoublesFromBeta[i].size();
+      count += helper.DoublesFromBeta[i].size();
     }
     return count*sizeof(size_t);
   }
@@ -390,12 +392,12 @@ namespace sbd {
 
   void FreeVectors(TaskHelpers & helper) {
     helper.SinglesFromAlpha = std::vector<std::vector<size_t>>();
-    helper.SinglesAlphaCrAn = std::vector<std::vector<int>>();
     helper.DoublesFromAlpha = std::vector<std::vector<size_t>>();
-    helper.DoublesAlphaCrAn = std::vector<std::vector<int>>();
     helper.SinglesFromBeta = std::vector<std::vector<size_t>>();
-    helper.SinglesBetaCrAn = std::vector<std::vector<int>>();
     helper.DoublesFromBeta = std::vector<std::vector<size_t>>();
+    helper.SinglesAlphaCrAn = std::vector<std::vector<int>>();
+    helper.DoublesAlphaCrAn = std::vector<std::vector<int>>();
+    helper.SinglesBetaCrAn = std::vector<std::vector<int>>();
     helper.DoublesBetaCrAn = std::vector<std::vector<int>>();
   }
 
@@ -404,8 +406,6 @@ namespace sbd {
     free(helper.SinglesFromBetaLen);
     free(helper.DoublesFromAlphaLen);
     free(helper.DoublesFromBetaLen);
-    helper.sharedSizeTMemory = std::vector<size_t>();
-    helper.sharedIntMemory = std::vector<int>();
   }
 
   void FreeHelpers(std::vector<TaskHelpers> & helper) {
@@ -659,7 +659,7 @@ namespace sbd {
 #endif
 
       MakeSmartHelper(helper[task-task_start]);
-      FreeVectors(helper[task-task_start]);
+      // FreeVectors(helper[task-task_start]);
 
 #ifdef SBD_DEBUG_HELPER
       size_t smart_memory_count = helper.sharedSizeTMemory[task-task_start].size() * sizeof(size_t)
@@ -1036,7 +1036,7 @@ namespace sbd {
 #endif
 
       MakeSmartHelper(helper[task-task_start[mpi_rank_t]]);
-      FreeVectors(helper[task-task_start[mpi_rank_t]]);
+      // FreeVectors(helper[task-task_start[mpi_rank_t]]);
 
 #ifdef SBD_DEBUG_HELPER
       size_t smart_memory_count = sharedMemory[task-task_start[mpi_rank_t]].size() * sizeof(size_t);

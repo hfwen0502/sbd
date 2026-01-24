@@ -6,7 +6,7 @@ CCCOM=mpicxx
 # CCCOM=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/comm_libs/mpi/bin/mpic++
 
 # flags for build: include path to openmp. The following is the case using homebrew's llvm on Mac
-CCFLAGS= -std=c++17 -stdlib=libc++ -fopenmp -I/opt/homebrew/opt/llvm/include -O3
+CCFLAGS= -std=c++17 -stdlib=libc++ -fopenmp -I/opt/homebrew/opt/llvm/include -O0 -g -fsanitize=address
 
 
 # accelerate using Thrust
