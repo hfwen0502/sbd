@@ -437,8 +437,7 @@ namespace sbd {
 		   const size_t L,
 		   const ElemT & I0,
 		   const oneInt<ElemT> & I1,
-		   const twoInt<ElemT> & I2)
-{
+		   const twoInt<ElemT> & I2) {
         ElemT energy(0.0);
 
         for (int i = 0; i < 2 * L; i++) {
@@ -481,8 +480,7 @@ namespace sbd {
 		  int & i,
 		  int & a,
 		  const oneInt<ElemT> & I1,
-		  const twoInt<ElemT> & I2)
-{
+		  const twoInt<ElemT> & I2) {
         double sgn = 1.0;
         parity(det, bit_length, std::min(i, a), std::max(i, a), sgn);
         ElemT energy = I1.Value(a, i);

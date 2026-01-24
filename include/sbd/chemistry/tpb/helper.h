@@ -26,6 +26,10 @@ namespace sbd {
     std::vector<std::vector<size_t>> SinglesFromBeta;
     std::vector<std::vector<size_t>> DoublesFromAlpha;
     std::vector<std::vector<size_t>> DoublesFromBeta;
+    std::vector<std::vector<int>> SinglesAlphaCrAn;
+    std::vector<std::vector<int>> SinglesBetaCrAn;
+    std::vector<std::vector<int>> DoublesAlphaCrAn;
+    std::vector<std::vector<int>> DoublesBetaCrAn;
     size_t * SinglesFromAlphaLen;
     size_t * SinglesFromBetaLen;
     size_t * DoublesFromAlphaLen;
@@ -34,6 +38,12 @@ namespace sbd {
     std::vector<size_t*> SinglesFromBetaSM;
     std::vector<size_t*> DoublesFromAlphaSM;
     std::vector<size_t*> DoublesFromBetaSM;
+    std::vector<int*> SinglesAlphaCrAnSM;
+    std::vector<int*> SinglesBetaCrAnSM;
+    std::vector<int*> DoublesAlphaCrAnSM;
+    std::vector<int*> DoublesBetaCrAnSM;
+    std::vector<size_t> sharedSizeTMemory;
+    std::vector<int> sharedIntMemory;
   };
 
   void GenerateSingles(const std::vector<std::vector<size_t>> & ADets,
@@ -56,7 +66,9 @@ namespace sbd {
     auto bDet = BDets[0];
 
     helper.SinglesFromAlpha.resize(braAlphaEnd-braAlphaStart);
+    helper.SinglesAlphaCrAn.resize(braAlphaEnd-braAlphaStart);
     helper.SinglesFromBeta.resize(braBetaEnd-braBetaStart);
+    helper.SinglesBetaCrAn.resize(braBetaEnd-braBetaStart);
 
     for(size_t ib=braAlphaStart; ib < braAlphaEnd; ib++) {
       int nclosed = getOpenClosed(ADets[ib],bit_length,norb,open,closed);
@@ -71,6 +83,8 @@ namespace sbd {
 	  if( itk != ADets.begin()+ketAlphaEnd ) {
 	    auto ik = std::distance(ADets.begin(),itk);
 	    helper.SinglesFromAlpha[ib-braAlphaStart].push_back(static_cast<size_t>(ik));
+	    helper.SinglesAlphaCrAn[ib-braAlphaStart].push_back(2*open[k]);
+	    helper.SinglesAlphaCrAn[ib-braAlphaStart].push_back(2*closed[j]);
 	  }
 	}
       }
@@ -89,6 +103,8 @@ namespace sbd {
 	  if( itk != BDets.begin()+ketBetaEnd ) {
 	    auto ik = std::distance(BDets.begin(),itk);
 	    helper.SinglesFromBeta[ib-braBetaStart].push_back(static_cast<size_t>(ik));
+	    helper.SinglesBetaCrAn[ib-braAlphaStart].push_back(2*open[k]+1);
+	    helper.SinglesBetaCrAn[ib-braAlphaStart].push_back(2*closed[j]+1);
 	  }
 	}
       }
@@ -147,11 +163,18 @@ namespace sbd {
     size_t braAlphaSize = braAlphaEnd-braAlphaStart;
     size_t braBetaSize  = braBetaEnd-braBetaStart;
     helper.SinglesFromAlpha.resize(braAlphaSize);
+    helper.SinglesAlphaCrAn.resize(braAlphaSize);
     helper.DoublesFromAlpha.resize(braAlphaSize);
+    helper.DoublesAlphaCrAn.resize(braAlphaSize);
     helper.SinglesFromBeta.resize(braBetaSize);
+    helper.SinglesBetaCrAn.resize(braBetaSize);
     helper.DoublesFromBeta.resize(braBetaSize);
+    helper.DoublesBetaCrAn.resize(braBetaSize);
 
     // count single and double excitations to save memory
+    std::vector<int> cr(2);
+    std::vector<int> an(2);
+
 #pragma omp parallel for
     for(size_t ia=braAlphaStart; ia < braAlphaEnd; ia++) {
       size_t scount = 0; size_t dcount = 0;
@@ -162,14 +185,24 @@ namespace sbd {
       }
 
       helper.SinglesFromAlpha[ia-braAlphaStart].reserve(scount);
+      helper.SinglesAlphaCrAn[ia-braAlphaStart].reserve(2*scount);
       helper.DoublesFromAlpha[ia-braAlphaStart].reserve(dcount);
+      helper.DoublesAlphaCrAn[ia-braAlphaStart].reserve(4*dcount);
 
       for(size_t ja=ketAlphaStart; ja < ketAlphaEnd; ja++) {
         int d = difference(adets[ia],adets[ja],bit_length,norb);
         if ( d == 2 ) {
           helper.SinglesFromAlpha[ia-braAlphaStart].push_back(ja);
+	  OrbitalDifference(adets[ia],adets[ja],bit_length,norb,cr,an);
+	  helper.SinglesAlphaCrAn[ia-braAlphaStart].push_back(2*cr[0]);
+	  helper.SinglesAlphaCrAn[ia-braAlphaStart].push_back(2*an[0]);
         } else if ( d == 4 ) {
           helper.DoublesFromAlpha[ia-braAlphaStart].push_back(ja);
+	  OrbitalDifference(adets[ia],adets[ja],bit_length,norb,cr,an);
+	  helper.DoublesAlphaCrAn[ia-braAlphaStart].push_back(2*cr[0]);
+	  helper.DoublesAlphaCrAn[ia-braAlphaStart].push_back(2*cr[1]);
+	  helper.DoublesAlphaCrAn[ia-braAlphaStart].push_back(2*an[0]);
+	  helper.DoublesAlphaCrAn[ia-braAlphaStart].push_back(2*an[1]);
         }
       }
     }
@@ -184,14 +217,24 @@ namespace sbd {
       }
 
       helper.SinglesFromBeta[ib-braBetaStart].reserve(scount);
+      helper.SinglesBetaCrAn[ib-braBetaStart].reserve(2*scount);
       helper.DoublesFromBeta[ib-braBetaStart].reserve(dcount);
+      helper.DoublesBetaCrAn[ib-braBetaStart].reserve(4*dcount);
 
       for(size_t jb=ketBetaStart; jb < ketBetaEnd; jb++) {
         int d = difference(bdets[ib],bdets[jb],bit_length,norb);
         if ( d == 2 ) {
           helper.SinglesFromBeta[ib-braBetaStart].push_back(jb);
+	  OrbitalDifference(bdets[ib],bdets[jb],bit_length,norb,cr,an);
+	  helper.SinglesBetaCrAn[ib-braBetaStart].push_back(2*cr[0]+1);
+	  helper.SinglesBetaCrAn[ib-braBetaStart].push_back(2*an[0]+1);
         } else if ( d == 4 ) {
           helper.DoublesFromBeta[ib-braBetaStart].push_back(jb);
+	  OrbitalDifference(bdets[ib],bdets[jb],bit_length,norb,cr,an);
+	  helper.DoublesBetaCrAn[ib-braBetaStart].push_back(2*cr[0]+1);
+	  helper.DoublesBetaCrAn[ib-braBetaStart].push_back(2*cr[1]+1);
+	  helper.DoublesBetaCrAn[ib-braBetaStart].push_back(2*an[0]+1);
+	  helper.DoublesBetaCrAn[ib-braBetaStart].push_back(2*an[1]+1);
         }
       }
     }
@@ -236,16 +279,16 @@ namespace sbd {
   size_t SizeOfVector(TaskHelpers & helper) {
     size_t count = 0;
     for(size_t i=0; i < helper.SinglesFromAlpha.size(); i++) {
-      count += helper.SinglesFromAlpha[i].size();
+      count += 3*helper.SinglesFromAlpha[i].size();
     }
     for(size_t i=0; i < helper.DoublesFromAlpha.size(); i++) {
-      count += helper.DoublesFromAlpha[i].size();
+      count += 5*helper.DoublesFromAlpha[i].size();
     }
     for(size_t i=0; i < helper.SinglesFromBeta.size(); i++) {
-      count += helper.SinglesFromBeta[i].size();
+      count += 3*helper.SinglesFromBeta[i].size();
     }
     for(size_t i=0; i < helper.DoublesFromBeta.size(); i++) {
-      count += helper.DoublesFromBeta[i].size();
+      count += 5*helper.DoublesFromBeta[i].size();
     }
     return count*sizeof(size_t);
   }
@@ -347,9 +390,13 @@ namespace sbd {
 
   void FreeVectors(TaskHelpers & helper) {
     helper.SinglesFromAlpha = std::vector<std::vector<size_t>>();
+    helper.SinglesAlphaCrAn = std::vector<std::vector<int>>();
     helper.DoublesFromAlpha = std::vector<std::vector<size_t>>();
+    helper.DoublesAlphaCrAn = std::vector<std::vector<int>>();
     helper.SinglesFromBeta = std::vector<std::vector<size_t>>();
+    helper.SinglesBetaCrAn = std::vector<std::vector<int>>();
     helper.DoublesFromBeta = std::vector<std::vector<size_t>>();
+    helper.DoublesBetaCrAn = std::vector<std::vector<int>>();
   }
 
   void FreeHelpers(TaskHelpers & helper) {
@@ -357,6 +404,8 @@ namespace sbd {
     free(helper.SinglesFromBetaLen);
     free(helper.DoublesFromAlphaLen);
     free(helper.DoublesFromBetaLen);
+    helper.sharedSizeTMemory = std::vector<size_t>();
+    helper.sharedIntMemory = std::vector<int>();
   }
 
   void FreeHelpers(std::vector<TaskHelpers> & helper) {
@@ -365,8 +414,7 @@ namespace sbd {
     }
   }
 
-  void MakeSmartHelper(TaskHelpers & helper,
-		       std::vector<size_t> & sharedMemory) {
+  void MakeSmartHelper(TaskHelpers & helper) {
 
     size_t nAlpha = helper.SinglesFromAlpha.size();
     size_t nBeta = helper.SinglesFromBeta.size();
@@ -386,22 +434,35 @@ namespace sbd {
     }
 
     helper.SinglesFromAlphaSM.resize(nAlpha);
+    helper.SinglesAlphaCrAnSM.resize(nAlpha);
     helper.DoublesFromAlphaSM.resize(nAlpha);
+    helper.DoublesAlphaCrAnSM.resize(nAlpha);
     helper.SinglesFromBetaSM.resize(nBeta);
+    helper.SinglesBetaCrAnSM.resize(nBeta);
     helper.DoublesFromBetaSM.resize(nBeta);
+    helper.DoublesBetaCrAnSM.resize(nBeta);
 
     size_t total_size = 0;
+    size_t total_int_size = 0;
     for (size_t i=0; i < nAlpha; i++) {
       total_size += helper.SinglesFromAlphaLen[i]
 	+ helper.DoublesFromAlphaLen[i];
+      total_int_size += 2*helper.SinglesFromAlphaLen[i]
+	+ 4*helper.DoublesFromAlphaLen[i];
     }
     for(size_t i=0; i < nBeta; i++) {
       total_size += helper.SinglesFromBetaLen[i]
 	+ helper.DoublesFromBetaLen[i];
+      total_int_size += 2*helper.SinglesFromBetaLen[i]
+	+ 4*helper.DoublesFromBetaLen[i];
     }
-    sharedMemory.resize(total_size);
-    size_t * begin = sharedMemory.data();
+    helper.sharedSizeTMemory.resize(total_size);
+    helper.sharedIntMemory.resize(total_int_size);
+    size_t * begin = helper.sharedSizeTMemory.data();
     size_t counter = 0;
+
+    int * int_begin = helper.sharedIntMemory.data();
+    size_t int_counter = 0;
 
     for(size_t i=0; i < nAlpha; i++) {
       helper.SinglesFromAlphaSM[i] = begin + counter;
@@ -418,12 +479,35 @@ namespace sbd {
     }
 
     for(size_t i=0; i < nAlpha; i++) {
+      helper.SinglesAlphaCrAnSM[i] = int_begin + int_counter;
+      int_counter += 2 * helper.SinglesFromAlphaLen[i];
+      helper.DoublesAlphaCrAnSM[i] = int_begin + int_counter;
+      int_counter += 4 * helper.DoublesFromAlphaLen[i];
+    }
+
+    for(size_t i=0; i < nBeta; i++) {
+      helper.SinglesBetaCrAnSM[i] = int_begin + int_counter;
+      int_counter += 2 * helper.SinglesFromBetaLen[i];
+      helper.DoublesBetaCrAnSM[i] = int_begin + int_counter;
+      int_counter += 4 * helper.DoublesFromBetaLen[i];
+    }
+
+    for(size_t i=0; i < nAlpha; i++) {
       std::memcpy(helper.SinglesFromAlphaSM[i],
 		  helper.SinglesFromAlpha[i].data(),
 		  helper.SinglesFromAlphaLen[i]*sizeof(size_t));
       std::memcpy(helper.DoublesFromAlphaSM[i],
 		  helper.DoublesFromAlpha[i].data(),
 		  helper.DoublesFromAlphaLen[i]*sizeof(size_t));
+    }
+
+    for(size_t i=0; i < nAlpha; i++) {
+      std::memcpy(helper.SinglesAlphaCrAnSM[i],
+		  helper.SinglesAlphaCrAn[i].data(),
+		  2*helper.SinglesFromAlphaLen[i]*sizeof(int));
+      std::memcpy(helper.DoublesAlphaCrAnSM[i],
+		  helper.DoublesAlphaCrAn[i].data(),
+		  4*helper.DoublesFromAlphaLen[i]*sizeof(int));
     }
 
     for(size_t i=0; i < nBeta; i++) {
@@ -434,14 +518,22 @@ namespace sbd {
 		  helper.DoublesFromBeta[i].data(),
 		  helper.DoublesFromBetaLen[i]*sizeof(size_t));
     }
+    
+    for(size_t i=0; i < nBeta; i++) {
+      std::memcpy(helper.SinglesBetaCrAnSM[i],
+		  helper.SinglesBetaCrAn[i].data(),
+		  2*helper.SinglesFromBetaLen[i]*sizeof(int));
+      std::memcpy(helper.DoublesBetaCrAnSM[i],
+		  helper.DoublesBetaCrAn[i].data(),
+		  4*helper.DoublesFromBetaLen[i]*sizeof(int));
+    }
+
     FreeVectors(helper);
   }
 
-  void MakeSmartHelper(std::vector<TaskHelpers> & helper,
-		       std::vector<std::vector<size_t>> & sharedMemory) {
-    sharedMemory.resize(helper.size());
+  void MakeSmartHelper(std::vector<TaskHelpers> & helper) {
     for(int task=0; task < helper.size(); task++) {
-      MakeSmartHelper(helper[task],sharedMemory[task]);
+      MakeSmartHelper(helper[task]);
     }
   }
 
@@ -450,7 +542,6 @@ namespace sbd {
 		   size_t bit_length,
 		   size_t norb,
 		   std::vector<TaskHelpers> & helper,
-		   std::vector<std::vector<size_t>> & sharedMemory,
 		   MPI_Comm h_comm,
 		   MPI_Comm b_comm,
 		   MPI_Comm t_comm,
@@ -521,7 +612,6 @@ namespace sbd {
     get_mpi_range(mpi_size_t,mpi_rank_t,task_start,task_end);
     size_t task_size = task_end-task_start;
     helper.resize(task_size);
-    sharedMemory.resize(task_size);
 
     int bra_rank = mpi_rank_b;
     int bra_adet_rank = bra_rank / bdet_comm_size;
@@ -568,11 +658,12 @@ namespace sbd {
 		<< " (GiB) before the serialization " << std::endl;
 #endif
 
-      MakeSmartHelper(helper[task-task_start],sharedMemory[task-task_start]);
+      MakeSmartHelper(helper[task-task_start]);
       FreeVectors(helper[task-task_start]);
 
 #ifdef SBD_DEBUG_HELPER
-      size_t smart_memory_count = sharedMemory[task-task_start].size() * sizeof(size_t);
+      size_t smart_memory_count = helper.sharedSizeTMemory[task-task_start].size() * sizeof(size_t)
+	+ helper.sharedIntMemory[task-task_start].size() * sizeof(int);
       double smart_memory_size = 1.0 * smart_memory_count / (1024.0*1024.0*1024.0);
       helper_vector_capacity_count = CapacityOfVector(helper);
       helper_vector_size_count = SizeOfVector(helper);
@@ -668,7 +759,6 @@ namespace sbd {
 		     size_t bit_length,
 		     size_t norb,
 		     std::vector<TaskHelpers> & helper,
-		     std::vector<std::vector<size_t>> & sharedMemory,
 		     MPI_Comm h_comm,
 		     MPI_Comm b_comm,
 		     MPI_Comm t_comm,
@@ -846,7 +936,6 @@ namespace sbd {
        Free every helpers
      */
     FreeHelpers(helper);
-    sharedMemory = std::vector<std::vector<size_t>>();
 
     std::vector<size_t> adet_schedule(total_task);
     std::vector<size_t> bdet_schedule(total_task);
@@ -900,7 +989,6 @@ namespace sbd {
 
     size_t task_size = task_end[mpi_rank_t]-task_start[mpi_rank_t];
     helper.resize(task_size);
-    sharedMemory.resize(task_size);
 
     int bra_rank = mpi_rank_b;
     int bra_adet_rank = bra_rank / bdet_comm_size;
@@ -947,7 +1035,7 @@ namespace sbd {
 		<< " (GiB) before the serialization " << std::endl;
 #endif
 
-      MakeSmartHelper(helper[task-task_start[mpi_rank_t]],sharedMemory[task-task_start[mpi_rank_t]]);
+      MakeSmartHelper(helper[task-task_start[mpi_rank_t]]);
       FreeVectors(helper[task-task_start[mpi_rank_t]]);
 
 #ifdef SBD_DEBUG_HELPER

@@ -165,7 +165,6 @@ namespace sbd {
 	 Setup helpers
        */
       std::vector<sbd::TaskHelpers> helper;
-      std::vector<std::vector<size_t>> sharedMemory;
       MPI_Comm h_comm;
       MPI_Comm b_comm;
       MPI_Comm t_comm;
@@ -174,10 +173,10 @@ namespace sbd {
 			    h_comm,b_comm,t_comm);
 
       auto time_start_help = std::chrono::high_resolution_clock::now();
-      sbd::MakeHelpers(adet,bdet,bit_length,L,helper,sharedMemory,
+      sbd::MakeHelpers(adet,bdet,bit_length,L,helper,
 		       h_comm,b_comm,t_comm,
 		       adet_comm_size,bdet_comm_size);
-      sbd::RemakeHelpers(adet,bdet,bit_length,L,helper,sharedMemory,
+      sbd::RemakeHelpers(adet,bdet,bit_length,L,helper,
 			 h_comm,b_comm,t_comm,
 			 adet_comm_size,bdet_comm_size);
       auto time_end_help = std::chrono::high_resolution_clock::now();
@@ -335,12 +334,12 @@ namespace sbd {
 	std::vector<size_t> tasktype;
 	std::vector<size_t> adetshift;
 	std::vector<size_t> bdetshift;
-	std::vector<size_t> sharedInt;
+	std::vector<size_t> sharedSizeT;
 	std::vector<double> sharedElemT;
 
 	sbd::makeQCham(adet,bdet,bit_length,L,helper,I0,I1,I2,
 		       hii,ih,jh,hij,len,tasktype,adetshift,bdetshift,
-		       sharedInt,sharedElemT,
+		       sharedSizeT,sharedElemT,
 		       h_comm,b_comm,t_comm);
 #endif
     auto time_end_mkham = std::chrono::high_resolution_clock::now();
@@ -463,16 +462,6 @@ namespace sbd {
 	double elapsed_meas = 0.000001 * elapsed_meas_count;
 	if( mpi_rank == 0 ) {
 	  std::cout << " Elapsed time for measurement " << elapsed_meas << " (sec) " << std::endl;
-
-	  /*
-	  for(size_t io=0; io < L; io++) {
-	    std::cout << " Occupation density for orbital " << io
-		      << ": " << density[2*io]+density[2*io+1]
-		      << ", " << density[2*io]
-		      << " for alpha, " << density[2*io+1]
-		      << " for beta " << std::endl;
-	  }
-	  */
 	}
 
       } else {
