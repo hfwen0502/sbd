@@ -9,7 +9,7 @@
 #include <algorithm>
 
 namespace sbd {
-  
+
   struct TaskHelpers {
     size_t braAlphaStart;
     size_t braAlphaEnd;
@@ -94,7 +94,7 @@ namespace sbd {
       }
     }
   }
-		      
+
   void GenerateDoubles(const std::vector<std::vector<size_t>> & ADets,
 		       const std::vector<std::vector<size_t>> & BDets,
 		       const size_t bit_length,
@@ -159,19 +159,19 @@ namespace sbd {
         int d = difference(adets[ia],adets[ja],bit_length,norb);
         if ( d == 2 ) scount++;
         else if ( d == 4 ) dcount++;
-      }   
+      }
 
       helper.SinglesFromAlpha[ia-braAlphaStart].reserve(scount);
       helper.DoublesFromAlpha[ia-braAlphaStart].reserve(dcount);
 
       for(size_t ja=ketAlphaStart; ja < ketAlphaEnd; ja++) {
         int d = difference(adets[ia],adets[ja],bit_length,norb);
-        if ( d == 2 ) { 
+        if ( d == 2 ) {
           helper.SinglesFromAlpha[ia-braAlphaStart].push_back(ja);
-        } else if ( d == 4 ) { 
+        } else if ( d == 4 ) {
           helper.DoublesFromAlpha[ia-braAlphaStart].push_back(ja);
         }
-      }   
+      }
     }
 
 #pragma omp parallel for
@@ -205,10 +205,10 @@ namespace sbd {
 			MPI_Comm & h_comm,
 			MPI_Comm & b_comm,
 			MPI_Comm & t_comm) {
-    
+
     int mpi_size; MPI_Comm_size(comm,&mpi_size);
     int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
-    
+
     int basis_comm_size = adet_comm_size*bdet_comm_size;
     int basis_area_size = basis_comm_size*task_comm_size;
     int mpi_size_request = basis_area_size*h_comm_size;
@@ -230,7 +230,7 @@ namespace sbd {
     int b_comm_color = mpi_rank_area / basis_comm_size;
     MPI_Comm_split(basis_area_comm,t_comm_color,mpi_rank,&t_comm);
     MPI_Comm_split(basis_area_comm,b_comm_color,mpi_rank,&b_comm);
-    
+
   }
 
   size_t SizeOfVector(TaskHelpers & helper) {
@@ -283,12 +283,12 @@ namespace sbd {
     return count;
   }
 
- 
 
-  // 
+
+  //
   // for adet_size = 4, bdet_size = 4, r_comm_size = 1
-  // 
-  //                                                   basis_comm_ranks  
+  //
+  //                                                   basis_comm_ranks
   // task 0  (0,0) (0,1) (0,2) (0,3) (1,0) (1,1) (1,2) (1,3) (2,0) (2,1) (2,2) (2,3) (3,0) (3,1) (3,2) (3,3)
   // task 1  (0,0) (0,1) (0,2) (0,3) (1,0) (1,1) (1,2) (1,3) (2,0) (2,1) (2,2) (2,3) (3,0) (3,1) (3,2) (3,3)
   // task 2  (0,0) (0,1) (0,2) (0,3) (1,0) (1,1) (1,2) (1,3) (2,0) (2,1) (2,2) (2,3) (3,0) (3,1) (3,2) (3,3)
@@ -313,7 +313,7 @@ namespace sbd {
   // task 21 (3,1) (3,2) (3,3) (3,1) (0,1) (0,2) (0,3) (0,0) (1,1) (1,2) (1,3) (1,0) (2,1) (2,2) (2,3) (2,0)
   // task 22 (3,2) (3,3) (3,1) (3,1) (0,2) (0,3) (0,0) (0,1) (1,2) (1,3) (1,0) (1,1) (2,2) (2,3) (2,0) (2,1)
   // task 23 (3,3) (3,1) (3,1) (3,2) (0,3) (0,0) (0,1) (0,2) (1,3) (1,0) (1,1) (1,2) (2,3) (2,0) (2,1) (2,2)
-  
+
   // for adet_size = 4, bdet_size = 4, r_comm_size = 3
   //                             r_comm_rank = 0
   // task 0  (0,0) (0,1) (0,2) (0,3) (1,0) (1,1) (1,2) (1,3) (2,0) (2,1) (2,2) (2,3) (3,0) (3,1) (3,2) (3,3)
@@ -324,7 +324,7 @@ namespace sbd {
   // task 5  (0,2) (0,3) (0,1) (0,1) (1,2) (1,3) (1,0) (1,1) (2,2) (2,3) (2,0) (2,1) (3,2) (3,3) (3,0) (3,1)
   // task 6  (0,2) (0,3) (0,1) (0,1) (1,2) (1,3) (1,0) (1,1) (2,2) (2,3) (2,0) (2,1) (3,2) (3,3) (3,0) (3,1)
   // task 7  (0,3) (0,1) (0,1) (0,2) (1,3) (1,0) (1,1) (1,2) (2,3) (2,0) (2,1) (2,2) (3,3) (3,0) (3,1) (3,2)
-  // 
+  //
   //                             r_comm_rank = 1
   // task 0  (0,3) (0,1) (0,1) (0,2) (1,3) (1,0) (1,1) (1,2) (2,3) (2,0) (2,1) (2,2) (3,3) (3,0) (3,1) (3,2)
   // task 1  (1,0) (1,1) (1,2) (1,3) (2,0) (2,1) (2,2) (2,3) (3,0) (3,1) (3,2) (3,3) (0,0) (0,1) (0,2) (0,3)
@@ -334,7 +334,7 @@ namespace sbd {
   // task 5  (1,3) (1,1) (1,1) (1,2) (2,3) (2,0) (2,1) (2,2) (3,3) (3,0) (3,1) (3,2) (0,3) (0,0) (0,1) (0,2)
   // task 6  (2,0) (2,1) (2,2) (2,3) (3,0) (3,1) (3,2) (3,3) (0,0) (0,1) (0,2) (0,3) (1,0) (1,1) (1,2) (1,3)
   // task 7  (2,0) (2,1) (2,2) (2,3) (3,0) (3,1) (3,2) (3,3) (0,0) (0,1) (0,2) (0,3) (1,0) (1,1) (1,2) (1,3)
-  // 
+  //
   //                             r_comm_rank = 2
   // task 0  (2,1) (2,2) (2,3) (2,1) (3,1) (3,2) (3,3) (3,0) (0,1) (0,2) (0,3) (0,0) (1,1) (1,2) (1,3) (1,0)
   // task 1  (2,2) (2,3) (2,1) (2,1) (3,2) (3,3) (3,0) (3,1) (0,2) (0,3) (0,0) (0,1) (1,2) (1,3) (1,0) (1,1)
@@ -344,7 +344,7 @@ namespace sbd {
   // task 5  (3,1) (3,2) (3,3) (3,1) (0,1) (0,2) (0,3) (0,0) (1,1) (1,2) (1,3) (1,0) (2,1) (2,2) (2,3) (2,0)
   // task 6  (3,2) (3,3) (3,1) (3,1) (0,2) (0,3) (0,0) (0,1) (1,2) (1,3) (1,0) (1,1) (2,2) (2,3) (2,0) (2,1)
   // task 7  (3,3) (3,1) (3,1) (3,2) (0,3) (0,0) (0,1) (0,2) (1,3) (1,0) (1,1) (1,2) (2,3) (2,0) (2,1) (2,2)
-  
+
   void FreeVectors(TaskHelpers & helper) {
     helper.SinglesFromAlpha = std::vector<std::vector<size_t>>();
     helper.DoublesFromAlpha = std::vector<std::vector<size_t>>();
@@ -367,15 +367,15 @@ namespace sbd {
 
   void MakeSmartHelper(TaskHelpers & helper,
 		       std::vector<size_t> & sharedMemory) {
-    
+
     size_t nAlpha = helper.SinglesFromAlpha.size();
     size_t nBeta = helper.SinglesFromBeta.size();
-    
+
     helper.SinglesFromAlphaLen = (size_t*)malloc(nAlpha*sizeof(size_t));
     helper.DoublesFromAlphaLen = (size_t*)malloc(nAlpha*sizeof(size_t));
     helper.SinglesFromBetaLen  = (size_t*)malloc(nBeta*sizeof(size_t));
     helper.DoublesFromBetaLen  = (size_t*)malloc(nBeta*sizeof(size_t));
-    
+
     for(size_t i=0; i < nAlpha; ++i) {
       helper.SinglesFromAlphaLen[i] = helper.SinglesFromAlpha[i].size();
       helper.DoublesFromAlphaLen[i] = helper.DoublesFromAlpha[i].size();
@@ -384,12 +384,12 @@ namespace sbd {
       helper.SinglesFromBetaLen[i] = helper.SinglesFromBeta[i].size();
       helper.DoublesFromBetaLen[i] = helper.DoublesFromBeta[i].size();
     }
-    
+
     helper.SinglesFromAlphaSM.resize(nAlpha);
     helper.DoublesFromAlphaSM.resize(nAlpha);
     helper.SinglesFromBetaSM.resize(nBeta);
     helper.DoublesFromBetaSM.resize(nBeta);
-    
+
     size_t total_size = 0;
     for (size_t i=0; i < nAlpha; i++) {
       total_size += helper.SinglesFromAlphaLen[i]
@@ -402,21 +402,21 @@ namespace sbd {
     sharedMemory.resize(total_size);
     size_t * begin = sharedMemory.data();
     size_t counter = 0;
-    
+
     for(size_t i=0; i < nAlpha; i++) {
       helper.SinglesFromAlphaSM[i] = begin + counter;
       counter += helper.SinglesFromAlphaLen[i];
       helper.DoublesFromAlphaSM[i] = begin + counter;
       counter += helper.DoublesFromAlphaLen[i];
     }
-    
+
     for(size_t i=0; i < nBeta; i++) {
       helper.SinglesFromBetaSM[i] = begin + counter;
       counter += helper.SinglesFromBetaLen[i];
       helper.DoublesFromBetaSM[i] = begin + counter;
       counter += helper.DoublesFromBetaLen[i];
     }
-    
+
     for(size_t i=0; i < nAlpha; i++) {
       std::memcpy(helper.SinglesFromAlphaSM[i],
 		  helper.SinglesFromAlpha[i].data(),
@@ -425,7 +425,7 @@ namespace sbd {
 		  helper.DoublesFromAlpha[i].data(),
 		  helper.DoublesFromAlphaLen[i]*sizeof(size_t));
     }
-    
+
     for(size_t i=0; i < nBeta; i++) {
       std::memcpy(helper.SinglesFromBetaSM[i],
 		  helper.SinglesFromBeta[i].data(),
@@ -456,7 +456,7 @@ namespace sbd {
 		   MPI_Comm t_comm,
 		   size_t adet_comm_size,
 		   size_t bdet_comm_size) {
-    
+
     int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
     int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
     int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
@@ -528,7 +528,7 @@ namespace sbd {
     int bra_bdet_rank = bra_rank % bdet_comm_size;
 
     double total_smart_memory_size = 0.0;
-    
+
     for(size_t task=task_start; task < task_end; task++) {
 
       int ket_adet_rank = (bra_adet_rank + adet_schedule[task]) % adet_comm_size;
@@ -567,7 +567,7 @@ namespace sbd {
 		<< " (GiB), size = " << helper_vector_size
 		<< " (GiB) before the serialization " << std::endl;
 #endif
-      
+
       MakeSmartHelper(helper[task-task_start],sharedMemory[task-task_start]);
       FreeVectors(helper[task-task_start]);
 
@@ -586,7 +586,7 @@ namespace sbd {
 #endif
 
     } // end helpers for different tasks
-    
+
   }
 
   std::vector<size_t> TaskCostSize(const std::vector<TaskHelpers> & helper,
@@ -599,7 +599,7 @@ namespace sbd {
     {
       num_threads = omp_get_num_threads();
     }
-    
+
     size_t chunk_size = 0;
     if( helper.size() != 0 ) {
       chunk_size = (helper[0].braAlphaEnd-helper[0].braAlphaStart) / num_threads;
@@ -652,7 +652,7 @@ namespace sbd {
 	} // end ia loop
       } // end tasktype loop
     } // end omp parallel for
-    
+
     std::vector<size_t> cost(helper.size());
     for(size_t task=0; task < helper.size(); task++) {
       cost[task] = 0.0;
@@ -681,7 +681,7 @@ namespace sbd {
     int mpi_rank_b; MPI_Comm_rank(b_comm,&mpi_rank_b);
     int mpi_size_t; MPI_Comm_size(t_comm,&mpi_size_t);
     int mpi_rank_t; MPI_Comm_rank(t_comm,&mpi_rank_t);
-    
+
     size_t total_task = adet_comm_size * bdet_comm_size
                       + adet_comm_size + bdet_comm_size;
 
@@ -732,7 +732,7 @@ namespace sbd {
 	  MPI_Barrier(t_comm);
 	}
 #endif
-	
+
 	std::vector<double> cost(total_helper,0.0);
 	std::vector<double> cost_send(total_helper,0.0);
 	size_t k_start = 0;
@@ -744,7 +744,7 @@ namespace sbd {
 	  cost_send[k] = 1.0 * cost_rank[k-k_start];
 	}
 	MPI_Allreduce(cost_send.data(),cost.data(),total_helper,MPI_DOUBLE,MPI_SUM,t_comm);
-	
+
 	auto itkmin = std::min_element(cost.begin(),cost.end());
 	double volC = 1.0/(1.0+(*itkmin));
 	double sumC = 0.0;
@@ -752,7 +752,7 @@ namespace sbd {
 	  cost[k] *= volC;
 	  sumC += cost[k];
 	}
-	
+
 #ifdef SBD_DEBUG_HELPER
 	for(int rank_t=0; rank_t < mpi_size_t; rank_t++) {
 	  if( rank_t == mpi_rank_t ) {
@@ -767,7 +767,7 @@ namespace sbd {
 	  MPI_Barrier(t_comm);
 	}
 #endif
-	
+
 	double regC = sumC / mpi_size_t;
 	std::vector<double> cumsum(total_helper+1,0.0);
 	std::vector<double> devreg(total_helper+1,0.0);
@@ -796,7 +796,7 @@ namespace sbd {
 	    MPI_Barrier(t_comm);
 	  }
 #endif
-	  
+
 	  auto itsm = std::min_element(devreg.begin()+s_start+1,devreg.begin()+s_end+1);
 	  task_start[rank_t] = s_start;
 	  task_end[rank_t]   = static_cast<size_t>(std::distance(devreg.begin(),itsm));
@@ -907,7 +907,7 @@ namespace sbd {
     int bra_bdet_rank = bra_rank % bdet_comm_size;
 
     double total_smart_memory_size = 0.0;
-    
+
     for(size_t task=task_start[mpi_rank_t]; task < task_end[mpi_rank_t]; task++) {
 
       int ket_adet_rank = (bra_adet_rank + adet_schedule[task]) % adet_comm_size;
@@ -946,7 +946,7 @@ namespace sbd {
 		<< " (GiB), size = " << helper_vector_size
 		<< " (GiB) before the serialization " << std::endl;
 #endif
-      
+
       MakeSmartHelper(helper[task-task_start[mpi_rank_t]],sharedMemory[task-task_start[mpi_rank_t]]);
       FreeVectors(helper[task-task_start[mpi_rank_t]]);
 
@@ -965,12 +965,12 @@ namespace sbd {
 #endif
 
     } // end helpers for different tasks
-    
+
   }
-  
 
 
-  
+
+
 } // end namespace sbd
 
 #endif
