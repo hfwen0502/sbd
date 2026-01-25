@@ -2,7 +2,7 @@
 
 This is a header-only library for diagonalizing quantum systems in a selected basis, with a focus on handling wavefunction vectors that are too large to fit in the memory of a single node.
 The library leverages MPI-based parallelization to distribute the wavefunction across multiple nodes.
-Sample usage examples are provided in the `/samples` directory.
+Sample usage examples are provided in the `/apps` directory.
 
 ## Author
 
@@ -26,11 +26,11 @@ Sample usage examples are provided in the `/samples` directory.
 
 ## How to Compile the Sample Codes
 
-- The sample code for parallelized selected basis diagonalization for tensor-product basis is located in `samples/chemistry_tpb_selected_basis_diagonalization`.
+- The sample code for parallelized selected basis diagonalization for tensor-product basis is located in `apps/chemistry_tpb_selected_basis_diagonalization`.
 - Edit the configuration file to suit your environment and build it with the make command.
 - For more information and options for the executable, see README.md in the same directory.
-- From v1.1.0, the sample code for parallelized selected basis diagonalization for general Hamiltonian written by creation/annihilation operator is added in `samples/caop_selected_basis_diagonalization`.
-- From v1.2.0, the sample code for parallelized selected basis diagonalization for quantum chemistry Hamiltonian in the general determinant basis is added in `samples/chemistry_gdb_selected_basis_diagonalization`.
+- From v1.1.0, the sample code for parallelized selected basis diagonalization for general Hamiltonian written by creation/annihilation operator is added in `apps/caop_selected_basis_diagonalization`.
+- From v1.2.0, the sample code for parallelized selected basis diagonalization for quantum chemistry Hamiltonian in the general determinant basis is added in `apps/chemistry_gdb_selected_basis_diagonalization`.
 
 ## Documentation
 
