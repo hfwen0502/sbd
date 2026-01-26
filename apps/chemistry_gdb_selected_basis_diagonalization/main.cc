@@ -197,13 +197,15 @@ int main(int argc, char * argv[]) {
   if( mpi_rank == 0 ) {
     std::cout << " " << sbd::make_timestamp()
 	      << " sbd: Energy = " << energy << std::endl;
-    std::cout << " sbd: density = ";
+    std::cout << " " << sbd::make_timestamp()
+	      << " sbd: density = ";
     for(size_t i=0; i < density.size()/2; i++) {
       std::cout << ( (i==0) ? "[" : "," )
 		<< density[2*i]+density[2*i+1];
     }
     std::cout << std::endl;
-    std::cout << " sbd: carryover dets = ";
+    std::cout << " " << sbd::make_timestamp()
+	      << " sbd: carryover dets = ";
     for(size_t i=0; i < std::min(codet.size(),static_cast<size_t>(6)); i++) {
       std::cout << " " << sbd::makestring(codet[i],sbd_data.bit_length,2*L);
     }

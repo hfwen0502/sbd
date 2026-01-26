@@ -45,16 +45,16 @@ namespace sbd {
       rw.reserve(det.size());
 
       DetIndexMap tidxmap;
-      std::vector<std::vector<size_t>> tdet;
+      // std::vector<std::vector<size_t>> tdet;
 
       if( exidx[0].slide != 0 ) {
 	sbd::gdb::MpiSlide(idxmap,tidxmap,-exidx[0].slide,b_comm);
 	sbd::MpiSlide(w,tw,-exidx[0].slide,b_comm);
-	sbd::MpiSlide(det,tdet,-exidx[0].slide,b_comm);
+	// sbd::MpiSlide(det,tdet,-exidx[0].slide,b_comm);
       } else {
 	DetIndexMapCopy(idxmap,tidxmap);
 	tw = w;
-	tdet = det;
+	// tdet = det;
       }
 
       size_t num_threads = 1;
@@ -109,9 +109,15 @@ namespace sbd {
 		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
 		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
 		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
+		    OneDiffCorrelation(det[idet],w[idet],tw[jdet],bit_length,norb,
+				       exidx[task].SinglesAdetCrAnSM[ia][2*ja+0],
+				       exidx[task].SinglesAdetCrAnSM[ia][2*ja+1],
+				       onebody_t[thread_id],twobody_t[thread_id]);
+		    /*
 		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,
 					    onebody_t[thread_id],twobody_t[thread_id]);
+		    */
 		  }
 		}
 
@@ -126,9 +132,17 @@ namespace sbd {
 		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
 		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
 		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
+		    TwoDiffCorrelation(det[idet],w[idet],tw[jdet],bit_length,norb,
+				       exidx[task].DoublesAdetCrAnSM[ia][4*ja+0],
+				       exidx[task].DoublesAdetCrAnSM[ia][4*ja+1],
+				       exidx[task].DoublesAdetCrAnSM[ia][4*ja+2],
+				       exidx[task].DoublesAdetCrAnSM[ia][4*ja+3],
+				       onebody_t[thread_id],twobody_t[thread_id]);
+		    /*
 		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,
 					    onebody_t[thread_id],twobody_t[thread_id]);
+		    */
 		  }
 		}
 		/*
@@ -160,12 +174,19 @@ namespace sbd {
 		  size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
 		  start_idx = idxb;
 		  if( idxb < end_idx ) {
-		    if( tidxmap.AdetToBdetSM[jast][idxb] == jbst ) {
-		      size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
+		    if( tidxmap.AdetToBdetSM[jast][idxb] != jbst ) continue;
+		    size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
+		    TwoDiffCorrelation(det[idet],w[idet],tw[jdet],bit_length,norb,
+				       exidx[task].SinglesAdetCrAnSM[ia][2*ja+0],
+				       exidx[task].SinglesBdetCrAnSM[ibst][2*k+0],
+				       exidx[task].SinglesAdetCrAnSM[ia][2*ja+1],
+				       exidx[task].SinglesBdetCrAnSM[ibst][2*k+1],
+				       onebody_t[thread_id],twobody_t[thread_id]);
+		      /*
 		      CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					      bit_length,norb,c,d,
 					      onebody_t[thread_id],twobody_t[thread_id]);
-		    }
+		      */
 		  }
 		}
 	      }
@@ -184,9 +205,15 @@ namespace sbd {
 		    size_t idxa = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
 		    if( tidxmap.AdetToBdetSM[jast][idxa] != jbst ) continue;
 		    size_t jdet = tidxmap.AdetToDetSM[jast][idxa];
+		    OneDiffCorrelation(det[idet],w[idet],tw[jdet],bit_length,norb,
+				       exidx[task].SinglesBdetCrAnSM[ibst][2*jb+0],
+				       exidx[task].SinglesBdetCrAnSM[ibst][2*jb+1],
+				       onebody_t[thread_id],twobody_t[thread_id]);
+		    /*
 		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,
 					    onebody_t[thread_id],twobody_t[thread_id]);
+		    */
 		  }
 		}
 
@@ -201,9 +228,17 @@ namespace sbd {
 		    size_t idxa = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
 		    if( tidxmap.AdetToBdetSM[jast][idxa] != jbst ) continue;
 		    size_t jdet = tidxmap.AdetToDetSM[jast][idxa];
+		    TwoDiffCorrelation(det[idet],w[idet],tw[jdet],bit_length,norb,
+				       exidx[task].DoublesBdetCrAnSM[ibst][4*jb+0],
+				       exidx[task].DoublesBdetCrAnSM[ibst][4*jb+1],
+				       exidx[task].DoublesBdetCrAnSM[ibst][4*jb+2],
+				       exidx[task].DoublesBdetCrAnSM[ibst][4*jb+3],
+				       onebody_t[thread_id],twobody_t[thread_id]);
+		    /*
 		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
 					    bit_length,norb,c,d,
 					    onebody_t[thread_id],twobody_t[thread_id]);
+		    */
 		  }
 		}
 		/*
@@ -226,13 +261,13 @@ namespace sbd {
 	  int slide = exidx[task].slide-exidx[task+1].slide;
 	  rw.resize(tw.size());
 	  std::memcpy(rw.data(),tw.data(),tw.size()*sizeof(ElemT));
-	  std::vector<std::vector<size_t>> rdet;
 	  DetIndexMap ridxmap;
-	  std::swap(rdet,tdet);
 	  DetIndexMapCopy(tidxmap,ridxmap);
 	  sbd::MpiSlide(rw,tw,slide,b_comm);
-	  sbd::MpiSlide(rdet,tdet,slide,b_comm);
 	  sbd::gdb::MpiSlide(ridxmap,tidxmap,slide,b_comm);
+	  // std::vector<std::vector<size_t>> rdet;
+	  // std::swap(rdet,tdet);
+	  // sbd::MpiSlide(rdet,tdet,slide,b_comm);
 	}
       } // end for(size_t task=0; task < exidx.size(); task++)
 
