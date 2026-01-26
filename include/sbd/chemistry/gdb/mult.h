@@ -35,16 +35,16 @@ namespace sbd {
       std::vector<ElemT> twk;
       std::vector<ElemT> rwk;
       DetIndexMap tidxmap;
-      std::vector<std::vector<size_t>> tdet;
+      // std::vector<std::vector<size_t>> tdet;
 
       if( exidx[0].slide != 0 ) {
 	sbd::gdb::MpiSlide(idxmap,tidxmap,-exidx[0].slide,b_comm);
 	sbd::MpiSlide(wk,twk,-exidx[0].slide,b_comm);
-	sbd::MpiSlide(det,tdet,-exidx[0].slide,b_comm);
+	// sbd::MpiSlide(det,tdet,-exidx[0].slide,b_comm);
       } else {
 	DetIndexMapCopy(idxmap,tidxmap);
 	twk = wk;
-	tdet = det;
+	// tdet = det;
       }
 
       size_t num_threads = omp_get_max_threads();
@@ -83,13 +83,18 @@ namespace sbd {
 		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
 		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
 		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
-		    size_t od;
-		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);
+		    ElemT eij = OneExcite(det[idet],bit_length,
+					  exidx[task].SinglesAdetCrAnSM[ia][2*ja+0],
+					  exidx[task].SinglesAdetCrAnSM[ia][2*ja+1],
+					  I1,I2);
+		    // size_t od;
+		    // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);
 		    wb[idet] += eij * twk[jdet];
 		  }
 		}
 
 		// double alpha excitations
+		/*
 		for(size_t ja=0; ja < tidxmap.BdetToDetLen[jbst]; ja++) {
 		  size_t jdet = tidxmap.BdetToDetSM[jbst][ja];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
@@ -98,7 +103,28 @@ namespace sbd {
 		    wb[idet] += eij * twk[jdet];
 		  }
 		}
-		
+		*/
+		for(size_t ja=0; ja < exidx[task].DoublesFromAdetLen[ia]; ja++) {
+		  size_t jast = exidx[task].DoublesFromAdetSM[ia][ja];
+		  auto itA = std::lower_bound(&tidxmap.BdetToAdetSM[jbst][0],
+					      &tidxmap.BdetToAdetSM[jbst][0]
+					      +tidxmap.BdetToDetLen[jbst],
+					      jast);
+		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst])) {
+		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
+		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
+		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
+		    ElemT eij = TwoExcite(det[idet],bit_length,
+					  exidx[task].DoublesAdetCrAnSM[ia][4*ja+0],
+					  exidx[task].DoublesAdetCrAnSM[ia][4*ja+1],
+					  exidx[task].DoublesAdetCrAnSM[ia][4*ja+2],
+					  exidx[task].DoublesAdetCrAnSM[ia][4*ja+3],
+					  I1,I2);
+		    // size_t od;
+		    // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);
+		    wb[idet] += eij * twk[jdet];
+		  }
+		}
 	      } // if there is same beta string
 
 	      // alpha-beta two-particle excitations
@@ -114,14 +140,23 @@ namespace sbd {
 		  auto itB = std::lower_bound(&tidxmap.AdetToBdetSM[jast][0]+start_idx,
 					      &tidxmap.AdetToBdetSM[jast][0]+end_idx,
 					      jbst);
-		  size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
-		  start_idx = idxb;
-		  if( idxb < end_idx ) {
-		    if( tidxmap.AdetToBdetSM[jast][idxb] == jbst ) {
-		      size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
-		      size_t odiff;
-		      ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
-		      wb[idet] += eij * twk[jdet];
+		  if( itB != (&tidxmap.AdetToBdetSM[jast][0]+end_idx) ) {
+		    size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
+		    if( jbst != tidxmap.AdetToBdetSM[jast][idxb] ) continue;
+		    start_idx = idxb;
+		    if( idxb < end_idx ) {
+		      if( tidxmap.AdetToBdetSM[jast][idxb] == jbst ) {
+			size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
+			ElemT eij = TwoExcite(det[idet],bit_length,
+					      exidx[task].SinglesAdetCrAnSM[ia][2*ja+0],
+					      exidx[task].SinglesBdetCrAnSM[ibst][2*k+0],
+					      exidx[task].SinglesAdetCrAnSM[ia][2*ja+1],
+					      exidx[task].SinglesBdetCrAnSM[ibst][2*k+1],
+					      I1,I2);
+			// size_t odiff;
+			// ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+			wb[idet] += eij * twk[jdet];
+		      }
 		    }
 		  }
 		}
@@ -141,13 +176,18 @@ namespace sbd {
 		    size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
 		    if( tidxmap.AdetToBdetSM[jast][idxb] != jbst ) continue;
 		    size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
-		    size_t odiff;
-		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+		    ElemT eij = OneExcite(det[idet],bit_length,
+					  exidx[task].SinglesBdetCrAnSM[ibst][2*jb+0],
+					  exidx[task].SinglesBdetCrAnSM[ibst][2*jb+1],
+					  I1,I2);
+		    // size_t odiff;
+		    // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
 		    wb[idet] += eij * twk[jdet];
 		  }
 		}
 
 		// double beta excitations
+		/*
 		for(size_t jb = 0; jb < tidxmap.AdetToDetLen[jast]; jb++) {
 		  size_t jdet = tidxmap.AdetToDetSM[jast][jb];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
@@ -157,6 +197,29 @@ namespace sbd {
 		    wb[idet] += eij * twk[jdet];
 		  }
 		}
+		*/
+		for(size_t jb=0; jb < exidx[task].DoublesFromBdetLen[ibst]; jb++) {
+		  size_t jbst = exidx[task].DoublesFromBdetSM[ibst][jb];
+		  auto itB = std::lower_bound(&tidxmap.AdetToBdetSM[jast][0],
+					      &tidxmap.AdetToBdetSM[jast][0]
+					      +tidxmap.AdetToDetLen[jast],
+					      jbst);
+		  if( itB != (&tidxmap.AdetToBdetSM[jast][0]+tidxmap.AdetToDetLen[jast]) ) {
+		    size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
+		    if( tidxmap.AdetToBdetSM[jast][idxb] != jbst ) continue;
+		    size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
+		    ElemT eij = TwoExcite(det[idet],bit_length,
+					  exidx[task].DoublesBdetCrAnSM[ibst][4*jb+0],
+					  exidx[task].DoublesBdetCrAnSM[ibst][4*jb+1],
+					  exidx[task].DoublesBdetCrAnSM[ibst][4*jb+2],
+					  exidx[task].DoublesBdetCrAnSM[ibst][4*jb+3],
+					  I1,I2);
+		    // size_t odiff;
+		    // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+		    wb[idet] += eij * twk[jdet];
+		  }
+		}
+		
 	      } // if there are same alpha
 
 	    } // corresponding beta string loop for bra-side basis
@@ -167,13 +230,13 @@ namespace sbd {
 	  int slide = exidx[task].slide-exidx[task+1].slide;
 	  rwk.resize(twk.size());
 	  std::memcpy(rwk.data(),twk.data(),twk.size()*sizeof(ElemT));
-	  std::vector<std::vector<size_t>> rdet;
 	  DetIndexMap ridxmap;
-	  std::swap(rdet,tdet);
 	  DetIndexMapCopy(tidxmap,ridxmap);
 	  sbd::MpiSlide(rwk,twk,slide,b_comm);
-	  sbd::MpiSlide(rdet,tdet,slide,b_comm);
 	  sbd::gdb::MpiSlide(ridxmap,tidxmap,slide,b_comm);
+	  // std::vector<std::vector<size_t>> rdet;
+	  // std::swap(rdet,tdet);
+	  // sbd::MpiSlide(rdet,tdet,slide,b_comm);
 	}
 	
       } // end task for loop

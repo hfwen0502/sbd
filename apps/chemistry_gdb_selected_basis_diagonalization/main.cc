@@ -245,7 +245,9 @@ int main(int argc, char * argv[]) {
       auto time_end_dump = std::chrono::high_resolution_clock::now();
       auto elapsed_dump_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_dump-time_start_dump).count();
       double elapsed_dump = 0.000001 * elapsed_dump_count;
-      std::cout << " Elapse time for dumping one-particle rdm = " << elapsed_dump << std::endl;
+      std::cout << " " << sbd::make_timestamp()
+		<< " sbd: elapsed time for dumping one-particle rdm = "
+		<< elapsed_dump << std::endl;
       time_start_dump = std::chrono::high_resolution_clock::now();
       std::ofstream ofs_two("2pRDM.txt");
       ofs_two.precision(16);

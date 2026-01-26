@@ -116,6 +116,22 @@ namespace sbd {
 		}
 
 		// double alpha excitations
+		for(size_t ja=0; ja < exidx[task].DoublesFromAdetLen[ia]; ja++) {
+		  size_t jast = exidx[task].DoublesFromAdetSM[ia][ja];
+		  auto itA = std::lower_bound(&tidxmap.BdetToAdetSM[jbst][0],
+					      &tidxmap.BdetToAdetSM[jbst][0]
+					      +tidxmap.BdetToDetLen[jbst],
+					      jast);
+		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst]) ) {
+		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
+		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
+		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
+		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
+					    bit_length,norb,c,d,
+					    onebody_t[thread_id],twobody_t[thread_id]);
+		  }
+		}
+		/*
 		for(size_t ja=0; ja < tidxmap.BdetToDetLen[jbst]; ja++) {
 		  size_t jdet = tidxmap.BdetToDetSM[jbst][ja];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
@@ -124,6 +140,7 @@ namespace sbd {
 					    onebody_t[thread_id],twobody_t[thread_id]);
 		  }
 		}
+		*/
 		
 	      } // if there is same beta string
 
@@ -174,6 +191,22 @@ namespace sbd {
 		}
 
 		// double beta excitations
+		for(size_t jb=0; jb < exidx[task].DoublesFromBdetLen[ibst]; jb++) {
+		  size_t jbst = exidx[task].DoublesFromBdetSM[ibst][jb];
+		  auto itB = std::lower_bound(&tidxmap.AdetToBdetSM[jast][0],
+					      &tidxmap.AdetToBdetSM[jast][0]
+					      +tidxmap.AdetToDetLen[jast],
+					      jbst);
+		  if( itB != (&tidxmap.AdetToBdetSM[jast][0]+tidxmap.AdetToDetLen[jast]) ) {
+		    size_t idxa = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
+		    if( tidxmap.AdetToBdetSM[jast][idxa] != jbst ) continue;
+		    size_t jdet = tidxmap.AdetToDetSM[jast][idxa];
+		    CorrelationTermAddition(det[idet],tdet[jdet],w[idet],tw[jdet],
+					    bit_length,norb,c,d,
+					    onebody_t[thread_id],twobody_t[thread_id]);
+		  }
+		}
+		/*
 		for(size_t jb = 0; jb < tidxmap.AdetToDetLen[jast]; jb++) {
 		  size_t jdet = tidxmap.AdetToDetSM[jast][jb];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
@@ -182,6 +215,8 @@ namespace sbd {
 					    onebody_t[thread_id],twobody_t[thread_id]);
 		  }
 		}
+		*/
+		
 	      } // if there are same alpha
 	    } // corresponding beta string loop for bra-side basis
 	  } // alpha-based loop for bra-side basis
