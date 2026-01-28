@@ -49,7 +49,8 @@ namespace sbd {
 		int num_block,
 		RealT eps) {
 
-    RealT eps_reg = 1.0e-12;
+    // RealT eps_reg = 1.0e-12;
+    RealT eps_reg = 1.0e-8;
 
     std::vector<std::vector<ElemT>> C(num_block,W);
     std::vector<std::vector<ElemT>> HC(num_block,W);
@@ -219,7 +220,8 @@ namespace sbd {
 		int num_block,
 		RealT eps) {
 
-    RealT eps_reg = 1.0e-12;
+    // RealT eps_reg = 1.0e-12;
+    RealT eps_reg = 1.0e-8;
 
     std::vector<std::vector<ElemT>> C(num_block,W);
     std::vector<std::vector<ElemT>> HC(num_block,W);

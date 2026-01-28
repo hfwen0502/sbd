@@ -86,14 +86,22 @@ namespace sbd {
   }
 
   template <typename ElemT>
+  void apply_dist(ElemT & x, std::mt19937 & gen) {
+    std::uniform_real_distribution<double> dist(-1,1);
+    x = ElemT(dist(gen));
+  }
+
+  template<>
+  void apply_dist(std::complex<double> & x, std::mt19937 & gen) {
+    std::uniform_real_distribution<double> dist(-1,1);
+    x = std::complex<double>(dist(gen),dist(gen));
+  }
+
+  template <typename ElemT>
   void Randomize(std::vector<ElemT> & X,
 		 MPI_Comm b_comm,
 		 MPI_Comm h_comm) {
     using RealT = typename GetRealType<ElemT>::RealT;
-    
-    unsigned int seed = static_cast<unsigned int>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
-    std::mt19937 gen(seed);
-    std::uniform_real_distribution<RealT> dist(-1,1);
     int mpi_size_h; MPI_Comm_size(h_comm,&mpi_size_h);
     int mpi_size_b; MPI_Comm_size(b_comm,&mpi_size_b);
     int nth = omp_get_max_threads();
@@ -102,13 +110,16 @@ namespace sbd {
 // use Kahan summation for each thread and add the private sums in deterministic order
     #pragma omp parallel
     {
+      unsigned int seed = static_cast<unsigned int>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+      std::mt19937 gen(seed);
+      std::uniform_real_distribution<RealT> dist(-1,1);
       int tid = omp_get_thread_num();
       RealT mysum = 0.0;
       RealT eps   = 0.0;
       RealT val, tmp;
       #pragma omp for schedule(static)
       for(size_t is=0; is < X.size(); is++) {
-        X[is] = ElemT(dist(gen));
+	apply_dist(X[is],gen);
         val = GetReal( Conjugate(X[is]) * X[is] ) - eps;
         tmp = mysum + val;
         eps = (tmp - mysum) - val;
@@ -151,7 +162,22 @@ namespace sbd {
       }
     }
   }
-  
+
+  template <typename ElemT, typename IntT>
+  void MGS(const std::vector<std::vector<ElemT>> & V,
+	   IntT k,
+	   std::vector<ElemT> & W,
+	   std::vector<ElemT> & h,
+	   MPI_Comm comm) {
+    h.resize(k);
+    for(IntT i=0; i < k; i++) {
+      InnerProduct(V[i],W,h[i],comm);
+      for(size_t s=0; s < W.size(); s++) {
+	W[s] -= h[i] * V[i][s];
+      }
+    }
+  }
+	   
   
 }
 
