@@ -359,6 +359,20 @@ namespace sbd {
 	std::cout << " " << make_timestamp()
 		  << " sbd: end load Hamiltonian" << std::endl;
       }
+#ifdef SBD_DEBUG
+      if( mpi_rank_b == 0 && mpi_rank_t == 0 ) {
+	for(int rank_h=0; rank_h < mpi_size_h; rank_h++) {
+	  if( mpi_rank_h == rank_h ) {
+	    std::cout << " Hamiltonian at mpi_rank ("
+		      << mpi_rank_h << ","
+		      << mpi_rank_b << ","
+		      << mpi_rank_t << ") ---------" << std::endl;
+	    std::cout << hamiltonian;
+	  }
+	  MPI_Barrier(h_comm);
+	}
+      }
+#endif
       /**
 	 Load basis data
        */

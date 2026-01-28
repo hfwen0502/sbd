@@ -42,6 +42,12 @@ namespace sbd {
       }
     }
 
+    ElemT volp(1.0/(mpi_size_h*mpi_size_t));
+#pragma omp parallel for
+    for(size_t i=0; i < wb.size(); i++) {
+      wb[i] *= volp;
+    }
+
     if( mpi_rank_t == 0 ) {
 #pragma omp parallel for
       for(size_t i=0; i < twk.size(); i++) {
@@ -152,6 +158,12 @@ namespace sbd {
       } else {
 	twk = w;
       }
+    }
+
+    ElemT volp(1.0/(mpi_size_h*mpi_size_t));
+#pragma omp parallel for
+    for(size_t i=0; i < hw.size(); i++) {
+      hw[i] *= volp;
     }
 
     if( mpi_rank_t == 0 ) {
