@@ -43,6 +43,7 @@ namespace sbd {
 
     std::vector<ElemT> HC(W);
     std::vector<std::vector<ElemT>> C(num_block,W);
+    std::vector<ElemT> edot;
 
     for(int it=0; it < max_iteration; it++) {
 
@@ -93,6 +94,9 @@ namespace sbd {
 	  HC[is] -= Aii * C[ib][is];
 	}
 
+	MGS(C,ib+1,HC,edot,b_comm);
+	MGS(C,ib+1,HC,edot,b_comm);
+
 #pragma omp parallel for
 	for(size_t is=0; is < HC.size(); is++) {
 	  C[ib+1][is] = HC[is];
@@ -120,16 +124,9 @@ namespace sbd {
 	  break;
 	}
 
-	ElemT volp(1.0/(mpi_size_h*mpi_size_t));
 #pragma omp parallel for
 	for(size_t is=0; is < HC.size(); is++) {
-	  HC[is] = - A[ij] * volp * C[ib][is];
-	}
-	MpiAllreduce(HC,MPI_SUM,t_comm);
-	MpiAllreduce(HC,MPI_SUM,h_comm);
-#pragma omp parallel for
-	for(size_t is=0; is < HC.size(); is++) {
-	  HC[is] *= volp;
+	  HC[is] = - A[ij] * C[ib][is];
 	}
       }
 
@@ -195,6 +192,7 @@ namespace sbd {
 
     std::vector<ElemT> HC(W);
     std::vector<std::vector<ElemT>> C(num_block,W);
+    std::vector<ElemT> edot;
 
     for(int it=0; it < max_iteration; it++) {
       
@@ -219,6 +217,7 @@ namespace sbd {
 	int ii = ib + lda * ib;
 	int ij = ib + lda * (ib+1);
 	int ji = ib+1 + lda * ib;
+
 	mult(hii,ih,jh,hij,C[ib],HC,
 	     slide,h_comm,b_comm,t_comm);
 	InnerProduct(C[ib],HC,Aii,b_comm);
@@ -243,6 +242,9 @@ namespace sbd {
 	for(size_t is=0; is < C[ib].size(); is++) {
 	  HC[is] -= Aii * C[ib][is];
 	}
+
+	MGS(C,ib+1,HC,edot,b_comm);
+	MGS(C,ib+1,HC,edot,b_comm);
 
 #pragma omp parallel for
 	for(size_t is=0; is < HC.size(); is++) {
@@ -271,16 +273,9 @@ namespace sbd {
 	  break;
 	}
 
-	ElemT volp(1.0/(mpi_size_h*mpi_size_t));
 #pragma omp parallel for
 	for(size_t is=0; is < HC.size(); is++) {
-	  HC[is] = - A[ij] * volp * C[ib][is];
-	}
-	MpiAllreduce(HC,MPI_SUM,t_comm);
-	MpiAllreduce(HC,MPI_SUM,h_comm);
-#pragma omp parallel for
-	for(size_t is=0; is < HC.size(); is++) {
-	  HC[is] *= volp;
+	  HC[is] = - A[ij] * C[ib][is];
 	}
       }
 

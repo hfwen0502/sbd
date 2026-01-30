@@ -57,11 +57,11 @@ namespace sbd {
   
   template <typename ElemT, typename TermT, typename ProductOp, typename GeneralOp>
   inline void apply_sy_impl(TermT& term, int index, std::true_type /*is_complex*/) {
-    ProductOp pCr(Cr(index));
-    ProductOp pAn(An(index));
-    GeneralOp gCr(ElemT(0.0, -0.5), pCr);
-    GeneralOp gAn(ElemT(0.0,  0.5), pAn);
-    term *= gCr + gAn;
+    ProductOp pSp(Sp(index));
+    ProductOp pSm(Sm(index));
+    GeneralOp gSp(ElemT(0.0, -0.5), pSp);
+    GeneralOp gSm(ElemT(0.0,  0.5), pSm);
+    term *= gSp + gSm;
   }
   
   template <typename ElemT, typename TermT, typename ProductOp, typename GeneralOp>
@@ -169,20 +169,20 @@ namespace sbd {
 		break;
 		
 	      case OpTokenKind::SPlus:
-		term *= Cr(index);
+		term *= Sp(index);
 		break;
 		
 	      case OpTokenKind::SMinus:
-		term *= An(index);
+		term *= Sm(index);
 		break;
 		
 	      case OpTokenKind::Sx:
 		{
-		  ProductOp pCr(Cr(index));
-		  ProductOp pAn(An(index));
-		  GeneralOp<ElemT> gCr(ElemT(0.5),pCr);
-		  GeneralOp<ElemT> gAn(ElemT(0.5),pAn);
-		  term *= gCr + gAn;
+		  ProductOp pSp(Sp(index));
+		  ProductOp pSm(Sm(index));
+		  GeneralOp<ElemT> gSp(ElemT(0.5),pSp);
+		  GeneralOp<ElemT> gSm(ElemT(0.5),pSm);
+		  term *= gSp + gSm;
 		  break;
 		}
 		
@@ -196,11 +196,11 @@ namespace sbd {
 #else
 		if constexpr (std::is_same_v<ElemT,std::complex<float>> ||
 			      std::is_same_v<ElemT,std::complex<double>>) {
-		  ProductOp pCr(Cr(index));
-		  ProductOp pAn(An(index));
-		  GeneralOp<ElemT> gCr(ElemT(0.0,-0.5),pCr);
-		  GeneralOp<ElemT> gAn(ElemT(0.0,0.5),pAn);
-		  term *= gCr + gAn;
+		  ProductOp pSp(Sp(index));
+		  ProductOp pSm(Sm(index));
+		  GeneralOp<ElemT> gSp(ElemT(0.0,-0.5),pSp);
+		  GeneralOp<ElemT> gSm(ElemT(0.0,0.5),pSm);
+		  term *= gSp + gSm;
 		} else {
 		  throw std::runtime_error(
 					   "Sy operator requires complex coefficient type");

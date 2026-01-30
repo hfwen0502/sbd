@@ -31,14 +31,23 @@ namespace sbd {
     struct ExcitationLookup {
       int slide;
       std::vector<size_t> storage;
+      std::vector<int> intstorage;
       std::vector<size_t> SelfFromAdetLen;
       std::vector<size_t> SelfFromBdetLen;
       std::vector<size_t> SinglesFromAdetLen;
       std::vector<size_t> SinglesFromBdetLen;
+      std::vector<size_t> DoublesFromAdetLen;
+      std::vector<size_t> DoublesFromBdetLen;
       std::vector<size_t*> SelfFromAdetSM;
       std::vector<size_t*> SelfFromBdetSM;
       std::vector<size_t*> SinglesFromAdetSM;
+      std::vector<int*> SinglesAdetCrAnSM;
       std::vector<size_t*> SinglesFromBdetSM;
+      std::vector<int*> SinglesBdetCrAnSM;
+      std::vector<size_t*> DoublesFromAdetSM;
+      std::vector<int*> DoublesAdetCrAnSM;
+      std::vector<size_t*> DoublesFromBdetSM;
+      std::vector<int*> DoublesBdetCrAnSM;
     };
     
     void dumpDetIndexMap(std::string filename,
@@ -87,13 +96,6 @@ namespace sbd {
 	}
 	ofs << std::endl;
       }
-      for(size_t i=0; i < exidx.SinglesFromAdetLen.size(); i++) {
-	ofs << " SinglesFromAdetSM[" << i << "]:";
-	for(size_t k=0; k < exidx.SinglesFromAdetLen[i]; k++) {
-	  ofs << " " << exidx.SinglesFromAdetSM[i][k];
-	}
-	ofs << std::endl;
-      }
       for(size_t i=0; i < exidx.SelfFromBdetLen.size(); i++) {
 	ofs << " SelfFromBdetSM[" << i << "]:";
 	for(size_t k=0; k < exidx.SelfFromBdetLen[i]; k++) {
@@ -101,10 +103,31 @@ namespace sbd {
 	}
 	ofs << std::endl;
       }
+      for(size_t i=0; i < exidx.SinglesFromAdetLen.size(); i++) {
+	ofs << " SinglesFromAdetSM[" << i << "]:";
+	for(size_t k=0; k < exidx.SinglesFromAdetLen[i]; k++) {
+	  ofs << " " << exidx.SinglesFromAdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
       for(size_t i=0; i < exidx.SinglesFromBdetLen.size(); i++) {
 	ofs << " SinglesFromBdetSM[" << i << "]:";
 	for(size_t k=0; k < exidx.SinglesFromBdetLen[i]; k++) {
 	  ofs << " " << exidx.SinglesFromBdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      for(size_t i=0; i < exidx.DoublesFromAdetLen.size(); i++) {
+	ofs << " DoublesFromAdetSM[" << i << "]:";
+	for(size_t k=0; k < exidx.DoublesFromAdetLen[i]; k++) {
+	  ofs << " " << exidx.DoublesFromAdetSM[i][k];
+	}
+	ofs << std::endl;
+      }
+      for(size_t i=0; i < exidx.DoublesFromBdetLen.size(); i++) {
+	ofs << " DoublesFromBdetSM[" << i << "]:";
+	for(size_t k=0; k < exidx.DoublesFromBdetLen[i]; k++) {
+	  ofs << " " << exidx.DoublesFromBdetSM[i][k];
 	}
 	ofs << std::endl;
       }
@@ -229,10 +252,10 @@ namespace sbd {
 					const std::vector<size_t> & rhs) {
 				       return lhs < rhs;
 				     });
-	if( itia == adet.end() ) {
+	if( itia == adet.end() || *itia != adet_temp ) {
 	  std::cout << " unexpected situation happened in adet" << std::endl;
 	}
-	if( itib == bdet.end() ) {
+	if( itib == bdet.end() || *itib != bdet_temp ) {
 	  std::cout << " unexpected situation happened in bdet" << std::endl;
 	}
 	size_t ia = std::distance(adet.begin(),itia);
@@ -324,26 +347,50 @@ namespace sbd {
 			      size_t bit_length,
 			      size_t norb,
 			      std::vector<std::vector<size_t>> & samedet,
-			      std::vector<std::vector<size_t>> & singles) {
+			      std::vector<std::vector<size_t>> & singles,
+			      std::vector<std::vector<int>> & onecran,
+			      std::vector<std::vector<size_t>> & doubles,
+			      std::vector<std::vector<int>> & twocran,
+			      int spin) {
       samedet.resize(hdet_bra.size());
       singles.resize(hdet_bra.size());
+      onecran.resize(hdet_bra.size());
+      doubles.resize(hdet_bra.size());
+      twocran.resize(hdet_bra.size());
 #pragma omp parallel for
       for(size_t i=0; i < hdet_bra.size(); i++) {
 	size_t zcount = 0;
 	size_t scount = 0;
+	size_t dcount = 0;
 	for(size_t j=0; j < hdet_ket.size(); j++) {
 	  int d = difference(hdet_bra[i],hdet_ket[j],bit_length,norb);
 	  if( d == 0 ) zcount++;
 	  if( d == 2 ) scount++;
+	  if( d == 4 ) dcount++;
 	}
 	samedet[i].reserve(zcount);
 	singles[i].reserve(scount);
+	onecran[i].reserve(2*scount);
+	doubles[i].reserve(dcount);
+	twocran[i].reserve(4*dcount);
+	std::vector<int> cr(2);
+	std::vector<int> an(2);
 	for(size_t j=0; j < hdet_ket.size(); j++) {
 	  int d = difference(hdet_bra[i],hdet_ket[j],bit_length,norb);
 	  if( d == 0 ) {
 	    samedet[i].push_back(j);
 	  } else if( d == 2 ) {
 	    singles[i].push_back(j);
+	    OrbitalDifference(hdet_bra[i],hdet_ket[j],bit_length,norb,cr,an);
+	    onecran[i].push_back(2*cr[0]+spin);
+	    onecran[i].push_back(2*an[0]+spin);
+	  } else if ( d == 4 ) {
+	    doubles[i].push_back(j);
+	    OrbitalDifference(hdet_bra[i],hdet_ket[j],bit_length,norb,cr,an);
+	    twocran[i].push_back(2*cr[0]+spin);
+	    twocran[i].push_back(2*cr[1]+spin);
+	    twocran[i].push_back(2*an[0]+spin);
+	    twocran[i].push_back(2*an[1]+spin);
 	  }
 	}
       }
@@ -358,19 +405,30 @@ namespace sbd {
 			      ExcitationLookup & exidx) {
       std::vector<std::vector<size_t>> selfdet_a;
       std::vector<std::vector<size_t>> singles_a;
+      std::vector<std::vector<int>>    onecran_a;
+      std::vector<std::vector<size_t>> doubles_a;
+      std::vector<std::vector<int>>    twocran_a;
       std::vector<std::vector<size_t>> selfdet_b;
       std::vector<std::vector<size_t>> singles_b;
+      std::vector<std::vector<int>>    onecran_b;
+      std::vector<std::vector<size_t>> doubles_b;
+      std::vector<std::vector<int>>    twocran_b;
       makeExcitationLookup(adet_bra,adet_ket,
 			   bit_length,norb,
-			   selfdet_a, singles_a);
+			   selfdet_a, singles_a, onecran_a,
+			   doubles_a, twocran_a, 0);
       makeExcitationLookup(bdet_bra,bdet_ket,
 			   bit_length,norb,
-			   selfdet_b,singles_b);
+			   selfdet_b, singles_b, onecran_b,
+			   doubles_b, twocran_b, 1);
       exidx.SelfFromAdetLen.resize(selfdet_a.size());
       exidx.SinglesFromAdetLen.resize(singles_a.size());
+      exidx.DoublesFromAdetLen.resize(doubles_a.size());
       exidx.SelfFromBdetLen.resize(selfdet_b.size());
       exidx.SinglesFromBdetLen.resize(singles_b.size());
+      exidx.DoublesFromBdetLen.resize(doubles_b.size());
       size_t total_size = 0;
+      size_t total_int  = 0;
       for(size_t k=0; k < selfdet_a.size(); k++) {
 	exidx.SelfFromAdetLen[k] = selfdet_a[k].size();
 	total_size += selfdet_a[k].size();
@@ -378,6 +436,12 @@ namespace sbd {
       for(size_t k=0; k < singles_a.size(); k++) {
 	exidx.SinglesFromAdetLen[k] = singles_a[k].size();
 	total_size += singles_a[k].size();
+	total_int  += 2 * singles_a[k].size();
+      }
+      for(size_t k=0; k < doubles_a.size(); k++) {
+	exidx.DoublesFromAdetLen[k] = doubles_a[k].size();
+	total_size += doubles_a[k].size();
+	total_int  += 4 * doubles_a[k].size();
       }
       for(size_t k=0; k < selfdet_b.size(); k++) {
 	exidx.SelfFromBdetLen[k] = selfdet_b[k].size();
@@ -386,14 +450,22 @@ namespace sbd {
       for(size_t k=0; k < singles_b.size(); k++) {
 	exidx.SinglesFromBdetLen[k] = singles_b[k].size();
 	total_size += singles_b[k].size();
+	total_int  += 2 * singles_b[k].size();
+      }
+      for(size_t k=0; k < doubles_b.size(); k++) {
+	exidx.DoublesFromBdetLen[k] = doubles_b[k].size();
+	total_size += doubles_b[k].size();
+	total_int  += 4 * doubles_b[k].size();
       }
       exidx.storage.resize(total_size);
       size_t * begin = exidx.storage.data();
       size_t counter = 0;
       exidx.SelfFromAdetSM.resize(selfdet_a.size());
       exidx.SinglesFromAdetSM.resize(singles_a.size());
+      exidx.DoublesFromAdetSM.resize(doubles_a.size());
       exidx.SelfFromBdetSM.resize(selfdet_b.size());
       exidx.SinglesFromBdetSM.resize(singles_b.size());
+      exidx.DoublesFromBdetSM.resize(doubles_b.size());
       for(size_t k=0; k < selfdet_a.size(); k++) {
 	exidx.SelfFromAdetSM[k] = begin + counter;
 	counter += exidx.SelfFromAdetLen[k];
@@ -402,6 +474,10 @@ namespace sbd {
 	exidx.SinglesFromAdetSM[k] = begin + counter;
 	counter += exidx.SinglesFromAdetLen[k];
       }
+      for(size_t k=0; k < doubles_a.size(); k++) {
+	exidx.DoublesFromAdetSM[k] = begin + counter;
+	counter += exidx.DoublesFromAdetLen[k];
+      }
       for(size_t k=0; k < selfdet_b.size(); k++) {
 	exidx.SelfFromBdetSM[k] = begin + counter;
 	counter += exidx.SelfFromBdetLen[k];
@@ -409,6 +485,34 @@ namespace sbd {
       for(size_t k=0; k < singles_b.size(); k++) {
 	exidx.SinglesFromBdetSM[k] = begin + counter;
 	counter += exidx.SinglesFromBdetLen[k];
+      }
+      for(size_t k=0; k < doubles_b.size(); k++) {
+	exidx.DoublesFromBdetSM[k] = begin + counter;
+	counter += exidx.DoublesFromBdetLen[k];
+      }
+
+      exidx.intstorage.resize(total_int);
+      int * begin_int = exidx.intstorage.data();
+      size_t counter_int = 0;
+      exidx.SinglesAdetCrAnSM.resize(singles_a.size());
+      exidx.DoublesAdetCrAnSM.resize(doubles_a.size());
+      exidx.SinglesBdetCrAnSM.resize(singles_b.size());
+      exidx.DoublesBdetCrAnSM.resize(doubles_b.size());
+      for(size_t k=0; k < singles_a.size(); k++) {
+	exidx.SinglesAdetCrAnSM[k] = begin_int + counter_int;
+	counter_int += 2*exidx.SinglesFromAdetLen[k];
+      }
+      for(size_t k=0; k < doubles_a.size(); k++) {
+	exidx.DoublesAdetCrAnSM[k] = begin_int + counter_int;
+	counter_int += 4*exidx.DoublesFromAdetLen[k];
+      }
+      for(size_t k=0; k < singles_b.size(); k++) {
+	exidx.SinglesBdetCrAnSM[k] = begin_int + counter_int;
+	counter_int += 2*exidx.SinglesFromBdetLen[k];
+      }
+      for(size_t k=0; k < doubles_b.size(); k++) {
+	exidx.DoublesBdetCrAnSM[k] = begin_int + counter_int;
+	counter_int += 4*exidx.DoublesFromBdetLen[k];
       }
       
       for(size_t k=0; k < selfdet_a.size(); k++) {
@@ -421,6 +525,11 @@ namespace sbd {
 		    singles_a[k].data(),
 		    exidx.SinglesFromAdetLen[k]*sizeof(size_t));
       }
+      for(size_t k=0; k < doubles_a.size(); k++) {
+	std::memcpy(exidx.DoublesFromAdetSM[k],
+		    doubles_a[k].data(),
+		    exidx.DoublesFromAdetLen[k]*sizeof(size_t));
+      }
       for(size_t k=0; k < selfdet_b.size(); k++) {
 	std::memcpy(exidx.SelfFromBdetSM[k],
 		    selfdet_b[k].data(),
@@ -430,6 +539,32 @@ namespace sbd {
 	std::memcpy(exidx.SinglesFromBdetSM[k],
 		    singles_b[k].data(),
 		    exidx.SinglesFromBdetLen[k]*sizeof(size_t));
+      }
+      for(size_t k=0; k < doubles_b.size(); k++) {
+	std::memcpy(exidx.DoublesFromBdetSM[k],
+		    doubles_b[k].data(),
+		    exidx.DoublesFromBdetLen[k]*sizeof(size_t));
+      }
+
+      for(size_t k=0; k < singles_a.size(); k++) {
+	std::memcpy(exidx.SinglesAdetCrAnSM[k],
+		    onecran_a[k].data(),
+		    2*exidx.SinglesFromAdetLen[k]*sizeof(int));
+      }
+      for(size_t k=0; k < doubles_a.size(); k++) {
+	std::memcpy(exidx.DoublesAdetCrAnSM[k],
+		    twocran_a[k].data(),
+		    4*exidx.DoublesFromAdetLen[k]*sizeof(int));
+      }
+      for(size_t k=0; k < singles_b.size(); k++) {
+	std::memcpy(exidx.SinglesBdetCrAnSM[k],
+		    onecran_b[k].data(),
+		    2*exidx.SinglesFromBdetLen[k]*sizeof(int));
+      }
+      for(size_t k=0; k < doubles_b.size(); k++) {
+	std::memcpy(exidx.DoublesBdetCrAnSM[k],
+		    twocran_b[k].data(),
+		    4*exidx.DoublesFromBdetLen[k]*sizeof(int));
       }
     }
     

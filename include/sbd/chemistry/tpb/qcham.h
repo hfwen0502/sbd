@@ -172,7 +172,6 @@ namespace sbd {
       size_t ia_end   = braAlphaEnd;
 
       auto DetI = DetFromAlphaBeta(adets[0],bdets[0],bit_length,norbs);
-      auto DetJ = DetI;
       std::vector<int> c(2,0);
       std::vector<int> d(2,0);
 

@@ -197,13 +197,15 @@ int main(int argc, char * argv[]) {
   if( mpi_rank == 0 ) {
     std::cout << " " << sbd::make_timestamp()
 	      << " sbd: Energy = " << energy << std::endl;
-    std::cout << " sbd: density = ";
+    std::cout << " " << sbd::make_timestamp()
+	      << " sbd: density = ";
     for(size_t i=0; i < density.size()/2; i++) {
       std::cout << ( (i==0) ? "[" : "," )
 		<< density[2*i]+density[2*i+1];
     }
     std::cout << std::endl;
-    std::cout << " sbd: carryover dets = ";
+    std::cout << " " << sbd::make_timestamp()
+	      << " sbd: carryover dets = ";
     for(size_t i=0; i < std::min(codet.size(),static_cast<size_t>(6)); i++) {
       std::cout << " " << sbd::makestring(codet[i],sbd_data.bit_length,2*L);
     }
@@ -245,7 +247,9 @@ int main(int argc, char * argv[]) {
       auto time_end_dump = std::chrono::high_resolution_clock::now();
       auto elapsed_dump_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_dump-time_start_dump).count();
       double elapsed_dump = 0.000001 * elapsed_dump_count;
-      std::cout << " Elapse time for dumping one-particle rdm = " << elapsed_dump << std::endl;
+      std::cout << " " << sbd::make_timestamp()
+		<< " sbd: elapsed time for dumping one-particle rdm = "
+		<< elapsed_dump << std::endl;
       time_start_dump = std::chrono::high_resolution_clock::now();
       std::ofstream ofs_two("2pRDM.txt");
       ofs_two.precision(16);

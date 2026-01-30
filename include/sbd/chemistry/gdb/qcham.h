@@ -109,12 +109,27 @@ namespace sbd {
 		}
 
 		// double-beta excitations
+		/*
 		for(size_t ja=0; ja < tidxmap.BdetToDetLen[jbst]; ja++) {
 		  size_t jdet = tidxmap.BdetToDetSM[jbst][ja];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
 		    len[task][thread_id]++;
 		  }
 		}
+		*/
+		for(size_t ja=0; ja < exidx[task].DoublesFromAdetLen[ia]; ja++) {
+		  size_t jast = exidx[task].DoublesFromAdetSM[ia][ja];
+		  auto itA = std::lower_bound(&tidxmap.BdetToAdetSM[jbst][0],
+					      &tidxmap.BdetToAdetSM[jbst][0]
+					      +tidxmap.BdetToDetLen[jbst],
+					      jast);
+		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst])) {
+		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
+		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
+		    len[task][thread_id]++;
+		  }
+		}
+
 		
 	      }// if there is same beta string
 
@@ -159,9 +174,23 @@ namespace sbd {
 		}
 
 		// double beta excitations
+		/*
 		for(size_t jb = 0; jb < tidxmap.AdetToDetLen[jast]; jb++) {
 		  size_t jdet = tidxmap.AdetToDetSM[jast][jb];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
+		    len[task][thread_id]++;
+		  }
+		}
+		*/
+		for(size_t jb=0; jb < exidx[task].DoublesFromBdetLen[ibst]; jb++) {
+		  size_t jbst = exidx[task].DoublesFromBdetSM[ibst][jb];
+		  auto itB = std::lower_bound(&tidxmap.AdetToBdetSM[jast][0],
+					      &tidxmap.AdetToBdetSM[jast][0]
+					      +tidxmap.AdetToDetLen[jast],
+					      jbst);
+		  if( itB != (&tidxmap.AdetToBdetSM[jast][0]+tidxmap.AdetToDetLen[jast]) ) {
+		    size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
+		    if( tidxmap.AdetToBdetSM[jast][idxb] != jbst ) continue;
 		    len[task][thread_id]++;
 		  }
 		}
@@ -227,8 +256,12 @@ namespace sbd {
 		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itidxa);
 		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
 		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
-		    size_t od;
-		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);
+		    ElemT eij = OneExcite(det[idet],bit_length,
+					  exidx[task].SinglesAdetCrAnSM[ia][2*ja+0],
+					  exidx[task].SinglesAdetCrAnSM[ia][2*ja+1],
+					  I1,I2);
+		    // size_t od;
+		    // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);
 		    ih[task][thread_id][address] = idet;
 		    jh[task][thread_id][address] = jdet;
 		    hij[task][thread_id][address] = eij;
@@ -237,6 +270,31 @@ namespace sbd {
 		}
 
 		// double-beta excitations
+		for(size_t ja=0; ja < exidx[task].DoublesFromAdetLen[ia]; ja++) {
+		  size_t jast = exidx[task].DoublesFromAdetSM[ia][ja];
+		  auto itA = std::lower_bound(&tidxmap.BdetToAdetSM[jbst][0],
+					      &tidxmap.BdetToAdetSM[jbst][0]
+					      +tidxmap.BdetToDetLen[jbst],
+					      jast);
+		  if( itA != (&tidxmap.BdetToAdetSM[jbst][0]+tidxmap.BdetToDetLen[jbst])) {
+		    size_t idxa = std::distance(&tidxmap.BdetToAdetSM[jbst][0],itA);
+		    if( jast != tidxmap.BdetToAdetSM[jbst][idxa] ) continue;
+		    size_t jdet = tidxmap.BdetToDetSM[jbst][idxa];
+		    ElemT eij = TwoExcite(det[idet],bit_length,
+					  exidx[task].DoublesAdetCrAnSM[ia][4*ja+0],
+					  exidx[task].DoublesAdetCrAnSM[ia][4*ja+1],
+					  exidx[task].DoublesAdetCrAnSM[ia][4*ja+2],
+					  exidx[task].DoublesAdetCrAnSM[ia][4*ja+3],
+					  I1,I2);
+		    // size_t od;
+		    // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,od);
+		    ih[task][thread_id][address] = idet;
+		    jh[task][thread_id][address] = jdet;
+		    hij[task][thread_id][address] = eij;
+		    address++;
+		  }
+		}
+		/*
 		for(size_t ja=0; ja < tidxmap.BdetToDetLen[jbst]; ja++) {
 		  size_t jdet = tidxmap.BdetToDetSM[jbst][ja];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
@@ -248,6 +306,7 @@ namespace sbd {
 		    address++;
 		  }
 		}
+		*/
 		
 	      }// if there is same beta string
 
@@ -268,8 +327,14 @@ namespace sbd {
 		  if( idxb < end_idx ) {
 		    if( tidxmap.AdetToBdetSM[jast][idxb] == jbst ) {
 		      size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
-		      size_t odiff;
-		      ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+		      ElemT eij = TwoExcite(det[idet],bit_length,
+					    exidx[task].SinglesAdetCrAnSM[ia][2*ja+0],
+					    exidx[task].SinglesBdetCrAnSM[ibst][2*k+0],
+					    exidx[task].SinglesAdetCrAnSM[ia][2*ja+1],
+					    exidx[task].SinglesBdetCrAnSM[ibst][2*k+1],
+					    I1,I2);
+		      // size_t odiff;
+		      // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
 		      ih[task][thread_id][address] = idet;
 		      jh[task][thread_id][address] = jdet;
 		      hij[task][thread_id][address] = eij;
@@ -294,8 +359,12 @@ namespace sbd {
 		    size_t idxa = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
 		    if( tidxmap.AdetToBdetSM[jast][idxa] != jbst ) continue;
 		    size_t jdet = tidxmap.AdetToDetSM[jast][idxa];
-		    size_t odiff;
-		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+		    ElemT eij = OneExcite(det[idet],bit_length,
+					  exidx[task].SinglesBdetCrAnSM[ibst][2*jb+0],
+					  exidx[task].SinglesBdetCrAnSM[ibst][2*jb+1],
+					  I1,I2);
+		    // size_t odiff;
+		    // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
 		    ih[task][thread_id][address] = idet;
 		    jh[task][thread_id][address] = jdet;
 		    hij[task][thread_id][address] = eij;
@@ -304,11 +373,37 @@ namespace sbd {
 		}
 
 		// double beta excitations
+		/*
 		for(size_t jb = 0; jb < tidxmap.AdetToDetLen[jast]; jb++) {
 		  size_t jdet = tidxmap.AdetToDetSM[jast][jb];
 		  if( difference(det[idet],tdet[jdet],bit_length,2*norb) == 4 ) {
 		    size_t odiff;
 		    ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
+		    ih[task][thread_id][address] = idet;
+		    jh[task][thread_id][address] = jdet;
+		    hij[task][thread_id][address] = eij;
+		    address++;
+		  }
+		}
+		*/
+		for(size_t jb=0; jb < exidx[task].DoublesFromBdetLen[ibst]; jb++) {
+		  size_t jbst = exidx[task].DoublesFromBdetSM[ibst][jb];
+		  auto itB = std::lower_bound(&tidxmap.AdetToBdetSM[jast][0],
+					      &tidxmap.AdetToBdetSM[jast][0]
+					      +tidxmap.AdetToDetLen[jast],
+					      jbst);
+		  if( itB != (&tidxmap.AdetToBdetSM[jast][0]+tidxmap.AdetToDetLen[jast]) ) {
+		    size_t idxb = std::distance(&tidxmap.AdetToBdetSM[jast][0],itB);
+		    if( tidxmap.AdetToBdetSM[jast][idxb] != jbst ) continue;
+		    size_t jdet = tidxmap.AdetToDetSM[jast][idxb];
+		    ElemT eij = TwoExcite(det[idet],bit_length,
+					  exidx[task].DoublesBdetCrAnSM[ibst][4*jb+0],
+					  exidx[task].DoublesBdetCrAnSM[ibst][4*jb+1],
+					  exidx[task].DoublesBdetCrAnSM[ibst][4*jb+2],
+					  exidx[task].DoublesBdetCrAnSM[ibst][4*jb+3],
+					  I1,I2);
+		    // size_t odiff;
+		    // ElemT eij = Hij(det[idet],tdet[jdet],bit_length,norb,I0,I1,I2,odiff);
 		    ih[task][thread_id][address] = idet;
 		    jh[task][thread_id][address] = jdet;
 		    hij[task][thread_id][address] = eij;

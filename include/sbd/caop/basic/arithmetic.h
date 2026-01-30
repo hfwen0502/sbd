@@ -555,18 +555,19 @@ namespace sbd {
 
 
   CAOp Sp(int q) {
-    return CAOp(true,q);
+    return CAOp(false,q);
   }
 
   CAOp Sm(int q) {
-    return CAOp(false,q);
+    return CAOp(true,q);
   }
 
   template <typename ElemT>
   GeneralOp<ElemT> Sz(int q) {
     GeneralOp<ElemT> res;
-    res += Sp(q) * Sm(q);
-    res += ElemT(-0.5);
+    res += Sm(q) * Sp(q);
+    res *= ElemT(-1.0);
+    res += ElemT(0.5);
     return res;
   }
 

@@ -85,7 +85,6 @@ int main(int argc, char * argv[]) {
       std::cout << "# save wavefunction file name: " << savename << std::endl;
     }
   }
-  
 
   double energy;
   std::vector<std::vector<size_t>> cobasis;
