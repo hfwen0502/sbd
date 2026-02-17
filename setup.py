@@ -1,6 +1,9 @@
 """
 Setup script for SBD Python bindings
 """
+# /mnt/data/myenv/lib/python3.11/site-packages/mpi4py/include
+# /opt/ohpc/pub/mpi/openmpi5-gnu13/5.0.5/include
+# -L/opt/ohpc/pub/libs/gnu14/openblas/0.3.29/lib -lopenblas
 
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
@@ -42,13 +45,13 @@ if 'MPI_INCLUDE_PATH' in os.environ:
     mpi_includes = [os.environ['MPI_INCLUDE_PATH']]
 
 # Build include directories
-include_dirs = [get_pybind_include(), 'include'] + mpi_includes
+include_dirs = [get_pybind_include(), 'include', '/opt/ohpc/pub/mpi/openmpi5-gnu13/5.0.5/include', '/mnt/data/myenv/lib/python3.11/site-packages/mpi4py/include',] + mpi_includes 
 
 # Build library directories
-library_dirs = mpi_lib_dirs
+library_dirs = mpi_lib_dirs + ["/opt/ohpc/pub/libs/gnu14/openblas/0.3.29/lib", "/opt/ohpc/pub/mpi/openmpi5-gnu13/5.0.5/lib"]
 
 # Build libraries list - use MPI libs + standard math libs
-libraries = mpi_libs + ['lapack', 'blas']
+libraries = mpi_libs + ['openblas']
 
 # Build extra link args
 extra_link_args = ['-fopenmp'] + mpi_link_flags
