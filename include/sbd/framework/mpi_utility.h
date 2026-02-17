@@ -12,6 +12,7 @@
 #include <stdexcept>
 
 #include "mpi.h"
+#include <iostream>
 
 namespace sbd {
 
