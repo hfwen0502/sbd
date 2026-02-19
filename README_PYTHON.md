@@ -28,8 +28,8 @@ SBD (Selected Basis Diagonalization) is a high-performance library for quantum c
 ## Features
 
 ### Dual Backend Support
-- **CPU Backend** (`_core_cpu.so`): OpenMP-parallelized, works on any system
-- **GPU Backend** (`_core_gpu.so`): CUDA-accelerated, requires NVIDIA GPUs and HPC SDK
+- **CPU Backend** (`_core_cpu.*.so`): OpenMP-parallelized, works on any system
+- **GPU Backend** (`_core_gpu.*.so`): CUDA-accelerated, requires NVIDIA GPUs and HPC SDK
 - **Automatic Building**: Detects GPU availability and builds both backends when possible
 - **Runtime Selection**: Choose backend via environment variable or Python API
 
@@ -132,7 +132,7 @@ Expected output:
 
 The dual backend architecture allows:
 1. **Single Installation**: One `pip install` gets both backends
-2. **No Symbol Collision**: Separate `.so` files (`_core_cpu.so`, `_core_gpu.so`)
+2. **No Symbol Collision**: Separate `.so` files (`_core_cpu.*.so`, `_core_gpu.*.so`)
 3. **Runtime Selection**: Choose backend when running, not when building
 4. **Automatic GPU Assignment**: Each MPI rank assigned to different GPU
 
