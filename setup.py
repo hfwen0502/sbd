@@ -54,60 +54,83 @@ library_dirs = mpi_lib_dirs + ["/opt/ohpc/pub/libs/gnu14/openblas/0.3.29/lib", "
 libraries = mpi_libs + ['openblas']
 
 # Build extra link args
-extra_link_args = ['-fopenmp'] + mpi_link_flags
+#extra_link_args = ['-fopenmp'] + mpi_link_flags
+extra_link_args = ['-fopenmp']
+
+os.environ["CC"] = "nvc"
+os.environ["CXX"] = "nvc++"
+#os.environ["LDSHARED"] = "nvc++ -shared"
+
+
+# -----------------------------------------------------------------------------
+# 2. Custom build_ext that removes unwanted GCC flags safely
+# -----------------------------------------------------------------------------
+
+class NVHPCBuildExt(build_ext):
+    def build_extensions(self):
+
+        # Force compiler executables
+        self.compiler.set_executable("compiler_so", "nvc++")
+        self.compiler.set_executable("compiler_cxx", "nvc++")
+        self.compiler.set_executable("linker_so", "nvc++ -shared")
+
+        # Remove unwanted GCC flags injected by Python
+        unwanted = [
+            "-grecord-gcc-switches",
+            "-Werror=format-security",
+            "-Wsign-compare",
+            "-fstack-protector-strong",
+        ]
+
+        for attr in ["compiler_so", "compiler", "compiler_cxx", "linker_so"]:
+            flags = getattr(self.compiler, attr, None)
+            if flags:
+                cleaned = [f for f in flags if f not in unwanted]
+                setattr(self.compiler, attr, cleaned)
+
+        build_ext.build_extensions(self)
+
+
+# -----------------------------------------------------------------------------
+# 3. Your extension definition
+# -----------------------------------------------------------------------------
 
 ext_modules = [
     Extension(
-        'sbd._core',
-        ['python/bindings.cpp'],
+        "sbd._core_gpu",
+        ["python/bindings.cpp"],
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs,
-        language='c++',
+        language="c++",
         extra_compile_args=[
-            '-std=c++17',
-            '-fopenmp',
-            '-O2',
-            '-Wno-sign-compare',
-            '-Wno-unused-variable',
-            '-fPIC'
+            "-DSBD_THRUST",
+            "-mp",
+            "-cuda",
+            "-fast",
+            "-Minfo=accel",
+            "--diag_suppress=declared_but_not_referenced,set_but_not_used",
+            "-fmax-errors=0",
+            "-fPIC",
+            "-gpu=sm_90",
+            "-DSBD_MODULE_NAME=_core_gpu"   
         ],
-        extra_link_args=extra_link_args,
+        extra_link_args=["-fopenmp", "-mp", "-cuda", "-cudalib"],
     ),
 ]
 
+
+# -----------------------------------------------------------------------------
+# 4. Setup
+# -----------------------------------------------------------------------------
+
 setup(
-    name='sbd',
-    version='1.2.0',
-    author='Tomonori Shirakawa',
-    author_email='',
-    description='Python bindings for Selected Basis Diagonalization (SBD) library',
-    long_description=open('README.md').read() if os.path.exists('README.md') else '',
-    long_description_content_type='text/markdown',
-    url='https://github.com/your-repo/sbd',
-    packages=['sbd'],
-    package_dir={'sbd': 'python'},
+    name="sbd",
+    version="1.2.0",
+    packages=["sbd"],
+    package_dir={"sbd": "python"},
     ext_modules=ext_modules,
-    install_requires=[
-        'pybind11>=2.6.0',
-        'mpi4py>=3.0.0',
-        'numpy>=1.19.0',
-    ],
-    python_requires='>=3.7',
-    classifiers=[
-        'Development Status :: 4 - Beta',
-        'Intended Audience :: Science/Research',
-        'Topic :: Scientific/Engineering :: Chemistry',
-        'Topic :: Scientific/Engineering :: Physics',
-        'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
-        'Programming Language :: C++',
-    ],
+    cmdclass={"build_ext": NVHPCBuildExt},
     zip_safe=False,
 )
 
