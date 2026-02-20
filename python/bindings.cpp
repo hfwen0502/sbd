@@ -306,20 +306,15 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
                 );
             }
             
-            // Extract integrals from FCIDump
-            size_t norb = fcidump.norb;
-            double I0 = fcidump.ecore;
-            
-            // Build one-electron and two-electron integral objects
+            // Extract integrals from FCIDump using SetupIntegrals
+            int L = 0;  // number of orbitals
+            int N = 0;  // number of electrons
+            double I0 = 0.0;  // core energy
             sbd::oneInt<double> I1;
-            I1.norbs = 2 * norb;
-            I1.store = fcidump.oneInt;
-            
             sbd::twoInt<double> I2;
-            I2.norbs = norb;
-            I2.store = fcidump.twoInt;
-            I2.DirectMat = fcidump.DirectMat;
-            I2.ExchangeMat = fcidump.ExchangeMat;
+            
+            sbd::SetupIntegrals(fcidump, L, N, I0, I1, I2);
+            size_t norb = static_cast<size_t>(L);
             
             // Build Hamiltonian in triplet format
             std::vector<sbd::MatrixTriplet<double>> triplets;
