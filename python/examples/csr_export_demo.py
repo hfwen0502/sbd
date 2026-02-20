@@ -39,7 +39,9 @@ def main():
             print(f"Loading determinants: {adet_file}")
         
         fcidump = sbd.LoadFCIDump(fcidump_file)
-        adet = sbd.LoadAlphaDets(adet_file, bit_length=20, total_bit_length=20)
+        # For H2O: 13 orbitals, so we need total_bit_length >= 13 bits for alpha determinants
+        # Using bit_length=64 (default size_t) and total_bit_length=64 for simplicity
+        adet = sbd.LoadAlphaDets(adet_file, bit_length=64, total_bit_length=64)
         bdet = adet  # Closed shell
         
         if rank == 0:
@@ -55,7 +57,7 @@ def main():
                 fcidump=fcidump,
                 adet=adet,
                 bdet=bdet,
-                bit_length=20,
+                bit_length=64,  # Must match the bit_length used in LoadAlphaDets
                 max_nnz=int(1e8)
             )
             
