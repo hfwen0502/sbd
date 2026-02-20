@@ -61,6 +61,17 @@ bool buildHamiltonianTriplets(
     size_t n_bdet = bdet.size();
     size_t n = n_adet * n_bdet;  // Total Hilbert space dimension
     
+    // Debug output
+    std::cerr << "[CSR Export Debug] Starting buildHamiltonianTriplets" << std::endl;
+    std::cerr << "  n_adet=" << n_adet << ", n_bdet=" << n_bdet << ", n=" << n << std::endl;
+    std::cerr << "  bit_length=" << bit_length << ", norb=" << norb << std::endl;
+    std::cerr << "  max_nnz=" << max_nnz << std::endl;
+    std::cerr << "  I0=" << I0 << std::endl;
+    std::cerr << "  I1.norbs=" << I1.norbs << ", I1.store.size()=" << I1.store.size() << std::endl;
+    std::cerr << "  I2.norbs=" << I2.norbs << ", I2.store.size()=" << I2.store.size() << std::endl;
+    std::cerr << "  I2.DirectMat.size()=" << I2.DirectMat.size() << std::endl;
+    std::cerr << "  I2.ExchangeMat.size()=" << I2.ExchangeMat.size() << std::endl;
+    
     triplets.clear();
     triplets.reserve(std::min(max_nnz, n * 100));  // Estimate: ~100 non-zeros per row
     
@@ -69,6 +80,7 @@ bool buildHamiltonianTriplets(
     
     // Validate determinant sizes
     size_t expected_det_size = (norb + bit_length - 1) / bit_length;
+    std::cerr << "  expected_det_size (alpha/beta)=" << expected_det_size << std::endl;
     for (size_t i = 0; i < n_adet; ++i) {
         if (adet[i].size() != expected_det_size) {
             throw std::runtime_error(
@@ -97,8 +109,42 @@ bool buildHamiltonianTriplets(
             // In TPB format, alpha and beta spins are interleaved
             std::vector<size_t> det_i = DetFromAlphaBeta(adet[ia], bdet[ib], bit_length, norb);
             
+            // Debug: Check determinant size
+            if (det_i.empty()) {
+                throw std::runtime_error(
+                    "DetFromAlphaBeta returned empty determinant for ia=" +
+                    std::to_string(ia) + ", ib=" + std::to_string(ib)
+                );
+            }
+            
+            // Debug: Print first iteration info
+            if (ia == 0 && ib == 0) {
+                size_t expected_det_size_full = (2*norb + bit_length - 1) / bit_length;
+                std::cerr << "[CSR Debug] First determinant (ia=0, ib=0):" << std::endl;
+                std::cerr << "  det_i.size()=" << det_i.size() << std::endl;
+                std::cerr << "  expected_det_size_full=" << expected_det_size_full << std::endl;
+                std::cerr << "  adet[0].size()=" << adet[0].size() << std::endl;
+                std::cerr << "  bdet[0].size()=" << bdet[0].size() << std::endl;
+                
+                if (det_i.size() != expected_det_size_full) {
+                    throw std::runtime_error(
+                        "Determinant size mismatch after DetFromAlphaBeta: " +
+                        std::to_string(det_i.size()) + " vs expected " +
+                        std::to_string(expected_det_size_full) +
+                        " (norb=" + std::to_string(norb) +
+                        ", bit_length=" + std::to_string(bit_length) + ")"
+                    );
+                }
+                
+                std::cerr << "  About to call ZeroExcite..." << std::endl;
+            }
+            
             // Diagonal element
             ElemT h_diag = ZeroExcite(det_i, bit_length, norb, I0, I1, I2);
+            
+            if (ia == 0 && ib == 0) {
+                std::cerr << "  ZeroExcite returned: " << h_diag << std::endl;
+            }
             if (std::abs(h_diag) > 1e-12) {
                 MatrixTriplet<ElemT> triplet_diag;
                 triplet_diag.row = row;

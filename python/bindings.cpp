@@ -349,9 +349,16 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             // Release GIL for long computation
             py::gil_scoped_release release;
             
-            bool completed = sbd::buildHamiltonianTriplets(
-                adet, bdet, bit_length, norb, I0, I1, I2, max_nnz, triplets
-            );
+            bool completed = false;
+            try {
+                completed = sbd::buildHamiltonianTriplets(
+                    adet, bdet, bit_length, norb, I0, I1, I2, max_nnz, triplets
+                );
+            } catch (const std::exception& e) {
+                throw std::runtime_error(
+                    std::string("Error in buildHamiltonianTriplets: ") + e.what()
+                );
+            }
             
             // Convert to CSR format
             std::vector<double> data;
