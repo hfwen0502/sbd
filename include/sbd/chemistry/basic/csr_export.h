@@ -173,8 +173,19 @@ bool buildHamiltonianTriplets(
                     // Create full determinant from alpha and beta parts
                     std::vector<size_t> det_j = DetFromAlphaBeta(adet[ja], bdet[jb], bit_length, norb);
                     
+                    // Debug first off-diagonal call
+                    if (ia == 0 && ib == 0 && ja == 0 && jb == 1) {
+                        std::cerr << "[CSR Debug] First off-diagonal (0,0) -> (0,1):" << std::endl;
+                        std::cerr << "  det_j.size()=" << det_j.size() << std::endl;
+                        std::cerr << "  About to call Hij..." << std::endl;
+                    }
+                    
                     // Compute matrix element using Slater-Condon rules
                     ElemT h_ij = Hij(det_i, det_j, bit_length, norb, I0, I1, I2, orbDiff);
+                    
+                    if (ia == 0 && ib == 0 && ja == 0 && jb == 1) {
+                        std::cerr << "  Hij returned: " << h_ij << ", orbDiff=" << orbDiff << std::endl;
+                    }
                     
                     if (std::abs(h_ij) > 1e-12) {
                         // Add both (i,j) and (j,i) for symmetric matrix
