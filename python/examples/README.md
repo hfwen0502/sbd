@@ -2,6 +2,8 @@
 
 This directory contains examples demonstrating the **simplified SBD API** where MPI is handled internally - no need to import mpi4py!
 
+**Communication Backend:** Currently, SBD uses **MPI only** for distributed communication. This is the standard for HPC environments and works with both CPU and GPU backends.
+
 ## Examples
 
 ### 1. h2o_simplified.py - H2O Calculation (Recommended)
@@ -66,7 +68,8 @@ results = sbd_cpu.tpb_diag_from_files(comm, config, ...)
 ```python
 import sbd
 
-sbd.init(device='gpu')
+# Initialize with device and MPI backend
+sbd.init(device='gpu', comm_backend='mpi')
 config = sbd.TPB_SBD()
 results = sbd.tpb_diag_from_files(config, ...)
 sbd.finalize()
@@ -76,8 +79,11 @@ sbd.finalize()
 - ✅ No mpi4py import needed
 - ✅ No manual communicator management
 - ✅ Automatic device selection
+- ✅ MPI backend explicitly specified (`comm_backend='mpi'`)
 - ✅ Cleaner, more intuitive code
 - ✅ Proper resource cleanup with `finalize()`
+
+**Note:** Currently, only MPI is supported as the communication backend. This is the standard for distributed computing in HPC environments and works seamlessly with both CPU and GPU backends.
 
 ## Resource Cleanup
 
@@ -85,7 +91,7 @@ All examples properly clean up resources using `sbd.finalize()`:
 
 ```python
 try:
-    sbd.init(device='gpu')
+    sbd.init(device='gpu', comm_backend='mpi')
     results = sbd.tpb_diag_from_files(...)
 finally:
     sbd.finalize()  # Synchronizes GPU and resets state
