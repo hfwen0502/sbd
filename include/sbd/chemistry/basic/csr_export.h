@@ -100,76 +100,94 @@ bool buildHamiltonianTriplets(
         }
     }
     
-    // Create determinant buffers once and reuse them (like makeQCham does in qcham.h line 62)
-    // IMPORTANT: Initialize with first determinant to get proper structure, then reuse buffer
-    auto det_i = DetFromAlphaBeta(adet[0], bdet[0], bit_length, norb);
-    auto det_j = DetFromAlphaBeta(adet[0], bdet[0], bit_length, norb);
+    // Parallel computation with OpenMP
+    // Each thread needs its own determinant buffers and local triplet list
+    std::vector<std::vector<MatrixTriplet<ElemT>>> thread_triplets;
     
-    // Loop over all determinant pairs
-    for (size_t ia = 0; ia < n_adet && !truncated; ++ia) {
-        for (size_t ib = 0; ib < n_bdet && !truncated; ++ib) {
-            size_t row = ia * n_bdet + ib;  // Row index in full matrix
-            
-            // Create full determinant from alpha and beta parts (reuse buffer)
-            DetFromAlphaBeta(adet[ia], bdet[ib], bit_length, norb, det_i);
-            
-            // Diagonal element
-            ElemT h_diag = ZeroExcite(det_i, bit_length, norb, I0, I1, I2);
-            if (std::abs(h_diag) > 1e-12) {
-                MatrixTriplet<ElemT> triplet_diag;
-                triplet_diag.row = row;
-                triplet_diag.col = row;
-                triplet_diag.value = h_diag;
-                triplets.push_back(triplet_diag);
+#pragma omp parallel
+    {
+        int num_threads = omp_get_num_threads();
+        int thread_id = omp_get_thread_num();
+        
+        // Resize thread_triplets on first thread
+#pragma omp single
+        {
+            thread_triplets.resize(num_threads);
+        }
+        
+        // Each thread gets its own determinant buffers
+        auto det_i = DetFromAlphaBeta(adet[0], bdet[0], bit_length, norb);
+        auto det_j = DetFromAlphaBeta(adet[0], bdet[0], bit_length, norb);
+        size_t orbDiff_local = 0;
+        
+        // Parallel loop over rows
+#pragma omp for schedule(dynamic, 1)
+        for (size_t ia = 0; ia < n_adet; ++ia) {
+            for (size_t ib = 0; ib < n_bdet; ++ib) {
+                size_t row = ia * n_bdet + ib;
                 
-                if (triplets.size() >= max_nnz) {
-                    truncated = true;
-                    break;
+                // Create full determinant from alpha and beta parts (reuse buffer)
+                DetFromAlphaBeta(adet[ia], bdet[ib], bit_length, norb, det_i);
+                
+                // Diagonal element
+                ElemT h_diag = ZeroExcite(det_i, bit_length, norb, I0, I1, I2);
+                if (std::abs(h_diag) > 1e-12) {
+                    MatrixTriplet<ElemT> triplet_diag;
+                    triplet_diag.row = row;
+                    triplet_diag.col = row;
+                    triplet_diag.value = h_diag;
+                    thread_triplets[thread_id].push_back(triplet_diag);
                 }
-            }
-            
-            // Off-diagonal elements: loop over all other determinants
-            for (size_t ja = 0; ja < n_adet && !truncated; ++ja) {
-                for (size_t jb = 0; jb < n_bdet && !truncated; ++jb) {
-                    size_t col = ja * n_bdet + jb;
-                    
-                    // Skip if same determinant (already did diagonal)
-                    if (row == col) continue;
-                    
-                    // Only compute lower triangle (Hamiltonian is Hermitian)
-                    // We'll add both (i,j) and (j,i) for full matrix
-                    if (col > row) continue;
-                    
-                    // Create full determinant from alpha and beta parts (reuse buffer)
-                    DetFromAlphaBeta(adet[ja], bdet[jb], bit_length, norb, det_j);
-                    
-                    // Compute matrix element using Slater-Condon rules
-                    ElemT h_ij = Hij(det_i, det_j, bit_length, norb, I0, I1, I2, orbDiff);
-                    
-                    if (std::abs(h_ij) > 1e-12) {
-                        // Add both (i,j) and (j,i) for symmetric matrix
-                        MatrixTriplet<ElemT> triplet_ij;
-                        triplet_ij.row = row;
-                        triplet_ij.col = col;
-                        triplet_ij.value = h_ij;
-                        triplets.push_back(triplet_ij);
+                
+                // Off-diagonal elements: loop over all other determinants
+                for (size_t ja = 0; ja < n_adet; ++ja) {
+                    for (size_t jb = 0; jb < n_bdet; ++jb) {
+                        size_t col = ja * n_bdet + jb;
                         
-                        if (row != col) {
-                            MatrixTriplet<ElemT> triplet_ji;
-                            triplet_ji.row = col;
-                            triplet_ji.col = row;
-                            triplet_ji.value = h_ij;  // Hamiltonian is Hermitian, for real h_ij this equals conj(h_ij)
-                            triplets.push_back(triplet_ji);
-                        }
+                        // Skip if same determinant (already did diagonal)
+                        if (row == col) continue;
                         
-                        if (triplets.size() >= max_nnz) {
-                            truncated = true;
-                            break;
+                        // Only compute lower triangle (Hamiltonian is Hermitian)
+                        if (col > row) continue;
+                        
+                        // Create full determinant from alpha and beta parts (reuse buffer)
+                        DetFromAlphaBeta(adet[ja], bdet[jb], bit_length, norb, det_j);
+                        
+                        // Compute matrix element using Slater-Condon rules
+                        ElemT h_ij = Hij(det_i, det_j, bit_length, norb, I0, I1, I2, orbDiff_local);
+                        
+                        if (std::abs(h_ij) > 1e-12) {
+                            // Add both (i,j) and (j,i) for symmetric matrix
+                            MatrixTriplet<ElemT> triplet_ij;
+                            triplet_ij.row = row;
+                            triplet_ij.col = col;
+                            triplet_ij.value = h_ij;
+                            thread_triplets[thread_id].push_back(triplet_ij);
+                            
+                            if (row != col) {
+                                MatrixTriplet<ElemT> triplet_ji;
+                                triplet_ji.row = col;
+                                triplet_ji.col = row;
+                                triplet_ji.value = h_ij;
+                                thread_triplets[thread_id].push_back(triplet_ji);
+                            }
                         }
                     }
                 }
             }
         }
+    } // end omp parallel
+    
+    // Merge thread-local triplets into main list
+    for (const auto& thread_list : thread_triplets) {
+        for (const auto& triplet : thread_list) {
+            if (triplets.size() >= max_nnz) {
+                truncated = true;
+                break;
+            }
+            triplets.push_back(triplet);
+        }
+        if (truncated) break;
     }
     
     return !truncated;
