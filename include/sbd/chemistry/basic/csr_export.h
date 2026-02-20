@@ -67,6 +67,27 @@ bool buildHamiltonianTriplets(
     bool truncated = false;
     size_t orbDiff;
     
+    // Validate determinant sizes
+    size_t expected_det_size = (norb + bit_length - 1) / bit_length;
+    for (size_t i = 0; i < n_adet; ++i) {
+        if (adet[i].size() != expected_det_size) {
+            throw std::runtime_error(
+                "Alpha determinant size mismatch: expected " +
+                std::to_string(expected_det_size) + " but got " +
+                std::to_string(adet[i].size())
+            );
+        }
+    }
+    for (size_t i = 0; i < n_bdet; ++i) {
+        if (bdet[i].size() != expected_det_size) {
+            throw std::runtime_error(
+                "Beta determinant size mismatch: expected " +
+                std::to_string(expected_det_size) + " but got " +
+                std::to_string(bdet[i].size())
+            );
+        }
+    }
+    
     // Loop over all determinant pairs
     for (size_t ia = 0; ia < n_adet && !truncated; ++ia) {
         for (size_t ib = 0; ib < n_bdet && !truncated; ++ib) {
