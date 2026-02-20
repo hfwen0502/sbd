@@ -106,9 +106,18 @@ bool buildHamiltonianTriplets(
                     
                     if (std::abs(h_ij) > 1e-12) {
                         // Add both (i,j) and (j,i) for symmetric matrix
-                        triplets.push_back({row, col, h_ij});
+                        MatrixTriplet<ElemT> triplet_ij;
+                        triplet_ij.row = row;
+                        triplet_ij.col = col;
+                        triplet_ij.value = h_ij;
+                        triplets.push_back(triplet_ij);
+                        
                         if (row != col) {
-                            triplets.push_back({col, row, std::conj(h_ij)});
+                            MatrixTriplet<ElemT> triplet_ji;
+                            triplet_ji.row = col;
+                            triplet_ji.col = row;
+                            triplet_ji.value = h_ij;  // Hamiltonian is Hermitian, for real h_ij this equals conj(h_ij)
+                            triplets.push_back(triplet_ji);
                         }
                         
                         if (triplets.size() >= max_nnz) {
