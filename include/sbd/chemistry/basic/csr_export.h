@@ -79,7 +79,12 @@ bool buildHamiltonianTriplets(
             // Diagonal element
             ElemT h_diag = ZeroExcite(det_i, bit_length, norb, I0, I1, I2);
             if (std::abs(h_diag) > 1e-12) {
-                triplets.push_back({row, row, h_diag});
+                MatrixTriplet<ElemT> triplet_diag;
+                triplet_diag.row = row;
+                triplet_diag.col = row;
+                triplet_diag.value = h_diag;
+                triplets.push_back(triplet_diag);
+                
                 if (triplets.size() >= max_nnz) {
                     truncated = true;
                     break;
