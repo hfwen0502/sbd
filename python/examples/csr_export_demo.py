@@ -99,23 +99,30 @@ csr_data = sbd.export_hamiltonian_csr(
 
 # Use with SciPy
 from scipy.sparse import csr_matrix
-import scipy.sparse.linalg as spla
+from scipy.sparse.linalg import eigsh
 
 H = csr_matrix((csr_data['data'], csr_data['indices'], csr_data['indptr']),
                shape=csr_data['shape'])
 
 # Diagonalize
-eigenvalues, eigenvectors = spla.eigsh(H, k=1, which='SA')
+eigenvalues, eigenvectors = eigsh(H, k=1, which='SA')
 print(f"Ground state energy: {eigenvalues[0]}")
 
 # Or use with CuPy for GPU acceleration
-import cupyx.scipy.sparse as cusp
-import cupyx.scipy.sparse.linalg as cuspl
+import cupy as cp
+from cupyx.scipy.sparse import csr_matrix as csr_matrix_gpu
+from cupyx.scipy.sparse.linalg import eigsh as eigsh_gpu
 
-H_gpu = cusp.csr_matrix((csr_data['data'], csr_data['indices'], 
-                         csr_data['indptr']), shape=csr_data['shape'])
-eigenvalues_gpu, _ = cuspl.eigsh(H_gpu, k=1, which='SA')
-                """)
+# Move data to GPU
+data_gpu = cp.array(csr_data['data'])
+indices_gpu = cp.array(csr_data['indices'])
+indptr_gpu = cp.array(csr_data['indptr'])
+
+H_gpu = csr_matrix_gpu((data_gpu, indices_gpu, indptr_gpu),
+                        shape=csr_data['shape'])
+eigenvalues_gpu, _ = eigsh_gpu(H_gpu, k=1, which='SA')
+print(f"Ground state energy (GPU): {eigenvalues_gpu[0]}")
+""")
                 print("="*70)
         
         sbd.finalize()
