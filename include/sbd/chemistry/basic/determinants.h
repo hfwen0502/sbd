@@ -502,13 +502,16 @@ namespace sbd {
 
   template <typename ElemT>
   ElemT Hij(const std::vector<size_t> & DetA,
-	    const std::vector<size_t> & DetB,
-	    const size_t & bit_length,
-	    const size_t & L,
-	    const ElemT & I0,
-	    const oneInt<ElemT> & I1,
-	    const twoInt<ElemT> & I2,
-	    size_t & orbDiff) {
+     const std::vector<size_t> & DetB,
+     const size_t & bit_length,
+     const size_t & L,
+     const ElemT & I0,
+     const oneInt<ElemT> & I1,
+     const twoInt<ElemT> & I2,
+     size_t & orbDiff) {
+    std::cerr << "[Hij Debug] Entry: DetA.size()=" << DetA.size() << ", DetB.size()=" << DetB.size()
+              << ", bit_length=" << bit_length << ", L=" << L << std::endl;
+    
     std::vector<int> c;
     std::vector<int> d;
     size_t nc=0;
@@ -516,8 +519,12 @@ namespace sbd {
 
     size_t full_words = (2*L) / bit_length;
     size_t remaining_bits = (2*L) % bit_length;
+    
+    std::cerr << "[Hij Debug] full_words=" << full_words << ", remaining_bits=" << remaining_bits << std::endl;
+    std::cerr << "[Hij Debug] About to loop over full_words..." << std::endl;
 
     for(size_t i=0; i < full_words; ++i) {
+      std::cerr << "[Hij Debug] Loop i=" << i << std::endl;
       size_t diff_c = DetA[i] & ~DetB[i];
       size_t diff_d = DetB[i] & ~DetA[i];
       for(size_t bit_pos=0; bit_pos < bit_length; ++bit_pos) {
