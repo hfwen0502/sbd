@@ -324,6 +324,25 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
                 );
             }
             
+            // Additional validation
+            if (I2.DirectMat.empty() || I2.ExchangeMat.empty()) {
+                throw std::runtime_error(
+                    "Failed to initialize Direct/Exchange matrices.\n"
+                    "I2.DirectMat size: " + std::to_string(I2.DirectMat.size()) +
+                    ", I2.ExchangeMat size: " + std::to_string(I2.ExchangeMat.size()) +
+                    ", Expected: " + std::to_string(L * L)
+                );
+            }
+            
+            // Debug info
+            if (py::module_::import("sys").attr("stdout").attr("isatty")().cast<bool>()) {
+                py::print("Debug: L =", L, ", N =", N, ", I0 =", I0);
+                py::print("Debug: I1.norbs =", I1.norbs, ", I1.store.size() =", I1.store.size());
+                py::print("Debug: I2.norbs =", I2.norbs, ", I2.store.size() =", I2.store.size());
+                py::print("Debug: I2.DirectMat.size() =", I2.DirectMat.size());
+                py::print("Debug: I2.ExchangeMat.size() =", I2.ExchangeMat.size());
+            }
+            
             // Build Hamiltonian in triplet format
             std::vector<sbd::MatrixTriplet<double>> triplets;
             
