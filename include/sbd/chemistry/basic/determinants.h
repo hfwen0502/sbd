@@ -509,9 +509,6 @@ namespace sbd {
      const oneInt<ElemT> & I1,
      const twoInt<ElemT> & I2,
      size_t & orbDiff) {
-    std::cerr << "[Hij Debug] Entry: DetA.size()=" << DetA.size() << ", DetB.size()=" << DetB.size()
-              << ", bit_length=" << bit_length << ", L=" << L << std::endl;
-    
     std::vector<int> c;
     std::vector<int> d;
     size_t nc=0;
@@ -519,12 +516,8 @@ namespace sbd {
 
     size_t full_words = (2*L) / bit_length;
     size_t remaining_bits = (2*L) % bit_length;
-    
-    std::cerr << "[Hij Debug] full_words=" << full_words << ", remaining_bits=" << remaining_bits << std::endl;
-    std::cerr << "[Hij Debug] About to loop over full_words..." << std::endl;
 
     for(size_t i=0; i < full_words; ++i) {
-      std::cerr << "[Hij Debug] Loop i=" << i << std::endl;
       size_t diff_c = DetA[i] & ~DetB[i];
       size_t diff_d = DetB[i] & ~DetA[i];
       for(size_t bit_pos=0; bit_pos < bit_length; ++bit_pos) {
@@ -540,16 +533,9 @@ namespace sbd {
     }
 
     if( remaining_bits > 0 ) {
-      std::cerr << "[Hij Debug] Processing remaining_bits section, full_words=" << full_words << std::endl;
-      std::cerr << "[Hij Debug] DetA.size()=" << DetA.size() << ", DetB.size()=" << DetB.size() << std::endl;
-      std::cerr << "[Hij Debug] About to access DetA[" << full_words << "] and DetB[" << full_words << "]" << std::endl;
-      
       size_t mask = (static_cast<size_t>(1) << remaining_bits) -1;
       size_t diff_c = (DetA[full_words] & ~DetB[full_words]) & mask;
       size_t diff_d = (DetB[full_words] & ~DetA[full_words]) & mask;
-      
-      std::cerr << "[Hij Debug] diff_c=" << diff_c << ", diff_d=" << diff_d << std::endl;
-      
       for(size_t bit_pos = 0; bit_pos < remaining_bits; ++bit_pos) {
  if( diff_c & (static_cast<size_t>(1) << bit_pos) ) {
    c.push_back(bit_length*full_words+bit_pos);
@@ -560,26 +546,19 @@ namespace sbd {
    nd++;
  }
       }
-      std::cerr << "[Hij Debug] After remaining_bits loop: nc=" << nc << ", nd=" << nd << std::endl;
     }
 
-    std::cerr << "[Hij Debug] Determining excitation type: nc=" << nc << ", nd=" << nd << std::endl;
-    
     if( nc == 0 && nd == 0 ) {
-      std::cerr << "[Hij Debug] Calling ZeroExcite" << std::endl;
       orbDiff = static_cast<size_t>(0);
       return ZeroExcite(DetB,bit_length,L,I0,I1,I2);
     } else if ( nc == 1 && nd == 1 ) {
-      std::cerr << "[Hij Debug] Calling OneExcite with d[0]=" << d[0] << ", c[0]=" << c[0] << std::endl;
       orbDiff = static_cast<size_t>(c[0] * L + d[0]);
       return OneExcite(DetB,bit_length,d[0],c[0],I1,I2);
     } else if ( nc == 2 && nd == 2 ) {
-      std::cerr << "[Hij Debug] Calling TwoExcite" << std::endl;
       orbDiff = static_cast<size_t>(c[1]*L*L*L+d[1]*L*L+c[0]*L+d[0]);
       return TwoExcite(DetB,bit_length,d[0],d[1],c[0],c[1],I1,I2);
     } else {
       // More than 2 excitations or mismatched nc/nd - matrix element is zero
-      std::cerr << "[Hij Debug] Invalid excitation (nc=" << nc << ", nd=" << nd << "), returning 0" << std::endl;
       orbDiff = static_cast<size_t>(0);
       return ElemT(0.0);
     }
