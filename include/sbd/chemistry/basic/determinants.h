@@ -540,28 +540,41 @@ namespace sbd {
     }
 
     if( remaining_bits > 0 ) {
+      std::cerr << "[Hij Debug] Processing remaining_bits section, full_words=" << full_words << std::endl;
+      std::cerr << "[Hij Debug] DetA.size()=" << DetA.size() << ", DetB.size()=" << DetB.size() << std::endl;
+      std::cerr << "[Hij Debug] About to access DetA[" << full_words << "] and DetB[" << full_words << "]" << std::endl;
+      
       size_t mask = (static_cast<size_t>(1) << remaining_bits) -1;
       size_t diff_c = (DetA[full_words] & ~DetB[full_words]) & mask;
       size_t diff_d = (DetB[full_words] & ~DetA[full_words]) & mask;
+      
+      std::cerr << "[Hij Debug] diff_c=" << diff_c << ", diff_d=" << diff_d << std::endl;
+      
       for(size_t bit_pos = 0; bit_pos < remaining_bits; ++bit_pos) {
-	if( diff_c & (static_cast<size_t>(1) << bit_pos) ) {
-	  c.push_back(bit_length*full_words+bit_pos);
-	  nc++;
-	}
-	if( diff_d & (static_cast<size_t>(1) << bit_pos) ) {
-	  d.push_back(bit_length*full_words+bit_pos);
-	  nd++;
-	}
+ if( diff_c & (static_cast<size_t>(1) << bit_pos) ) {
+   c.push_back(bit_length*full_words+bit_pos);
+   nc++;
+ }
+ if( diff_d & (static_cast<size_t>(1) << bit_pos) ) {
+   d.push_back(bit_length*full_words+bit_pos);
+   nd++;
+ }
       }
+      std::cerr << "[Hij Debug] After remaining_bits loop: nc=" << nc << ", nd=" << nd << std::endl;
     }
 
+    std::cerr << "[Hij Debug] Determining excitation type: nc=" << nc << std::endl;
+    
     if( nc == 0 ) {
+      std::cerr << "[Hij Debug] Calling ZeroExcite" << std::endl;
       orbDiff = static_cast<size_t>(0);
       return ZeroExcite(DetB,bit_length,L,I0,I1,I2);
     } else if ( nc == 1 ) {
+      std::cerr << "[Hij Debug] Calling OneExcite with d[0]=" << d[0] << ", c[0]=" << c[0] << std::endl;
       orbDiff = static_cast<size_t>(c[0] * L + d[0]);
       return OneExcite(DetB,bit_length,d[0],c[0],I1,I2);
     } else if ( nc == 2 ) {
+      std::cerr << "[Hij Debug] Calling TwoExcite" << std::endl;
       orbDiff = static_cast<size_t>(c[1]*L*L*L+d[1]*L*L+c[0]*L+d[0]);
       return TwoExcite(DetB,bit_length,d[0],d[1],c[0],c[1],I1,I2);
     }
