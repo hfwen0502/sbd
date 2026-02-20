@@ -101,9 +101,9 @@ bool buildHamiltonianTriplets(
     }
     
     // Create determinant buffers once and reuse them (like makeQCham does in qcham.h line 62)
-    size_t det_size = (2*norb + bit_length - 1) / bit_length;
-    std::vector<size_t> det_i(det_size);
-    std::vector<size_t> det_j(det_size);
+    // IMPORTANT: Initialize with first determinant to get proper structure, then reuse buffer
+    auto det_i = DetFromAlphaBeta(adet[0], bdet[0], bit_length, norb);
+    auto det_j = DetFromAlphaBeta(adet[0], bdet[0], bit_length, norb);
     
     // Loop over all determinant pairs
     for (size_t ia = 0; ia < n_adet && !truncated; ++ia) {
