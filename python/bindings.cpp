@@ -12,10 +12,12 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
+#include <pybind11/numpy.h>
 #include <mpi4py/mpi4py.h>
 #include <mpi.h>
 
 #include "sbd/sbd.h"
+#include "sbd/chemistry/basic/csr_export.h"
 
 namespace py = pybind11;
 
@@ -280,6 +282,110 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
         py::arg("adetfile"),
         py::arg("loadname") = "",
         py::arg("savename") = "");
+
+    // ========================================================================
+    // CSR Hamiltonian Export
+    // ========================================================================
+    
+    m.def("export_hamiltonian_csr",
+        [](const sbd::FCIDump& fcidump,
+           const std::vector<std::vector<size_t>>& adet,
+           const std::vector<std::vector<size_t>>& bdet,
+           size_t bit_length,
+           size_t max_nnz) {
+            
+            size_t n_adet = adet.size();
+            size_t n_bdet = bdet.size();
+            size_t n = n_adet * n_bdet;  // Total Hilbert space dimension
+            
+            if (n > 100000) {
+                throw std::runtime_error(
+                    "Matrix dimension too large for CSR export.\n"
+                    "Current limit: 100,000 x 100,000\n"
+                    "For larger problems, use SBD's built-in Davidson solver."
+                );
+            }
+            
+            // Extract integrals from FCIDump
+            size_t norb = fcidump.norb;
+            double I0 = fcidump.ecore;
+            
+            // Build one-electron and two-electron integral objects
+            sbd::oneInt<double> I1;
+            I1.norbs = 2 * norb;
+            I1.store = fcidump.oneInt;
+            
+            sbd::twoInt<double> I2;
+            I2.norbs = norb;
+            I2.store = fcidump.twoInt;
+            I2.DirectMat = fcidump.DirectMat;
+            I2.ExchangeMat = fcidump.ExchangeMat;
+            
+            // Build Hamiltonian in triplet format
+            std::vector<sbd::MatrixTriplet<double>> triplets;
+            
+            // Release GIL for long computation
+            py::gil_scoped_release release;
+            
+            bool completed = sbd::buildHamiltonianTriplets(
+                adet, bdet, bit_length, norb, I0, I1, I2, max_nnz, triplets
+            );
+            
+            // Convert to CSR format
+            std::vector<double> data;
+            std::vector<int> indices;
+            std::vector<int> indptr;
+            
+            sbd::tripletsToCSR(triplets, n, data, indices, indptr);
+            
+            // Reacquire GIL for Python object creation
+            py::gil_scoped_acquire acquire;
+            
+            // Convert to NumPy arrays
+            py::array_t<double> np_data(data.size(), data.data());
+            py::array_t<int> np_indices(indices.size(), indices.data());
+            py::array_t<int> np_indptr(indptr.size(), indptr.data());
+            
+            // Return results as dictionary
+            py::dict result;
+            result["data"] = np_data;
+            result["indices"] = np_indices;
+            result["indptr"] = np_indptr;
+            result["shape"] = py::make_tuple(n, n);
+            result["nnz"] = data.size();
+            result["truncated"] = !completed;
+            
+            return result;
+        },
+        py::arg("fcidump"),
+        py::arg("adet"),
+        py::arg("bdet"),
+        py::arg("bit_length"),
+        py::arg("max_nnz") = 100000000,
+        R"pbdoc(
+            Export Hamiltonian matrix in CSR (Compressed Sparse Row) format.
+            
+            WARNING: Not yet fully implemented. This is a placeholder for future development.
+            
+            Args:
+                fcidump: FCIDump object with molecular integrals
+                adet: Alpha determinants
+                bdet: Beta determinants
+                bit_length: Bit length for determinant representation
+                max_nnz: Maximum number of non-zero elements (default: 10^8)
+            
+            Returns:
+                dict: CSR format data (when implemented)
+                    - 'data': Non-zero values
+                    - 'indices': Column indices
+                    - 'indptr': Row pointers
+                    - 'shape': Matrix dimensions
+                    - 'nnz': Number of non-zeros
+                    - 'truncated': Whether matrix was truncated
+            
+            Raises:
+                RuntimeError: Feature not yet implemented
+        )pbdoc");
 
     // ========================================================================
     // Cleanup/Finalization functions

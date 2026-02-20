@@ -543,6 +543,62 @@ def from_string(s, bit_length, total_bit_length):
         raise RuntimeError("Call sbd.init() first")
     return _device_module.from_string(s, bit_length, total_bit_length)
 
+def export_hamiltonian_csr(fcidump, adet, bdet, bit_length, max_nnz=int(1e8)):
+    """
+    Export Hamiltonian matrix in CSR (Compressed Sparse Row) format.
+    
+    **STATUS: Not yet fully implemented - placeholder for future development.**
+    
+    This function will enable using external eigensolvers (SciPy, CuPy, etc.)
+    by exporting SBD's Hamiltonian in standard sparse matrix format.
+    
+    Args:
+        fcidump: FCIDump object with molecular integrals
+        adet: Alpha determinants (list of lists)
+        bdet: Beta determinants (list of lists)
+        bit_length (int): Bit length for determinant representation
+        max_nnz (int): Maximum number of non-zero elements (default: 10^8)
+    
+    Returns:
+        dict: CSR format data (when implemented):
+            - 'data': np.array of non-zero values
+            - 'indices': np.array of column indices
+            - 'indptr': np.array of row pointers
+            - 'shape': tuple (n, n) matrix dimensions
+            - 'nnz': int number of non-zeros
+            - 'truncated': bool whether matrix was truncated
+    
+    Raises:
+        RuntimeError: Feature not yet implemented
+    
+    Example (future):
+        >>> import sbd
+        >>> from scipy.sparse import csr_matrix
+        >>> import scipy.sparse.linalg as spla
+        >>>
+        >>> sbd.init()
+        >>> fcidump = sbd.LoadFCIDump('fcidump.txt')
+        >>> adet = sbd.LoadAlphaDets('alpha.txt', 20, 20)
+        >>>
+        >>> # Export to CSR
+        >>> csr_data = sbd.export_hamiltonian_csr(fcidump, adet, adet, 20)
+        >>> H = csr_matrix((csr_data['data'], csr_data['indices'],
+        ...                 csr_data['indptr']), shape=csr_data['shape'])
+        >>>
+        >>> # Use SciPy eigensolver
+        >>> eigenvalues, eigenvectors = spla.eigsh(H, k=1, which='SA')
+        >>> print(f"Ground state energy: {eigenvalues[0]}")
+    
+    Note:
+        For production use, continue using SBD's built-in Davidson/Lanczos
+        solvers which are optimized for distributed computing and large problems.
+        CSR export is intended for small-to-medium problems and integration
+        with external tools.
+    """
+    if not _initialized:
+        raise RuntimeError("Call sbd.init() first")
+    return _device_module.export_hamiltonian_csr(fcidump, adet, bdet, bit_length, max_nnz)
+
 def tpb_diag_from_files(fcidumpfile, adetfile, sbd_data, loadname="", savename=""):
     """
     Perform TPB diagonalization from files (simplified API).
