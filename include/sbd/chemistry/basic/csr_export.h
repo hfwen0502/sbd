@@ -173,17 +173,18 @@ bool buildHamiltonianTriplets(
                     // Create full determinant from alpha and beta parts
                     std::vector<size_t> det_j = DetFromAlphaBeta(adet[ja], bdet[jb], bit_length, norb);
                     
-                    // Debug first off-diagonal call
-                    if (ia == 0 && ib == 0 && ja == 0 && jb == 1) {
-                        std::cerr << "[CSR Debug] First off-diagonal (0,0) -> (0,1):" << std::endl;
-                        std::cerr << "  det_j.size()=" << det_j.size() << std::endl;
-                        std::cerr << "  About to call Hij..." << std::endl;
+                    // Debug: print determinant values before Hij
+                    if (ia == 0 && ib == 0 && (ja == 0 || ja == 1) && (jb <= 1)) {
+                        std::cerr << "[CSR Debug] About to call Hij for (" << ia << "," << ib << ") -> (" << ja << "," << jb << "):" << std::endl;
+                        std::cerr << "  det_i[0]=" << std::hex << det_i[0] << std::dec << std::endl;
+                        std::cerr << "  det_j[0]=" << std::hex << det_j[0] << std::dec << std::endl;
+                        std::cerr << "  det_i.size()=" << det_i.size() << ", det_j.size()=" << det_j.size() << std::endl;
                     }
                     
                     // Compute matrix element using Slater-Condon rules
                     ElemT h_ij = Hij(det_i, det_j, bit_length, norb, I0, I1, I2, orbDiff);
                     
-                    if (ia == 0 && ib == 0 && ja == 0 && jb == 1) {
+                    if (ia == 0 && ib == 0 && (ja == 0 || ja == 1) && (jb <= 1)) {
                         std::cerr << "  Hij returned: " << h_ij << ", orbDiff=" << orbDiff << std::endl;
                     }
                     
