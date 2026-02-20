@@ -18,6 +18,8 @@
 
 #include "sbd/sbd.h"
 #include "sbd/chemistry/basic/csr_export.h"
+#include "sbd/chemistry/tpb/qcham.h"
+#include "sbd/chemistry/tpb/helper.h"
 
 namespace py = pybind11;
 

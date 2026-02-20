@@ -100,51 +100,21 @@ bool buildHamiltonianTriplets(
         }
     }
     
+    // Create determinant buffers once and reuse them (like makeQCham does in qcham.h line 62)
+    size_t det_size = (2*norb + bit_length - 1) / bit_length;
+    std::vector<size_t> det_i(det_size);
+    std::vector<size_t> det_j(det_size);
+    
     // Loop over all determinant pairs
     for (size_t ia = 0; ia < n_adet && !truncated; ++ia) {
         for (size_t ib = 0; ib < n_bdet && !truncated; ++ib) {
             size_t row = ia * n_bdet + ib;  // Row index in full matrix
             
-            // Create full determinant from alpha and beta parts
-            // In TPB format, alpha and beta spins are interleaved
-            std::vector<size_t> det_i = DetFromAlphaBeta(adet[ia], bdet[ib], bit_length, norb);
-            
-            // Debug: Check determinant size
-            if (det_i.empty()) {
-                throw std::runtime_error(
-                    "DetFromAlphaBeta returned empty determinant for ia=" +
-                    std::to_string(ia) + ", ib=" + std::to_string(ib)
-                );
-            }
-            
-            // Debug: Print first iteration info
-            if (ia == 0 && ib == 0) {
-                size_t expected_det_size_full = (2*norb + bit_length - 1) / bit_length;
-                std::cerr << "[CSR Debug] First determinant (ia=0, ib=0):" << std::endl;
-                std::cerr << "  det_i.size()=" << det_i.size() << std::endl;
-                std::cerr << "  expected_det_size_full=" << expected_det_size_full << std::endl;
-                std::cerr << "  adet[0].size()=" << adet[0].size() << std::endl;
-                std::cerr << "  bdet[0].size()=" << bdet[0].size() << std::endl;
-                
-                if (det_i.size() != expected_det_size_full) {
-                    throw std::runtime_error(
-                        "Determinant size mismatch after DetFromAlphaBeta: " +
-                        std::to_string(det_i.size()) + " vs expected " +
-                        std::to_string(expected_det_size_full) +
-                        " (norb=" + std::to_string(norb) +
-                        ", bit_length=" + std::to_string(bit_length) + ")"
-                    );
-                }
-                
-                std::cerr << "  About to call ZeroExcite..." << std::endl;
-            }
+            // Create full determinant from alpha and beta parts (reuse buffer)
+            DetFromAlphaBeta(adet[ia], bdet[ib], bit_length, norb, det_i);
             
             // Diagonal element
             ElemT h_diag = ZeroExcite(det_i, bit_length, norb, I0, I1, I2);
-            
-            if (ia == 0 && ib == 0) {
-                std::cerr << "  ZeroExcite returned: " << h_diag << std::endl;
-            }
             if (std::abs(h_diag) > 1e-12) {
                 MatrixTriplet<ElemT> triplet_diag;
                 triplet_diag.row = row;
@@ -170,23 +140,11 @@ bool buildHamiltonianTriplets(
                     // We'll add both (i,j) and (j,i) for full matrix
                     if (col > row) continue;
                     
-                    // Create full determinant from alpha and beta parts
-                    std::vector<size_t> det_j = DetFromAlphaBeta(adet[ja], bdet[jb], bit_length, norb);
-                    
-                    // Debug: print determinant values before Hij
-                    if (ia == 0 && ib == 0 && (ja == 0 || ja == 1) && (jb <= 1)) {
-                        std::cerr << "[CSR Debug] About to call Hij for (" << ia << "," << ib << ") -> (" << ja << "," << jb << "):" << std::endl;
-                        std::cerr << "  det_i[0]=" << std::hex << det_i[0] << std::dec << std::endl;
-                        std::cerr << "  det_j[0]=" << std::hex << det_j[0] << std::dec << std::endl;
-                        std::cerr << "  det_i.size()=" << det_i.size() << ", det_j.size()=" << det_j.size() << std::endl;
-                    }
+                    // Create full determinant from alpha and beta parts (reuse buffer)
+                    DetFromAlphaBeta(adet[ja], bdet[jb], bit_length, norb, det_j);
                     
                     // Compute matrix element using Slater-Condon rules
                     ElemT h_ij = Hij(det_i, det_j, bit_length, norb, I0, I1, I2, orbDiff);
-                    
-                    if (ia == 0 && ib == 0 && (ja == 0 || ja == 1) && (jb <= 1)) {
-                        std::cerr << "  Hij returned: " << h_ij << ", orbDiff=" << orbDiff << std::endl;
-                    }
                     
                     if (std::abs(h_ij) > 1e-12) {
                         // Add both (i,j) and (j,i) for symmetric matrix
