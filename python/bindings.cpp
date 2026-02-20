@@ -316,6 +316,14 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             sbd::SetupIntegrals(fcidump, L, N, I0, I1, I2);
             size_t norb = static_cast<size_t>(L);
             
+            // Verify integrals were properly initialized
+            if (L == 0 || I1.store.empty() || I2.store.empty()) {
+                throw std::runtime_error(
+                    "Failed to initialize integrals from FCIDUMP.\n"
+                    "Check that FCIDUMP file contains valid NORB and integral data."
+                );
+            }
+            
             // Build Hamiltonian in triplet format
             std::vector<sbd::MatrixTriplet<double>> triplets;
             
