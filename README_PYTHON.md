@@ -169,7 +169,46 @@ cudaSetDevice(myDevice);
 
 ## Usage
 
-### Basic Example
+### Simplified API (Recommended)
+
+The simplified API hides MPI initialization and provides a cleaner interface:
+
+```python
+import sbd
+
+# Initialize SBD with device and communication backend
+# Note: Currently only 'mpi' backend is supported
+sbd.init(device='gpu', comm_backend='mpi')
+
+# Configure calculation
+config = sbd.TPB_SBD()
+config.adet_comm_size = 2
+config.bdet_comm_size = 2
+config.task_comm_size = 2
+config.max_it = 100
+config.eps = 1e-4
+
+# Run calculation (no need to pass communicator!)
+results = sbd.tpb_diag_from_files(
+    sbd_data=config,
+    fcidumpfile='data/h2o/fcidump.txt',
+    adetfile='data/h2o/h2o-1em4-alpha.txt'
+)
+
+# Clean up
+sbd.finalize()
+
+print(f"Ground state energy: {results['energy']} Hartree")
+```
+
+**Communication Backend:**
+- Currently, only **MPI** (`comm_backend='mpi'`) is supported
+- MPI is the standard for distributed computing in HPC environments
+- Future versions may support additional backends (e.g., NCCL for GPU-only communication)
+
+### Legacy API (Backward Compatible)
+
+For backward compatibility, the legacy API with explicit mpi4py is still supported:
 
 ```python
 from mpi4py import MPI
