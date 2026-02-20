@@ -563,22 +563,26 @@ namespace sbd {
       std::cerr << "[Hij Debug] After remaining_bits loop: nc=" << nc << ", nd=" << nd << std::endl;
     }
 
-    std::cerr << "[Hij Debug] Determining excitation type: nc=" << nc << std::endl;
+    std::cerr << "[Hij Debug] Determining excitation type: nc=" << nc << ", nd=" << nd << std::endl;
     
-    if( nc == 0 ) {
+    if( nc == 0 && nd == 0 ) {
       std::cerr << "[Hij Debug] Calling ZeroExcite" << std::endl;
       orbDiff = static_cast<size_t>(0);
       return ZeroExcite(DetB,bit_length,L,I0,I1,I2);
-    } else if ( nc == 1 ) {
+    } else if ( nc == 1 && nd == 1 ) {
       std::cerr << "[Hij Debug] Calling OneExcite with d[0]=" << d[0] << ", c[0]=" << c[0] << std::endl;
       orbDiff = static_cast<size_t>(c[0] * L + d[0]);
       return OneExcite(DetB,bit_length,d[0],c[0],I1,I2);
-    } else if ( nc == 2 ) {
+    } else if ( nc == 2 && nd == 2 ) {
       std::cerr << "[Hij Debug] Calling TwoExcite" << std::endl;
       orbDiff = static_cast<size_t>(c[1]*L*L*L+d[1]*L*L+c[0]*L+d[0]);
       return TwoExcite(DetB,bit_length,d[0],d[1],c[0],c[1],I1,I2);
+    } else {
+      // More than 2 excitations or mismatched nc/nd - matrix element is zero
+      std::cerr << "[Hij Debug] Invalid excitation (nc=" << nc << ", nd=" << nd << "), returning 0" << std::endl;
+      orbDiff = static_cast<size_t>(0);
+      return ElemT(0.0);
     }
-    return ElemT(0.0);
   }
 
   template <typename ElemT>
