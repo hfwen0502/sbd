@@ -183,7 +183,6 @@ bool buildHamiltonianTriplets(
                                 triplet_ji.value = h_ij;
                                 thread_triplets[thread_id].push_back(triplet_ji);
                             }
-                        }
                         } else {
                             thread_zero++;
                         }
