@@ -58,7 +58,7 @@ def main():
                 adet=adet,
                 bdet=bdet,
                 bit_length=64,  # Must match the bit_length used in LoadAlphaDets
-                max_nnz=int(1e8)
+                max_nnz=int(2e8)  # Increased to 200M to avoid truncation
             )
             
             # If implemented, would use like this:
