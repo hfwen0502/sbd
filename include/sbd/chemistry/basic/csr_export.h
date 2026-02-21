@@ -178,6 +178,15 @@ bool buildHamiltonianTriplets(
         }
     } // end omp parallel
     
+    // Debug: print thread statistics
+    size_t total_from_threads = 0;
+    for (size_t t = 0; t < thread_triplets.size(); ++t) {
+        total_from_threads += thread_triplets[t].size();
+        std::cerr << "[CSR Debug] Thread " << t << " generated " << thread_triplets[t].size() << " triplets" << std::endl;
+    }
+    std::cerr << "[CSR Debug] Total triplets from all threads: " << total_from_threads << std::endl;
+    std::cerr << "[CSR Debug] Expected max for " << n_adet << "x" << n_bdet << " = " << (n_adet * n_bdet * n_adet * n_bdet) << std::endl;
+    
     // Merge thread-local triplets into main list
     for (const auto& thread_list : thread_triplets) {
         for (const auto& triplet : thread_list) {
@@ -189,6 +198,8 @@ bool buildHamiltonianTriplets(
         }
         if (truncated) break;
     }
+    
+    std::cerr << "[CSR Debug] Final triplets.size() = " << triplets.size() << ", truncated=" << truncated << std::endl;
     
     return !truncated;
 }
