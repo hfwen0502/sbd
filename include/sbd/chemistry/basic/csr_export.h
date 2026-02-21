@@ -104,6 +104,11 @@ bool buildHamiltonianTriplets(
     // Each thread needs its own determinant buffers and local triplet list
     std::vector<std::vector<MatrixTriplet<ElemT>>> thread_triplets;
     
+    // Debug counters
+    size_t total_pairs_checked = 0;
+    size_t nonzero_count = 0;
+    size_t zero_count = 0;
+    
 #pragma omp parallel
     {
         int num_threads = omp_get_num_threads();
@@ -119,6 +124,11 @@ bool buildHamiltonianTriplets(
         auto det_i = DetFromAlphaBeta(adet[0], bdet[0], bit_length, norb);
         auto det_j = DetFromAlphaBeta(adet[0], bdet[0], bit_length, norb);
         size_t orbDiff_local = 0;
+        
+        // Thread-local counters
+        size_t thread_pairs = 0;
+        size_t thread_nonzero = 0;
+        size_t thread_zero = 0;
         
         // Parallel loop over rows
 #pragma omp for schedule(dynamic, 1)
@@ -156,7 +166,9 @@ bool buildHamiltonianTriplets(
                         // Compute matrix element using Slater-Condon rules
                         ElemT h_ij = Hij(det_i, det_j, bit_length, norb, I0, I1, I2, orbDiff_local);
                         
+                        thread_pairs++;
                         if (std::abs(h_ij) > 1e-12) {
+                            thread_nonzero++;
                             // Add both (i,j) and (j,i) for symmetric matrix
                             MatrixTriplet<ElemT> triplet_ij;
                             triplet_ij.row = row;
@@ -172,11 +184,27 @@ bool buildHamiltonianTriplets(
                                 thread_triplets[thread_id].push_back(triplet_ji);
                             }
                         }
+                        } else {
+                            thread_zero++;
+                        }
                     }
                 }
             }
         }
+        
+        // Accumulate counters
+#pragma omp critical
+        {
+            total_pairs_checked += thread_pairs;
+            nonzero_count += thread_nonzero;
+            zero_count += thread_zero;
+        }
     } // end omp parallel
+    
+    std::cerr << "[CSR Debug] Pairs checked: " << total_pairs_checked << std::endl;
+    std::cerr << "[CSR Debug] Non-zero elements: " << nonzero_count << std::endl;
+    std::cerr << "[CSR Debug] Zero elements: " << zero_count << std::endl;
+    std::cerr << "[CSR Debug] Sparsity: " << (100.0 * nonzero_count / total_pairs_checked) << "%" << std::endl;
     
     // Debug: print thread statistics
     size_t total_from_threads = 0;
