@@ -289,7 +289,7 @@ mpirun -np 8 python h2o_simplified.py \
 
 **Advanced Usage with All Options:**
 ```bash
-mpirun -np 8 python h2o_cpu_gpu.py \
+mpirun -np 8 python h2o_simplified.py \
     --device gpu \
     --method 0 \
     --max_it 100 \
@@ -327,7 +327,7 @@ All TPB_SBD parameters are configurable via command-line:
   - `--task_comm_size N` - Task communicator size
   - `--adet_comm_size N` - Alpha determinant communicator size
   - `--bdet_comm_size N` - Beta determinant communicator size
-  - `--h_comm_size N` - Helper communicator size
+  - `--task_comm_size N` - column indices of the Hamiltonian communicator size
 
 - **Diagonalization Method:**
   - `--method {0,1,2,3}` - 0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham
