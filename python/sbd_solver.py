@@ -100,6 +100,10 @@ def solve_sci(
         # Set up SBD configuration
         sbd_data = _create_sbd_config(sbd_config)
         
+        # Set up file to dump wavefunction in matrix form
+        wf_dump_file = sbd_dir / "wavefunction.txt"
+        sbd_data.dump_matrix_form_wf = str(wf_dump_file)
+        
         # Load FCIDUMP
         fcidump = sbd.LoadFCIDump(str(fcidump_path))
         
@@ -133,29 +137,47 @@ def solve_sci(
         co_strings_a = _sbd_dets_to_ci_strings(co_adet, norb)
         co_strings_b = _sbd_dets_to_ci_strings(co_bdet, norb)
         
-        # Create a simple wavefunction representation
-        # Note: SBD doesn't return full CI coefficients, so we approximate
-        # with uniform weights for carryover determinants
-        n_a = len(co_strings_a)
-        n_b = len(co_strings_b)
+        # Read wavefunction coefficients from dumped file
+        mpi_comm.Barrier()  # Ensure file is written
+        amplitudes = None
+        if mpi_rank == 0 and wf_dump_file.exists():
+            amplitudes = _read_wavefunction_matrix(wf_dump_file)
         
-        if n_a > 0 and n_b > 0:
-            # Create approximate amplitudes (uniform distribution)
+        # Broadcast amplitudes to all ranks
+        amplitudes = mpi_comm.bcast(amplitudes, root=0)
+        
+        # Create SCIState with actual wavefunction
+        if amplitudes is not None and amplitudes.shape == (len(co_strings_a), len(co_strings_b)):
+            sci_state = SCIState(
+                amplitudes=amplitudes,
+                ci_strs_a=co_strings_a,
+                ci_strs_b=co_strings_b,
+                norb=norb,
+                nelec=nelec
+            )
+        elif len(co_strings_a) > 0 and len(co_strings_b) > 0:
+            # Fallback: use carryover dets with uniform amplitudes
+            n_a = len(co_strings_a)
+            n_b = len(co_strings_b)
             amplitudes = np.ones((n_a, n_b)) / np.sqrt(n_a * n_b)
             sci_state = SCIState(
                 amplitudes=amplitudes,
                 ci_strs_a=co_strings_a,
-                ci_strs_b=co_strings_b
+                ci_strs_b=co_strings_b,
+                norb=norb,
+                nelec=nelec
             )
         else:
-            # Fallback: use input strings with uniform amplitudes
+            # Last resort: use input strings with uniform amplitudes
             n_a = len(strings_a)
             n_b = len(strings_b)
             amplitudes = np.ones((n_a, n_b)) / np.sqrt(n_a * n_b)
             sci_state = SCIState(
                 amplitudes=amplitudes,
                 ci_strs_a=strings_a,
-                ci_strs_b=strings_b
+                ci_strs_b=strings_b,
+                norb=norb,
+                nelec=nelec
             )
         
         return SCIResult(energy, sci_state, orbital_occupancies=occupancies)
@@ -266,6 +288,42 @@ def _sbd_dets_to_ci_strings(
         ci_strings.append(ci_str)
     
     return np.array(ci_strings, dtype=np.int64)
+
+
+def _read_wavefunction_matrix(filepath: Path) -> np.ndarray | None:
+    """
+    Read wavefunction coefficients from SBD matrix form dump file.
+    
+    The file format is:
+    n_alpha n_beta
+    coeff_00 coeff_01 ... coeff_0(n_beta-1)
+    coeff_10 coeff_11 ... coeff_1(n_beta-1)
+    ...
+    coeff_(n_alpha-1)0 ... coeff_(n_alpha-1)(n_beta-1)
+    
+    Args:
+        filepath: Path to wavefunction dump file
+        
+    Returns:
+        2D array of wavefunction coefficients (n_alpha x n_beta), or None if file doesn't exist
+    """
+    try:
+        with open(filepath, 'r') as f:
+            # Read dimensions
+            first_line = f.readline().strip().split()
+            n_alpha = int(first_line[0])
+            n_beta = int(first_line[1])
+            
+            # Read coefficients
+            amplitudes = np.zeros((n_alpha, n_beta))
+            for i in range(n_alpha):
+                line = f.readline().strip().split()
+                for j in range(n_beta):
+                    amplitudes[i, j] = float(line[j])
+            
+            return amplitudes
+    except (FileNotFoundError, IOError, ValueError, IndexError):
+        return None
 
 
 def _create_sbd_config(config_dict: dict | None = None) -> sbd.TPB_SBD:
