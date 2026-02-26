@@ -47,7 +47,10 @@ def _ensure_sbd_initialized():
     """Ensure SBD is initialized, initialize with auto-detect if not."""
     global sbd, _selected_backend, _backend_info
     
-    if not _initialized:
+    # Import the global state from __init__.py
+    import sbd as sbd_module
+    
+    if not sbd_module._initialized:
         # Auto-initialize with device from environment or auto-detect
         device = os.environ.get('SBD_BACKEND', 'auto').lower()
         if device not in ['cpu', 'gpu', 'auto']:
@@ -57,14 +60,16 @@ def _ensure_sbd_initialized():
             sbd_init(device=device, comm_backend='mpi')
         except RuntimeError as e:
             # Already initialized in another way, that's ok
-            pass
+            if "already called" not in str(e):
+                raise
     
     # Get the device module that was initialized
-    from . import _device_module as dm, _initialized as init_flag
-    if init_flag and dm is not None:
-        sbd = dm
-        # Determine which backend was loaded
-        if 'gpu' in str(type(dm)):
+    if sbd_module._initialized and sbd_module._device_module is not None:
+        sbd = sbd_module._device_module
+        
+        # Determine which backend was loaded by checking the module name
+        module_name = sbd_module._device_module.__name__
+        if 'gpu' in module_name:
             _selected_backend = 'gpu'
         else:
             _selected_backend = 'cpu'
@@ -72,6 +77,8 @@ def _ensure_sbd_initialized():
         _backend_info['selected'] = _selected_backend
         _backend_info['cpu_available'] = True  # Assume available if we got here
         _backend_info['gpu_available'] = _selected_backend == 'gpu'
+    else:
+        raise RuntimeError("SBD initialization failed - no device module available")
     
     return sbd
 
