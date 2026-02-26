@@ -3,8 +3,19 @@ Test SBD solver with N2 molecule using qiskit-addon-sqd workflow.
 
 This test mirrors the test_n2.py from qiskit-addon-dice-solver but uses
 the SBD solver instead of DICE.
+
+Usage:
+    # Auto-detect device (default)
+    mpirun -np 4 python test_n2_sbd.py
+    
+    # Force CPU
+    mpirun -np 4 python test_n2_sbd.py --device cpu
+    
+    # Force GPU
+    mpirun -np 4 python test_n2_sbd.py --device gpu
 """
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -16,14 +27,32 @@ from mpi4py import MPI
 # Add parent directory to path to import sbd_solver
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from sbd_solver import solve_sci_batch
+from device_config import DeviceConfig, print_device_info
 
 from qiskit_addon_sqd.counts import generate_bit_array_uniform
 from qiskit_addon_sqd.fermion import SCIResult, diagonalize_fermionic_hamiltonian
 from functools import partial
 
 
-def test_n2_with_sbd():
-    """Test N2 molecule diagonalization using SBD solver."""
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Test SBD solver with N2 molecule',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('--device', choices=['auto', 'cpu', 'gpu'], default='auto',
+                       help='Device to use (auto=detect, cpu=force CPU, gpu=force GPU)')
+    parser.add_argument('--max-memory-gb', type=int, default=-1,
+                       help='Maximum GPU memory in GB (-1=auto, GPU only)')
+    return parser.parse_args()
+
+
+def test_n2_with_sbd(device_config=None):
+    """Test N2 molecule diagonalization using SBD solver.
+    
+    Args:
+        device_config: DeviceConfig object for CPU/GPU selection. If None, uses auto-detect.
+    """
     
     # Specify molecule properties
     num_orbitals = 16
@@ -34,11 +63,6 @@ def test_n2_with_sbd():
     # Use the same molecule file as DICE test if available
     test_dir = Path(__file__).parent
     molecule_path = test_dir / "molecules" / "n2_fci.txt"
-    
-    # If molecule file doesn't exist, try to find it in qiskit-addon-dice-solver
-    if not molecule_path.exists():
-        dice_test_dir = Path(__file__).parent.parent.parent.parent / "qiskit-addon-dice-solver" / "test"
-        molecule_path = dice_test_dir / "molecules" / "n2_fci.txt"
     
     if not molecule_path.exists():
         print(f"ERROR: Molecule file not found at {molecule_path}")
@@ -70,6 +94,10 @@ def test_n2_with_sbd():
             print(f"\t\tEnergy: {result.energy + nuclear_repulsion_energy:.8f}")
             print(f"\t\tSubspace dimension: {np.prod(result.sci_state.amplitudes.shape)}")
     
+    # Configure device (CPU/GPU)
+    if device_config is None:
+        device_config = DeviceConfig.auto()
+    
     # Configure SBD solver
     sbd_config = {
         "method": 0,        # Davidson method
@@ -81,8 +109,15 @@ def test_n2_with_sbd():
         "threshold": 1e-4,
     }
     
+    # Apply device configuration to SBD config
+    # Note: This adds GPU-specific parameters if using GPU
+    if device_config.use_gpu:
+        sbd_config["use_precalculated_dets"] = device_config.use_precalculated_dets
+        sbd_config["max_memory_gb_for_determinants"] = device_config.max_memory_gb
+    
     # Create configured SBD solver
     print("\nConfiguring SBD solver...")
+    print(f"Device: {device_config}")
     print(f"SBD config: {sbd_config}")
     sbd_solver = partial(
         solve_sci_batch,
@@ -144,6 +179,9 @@ def test_n2_with_sbd():
 
 
 if __name__ == "__main__":
+    # Parse command line arguments
+    args = parse_args()
+    
     print("="*60)
     print("Testing SBD Solver with N2 Molecule")
     print("="*60)
@@ -158,9 +196,25 @@ if __name__ == "__main__":
         print(f"MPI Size: {size}")
         print(f"MPI Rank: {rank}")
         print()
+        
+        # Print device information
+        print_device_info()
+        print()
+    
+    # Configure device based on command line argument
+    if args.device == 'auto':
+        device_config = DeviceConfig.auto(max_memory_gb=args.max_memory_gb)
+    elif args.device == 'cpu':
+        device_config = DeviceConfig.cpu()
+    else:  # gpu
+        device_config = DeviceConfig.gpu(max_memory_gb=args.max_memory_gb)
+    
+    if rank == 0:
+        print(f"Selected device configuration: {device_config}")
+        print()
     
     try:
-        result = test_n2_with_sbd()
+        result = test_n2_with_sbd(device_config=device_config)
         if rank == 0:
             print("\nTest completed successfully!")
     except Exception as e:
