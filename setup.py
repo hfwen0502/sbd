@@ -212,6 +212,7 @@ if build_cpu:
             libraries.append('omp')
         
         cpu_compile_args = [
+            '-DSBD_TRADMODE',
             '-std=c++17',
             '-Xpreprocessor', '-fopenmp',
             '-O3',
@@ -224,6 +225,7 @@ if build_cpu:
     else:
         # Linux: standard OpenMP
         cpu_compile_args = [
+            '-DSBD_TRADMODE',
             '-std=c++17',
             '-fopenmp',
             '-O3',
@@ -265,6 +267,7 @@ if build_gpu:
         language='c++',
         extra_compile_args=[
             "-DSBD_THRUST",
+            "-DSBD_TRADMODE"
             "-mp",
             "-cuda",
             "-fast",
