@@ -25,12 +25,33 @@ except ImportError:
         "qiskit-addon-sqd is required. Install it with: pip install qiskit-addon-sqd"
     )
 
-# Import SBD Python bindings
+# Import SBD Python bindings - use backend modules directly to avoid init() requirement
 try:
-    import sbd
-except ImportError:
+    # Try to import both backends
+    try:
+        from . import _core_cpu as sbd_cpu
+    except ImportError:
+        sbd_cpu = None
+    
+    try:
+        from . import _core_gpu as sbd_gpu
+    except ImportError:
+        sbd_gpu = None
+    
+    # Select backend based on environment or default to CPU
+    import os
+    backend_name = os.environ.get('SBD_BACKEND', 'cpu').lower()
+    
+    if backend_name == 'gpu' and sbd_gpu is not None:
+        sbd = sbd_gpu
+    elif sbd_cpu is not None:
+        sbd = sbd_cpu
+    else:
+        raise ImportError("No SBD backend available (neither CPU nor GPU)")
+        
+except ImportError as e:
     raise ImportError(
-        "SBD Python bindings not found. Please install SBD with Python support."
+        f"SBD Python bindings not found. Please install SBD with Python support. Error: {e}"
     )
 
 
