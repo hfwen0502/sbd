@@ -315,12 +315,12 @@ def _read_wavefunction_matrix(filepath: Path) -> np.ndarray | None:
     """
     Read wavefunction coefficients from SBD matrix form dump file.
     
-    The file format is:
-    n_alpha n_beta
-    coeff_00 coeff_01 ... coeff_0(n_beta-1)
-    coeff_10 coeff_11 ... coeff_1(n_beta-1)
+    The actual file format from SBD is:
+    coefficient # ia: alpha_bitstring ib: beta_bitstring
+    coefficient # ia: alpha_bitstring ib: beta_bitstring
     ...
-    coeff_(n_alpha-1)0 ... coeff_(n_alpha-1)(n_beta-1)
+    
+    We need to parse this and reconstruct the matrix.
     
     Args:
         filepath: Path to wavefunction dump file
@@ -330,20 +330,50 @@ def _read_wavefunction_matrix(filepath: Path) -> np.ndarray | None:
     """
     try:
         with open(filepath, 'r') as f:
-            # Read dimensions
-            first_line = f.readline().strip().split()
-            n_alpha = int(first_line[0])
-            n_beta = int(first_line[1])
+            lines = f.readlines()
+        
+        if not lines:
+            return None
+        
+        # Parse all coefficients and their indices
+        coeffs = []
+        for line in lines:
+            parts = line.strip().split('#')
+            if len(parts) < 2:
+                continue
             
-            # Read coefficients
-            amplitudes = np.zeros((n_alpha, n_beta))
-            for i in range(n_alpha):
-                line = f.readline().strip().split()
-                for j in range(n_beta):
-                    amplitudes[i, j] = float(line[j])
+            # Extract coefficient
+            coeff = float(parts[0].strip())
             
-            return amplitudes
-    except (FileNotFoundError, IOError, ValueError, IndexError):
+            # Extract indices: "ia: bitstring ib: bitstring"
+            indices_part = parts[1].strip()
+            ia_part, ib_part = indices_part.split('ib:')
+            
+            # Extract ia index
+            ia = int(ia_part.split(':')[0].strip())
+            
+            # Extract ib index
+            ib = int(ib_part.split(':')[0].strip())
+            
+            coeffs.append((ia, ib, coeff))
+        
+        if not coeffs:
+            return None
+        
+        # Determine matrix dimensions
+        max_ia = max(c[0] for c in coeffs)
+        max_ib = max(c[1] for c in coeffs)
+        n_alpha = max_ia + 1
+        n_beta = max_ib + 1
+        
+        # Build matrix
+        amplitudes = np.zeros((n_alpha, n_beta))
+        for ia, ib, coeff in coeffs:
+            amplitudes[ia, ib] = coeff
+        
+        return amplitudes
+        
+    except (FileNotFoundError, IOError, ValueError, IndexError) as e:
         return None
 
 

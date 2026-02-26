@@ -24,10 +24,9 @@ import numpy as np
 from pyscf import ao2mo, tools
 from mpi4py import MPI
 
-# Add parent directory to path to import sbd_solver
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from sbd_solver import solve_sci_batch
-from device_config import DeviceConfig, print_device_info
+# Import from sbd package
+from sbd.sbd_solver import solve_sci_batch
+from sbd.device_config import DeviceConfig, print_device_info
 
 from qiskit_addon_sqd.counts import generate_bit_array_uniform
 from qiskit_addon_sqd.fermion import SCIResult, diagonalize_fermionic_hamiltonian
@@ -105,8 +104,8 @@ def test_n2_with_sbd(device_config=None):
         "max_it": 100,      # Max iterations
         "max_nb": 50,       # Max basis vectors
         "do_rdm": 0,        # Only compute density
-        "carryover_type": 1,
-        "threshold": 1e-4,
+        #"carryover_type": 1,
+        "threshold": 1e-8,
     }
     
     # Apply device configuration to SBD config

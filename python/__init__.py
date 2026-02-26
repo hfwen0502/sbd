@@ -703,6 +703,9 @@ def print_info():
     print("  sbd.finalize()")
     print("="*70)
 
+# Import sbd_solver module for qiskit-addon-sqd compatibility
+from . import sbd_solver
+
 __all__ = [
     # Initialization
     'init',
@@ -740,6 +743,9 @@ __all__ = [
     # Utilities
     'available_backends',
     'print_info',
+    
+    # SBD Solver (qiskit-addon-sqd compatible)
+    'sbd_solver',
     
     # Version
     '__version__',
