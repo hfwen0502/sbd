@@ -99,9 +99,9 @@ def test_n2_with_sbd(device_config=None):
         "eps": 1e-8,        # Convergence tolerance
         "max_it": 100,      # Max iterations
         "max_nb": 50,       # Max basis vectors
-        "do_rdm": 0,        # Only compute density
-        #"carryover_type": 1,
-        "threshold": 1e-8,
+        "do_rdm": 1,        # Compute full RDM (needed for proper energy calculation)
+        "carryover_type": 1,
+        "threshold": 1e-4,  # Carryover threshold (less aggressive than 1e-8)
     }
     
     # Apply device configuration to SBD config
