@@ -60,7 +60,7 @@ def parse_args():
                        help='Number of samples per batch')
     parser.add_argument('--num_batches', type=int, default=5,
                        help='Number of batches')
-    parser.add_argument('--max_iterations', type=int, default=5,
+    parser.add_argument('--max_iterations', type=int, default=2,
                        help='Maximum SQD iterations')
     
     # SBD solver parameters
@@ -403,13 +403,13 @@ if __name__ == "__main__":
         print()
     
     try:
-        # Only rank 0 orchestrates the SQD calculation
-        # Other ranks participate through MPI calls in the SBD solver
+        # Get molecule data (all ranks need this for MPI operations)
+        molecule_data = get_molecule_data(args)
+        
+        # All ranks must call test_molecule_with_sbd because SBD uses MPI internally
+        result = test_molecule_with_sbd(molecule_data, args, device_config=device_config)
+        
         if rank == 0:
-            # Get molecule data
-            molecule_data = get_molecule_data(args)
-            
-            result = test_molecule_with_sbd(molecule_data, args, device_config=device_config)
             print("\nTest completed successfully!")
     except Exception as e:
         if rank == 0:
