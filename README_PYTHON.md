@@ -49,6 +49,74 @@ The Python bindings expose the **Two-Particle Basis (TPB)** method, which is spe
 
 For non-TPB methods, please use the C++ CLI applications directly.
 
+## Integration with qiskit-addon-sqd
+
+SBD can be integrated with the [qiskit-addon-sqd](https://github.com/Qiskit/qiskit-addon-sqd) framework for quantum chemistry calculations.
+
+**Note**: To use SBD with qiskit-addon-sqd, you need the MPI-enabled fork at [https://github.com/hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd). The official Qiskit version does not yet support MPI-aware solvers. We plan to contribute these enhancements upstream.
+
+This integration enables:
+
+- **Automatic MPI Detection**: No manual MPI initialization required
+- **Multi-Node Multi-GPU Support**: Efficient distributed computing across clusters
+- **Zero File I/O Overhead**: Direct in-memory communication between SQD and SBD
+- **Seamless Integration**: Works with existing SQD workflows
+
+### Installation with MPI Support
+
+To use SBD with qiskit-addon-sqd's MPI-enabled version:
+
+```bash
+# Install MPI-enabled qiskit-addon-sqd fork
+git clone https://github.com/hfwen0502/qiskit-addon-sqd.git
+cd qiskit-addon-sqd
+pip install -e .
+
+# Install SBD with Python bindings
+cd /path/to/sbd
+pip install -e . --no-build-isolation
+```
+
+**Note**: The fork at [https://github.com/hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) includes MPI enhancements with automatic detection. These changes add a `distributed.py` module and modify `fermion.py` to coordinate MPI ranks efficiently. We plan to contribute these changes back to the official Qiskit repository.
+
+### Example: SQD with SBD Solver
+
+See `python/examples/sqd_integration_sbd.py` for a complete example:
+
+```bash
+# Run with 4 MPI processes (2×2 MPI decomposition)
+mpirun -n 4 python python/examples/sqd_integration_sbd.py \
+    --fcidump python/examples/molecules/n2_fci.txt \
+    --samples 1000 \
+    --samples_per_batch 200 \
+    --num_batches 5 \
+    --max_iterations 5 \
+    --method 1 \
+    --eps 1e-3 \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2
+```
+
+### Comparison with qiskit-addon-dice-solver
+
+| Feature | qiskit-addon-dice-solver | SBD Integration |
+|---------|-------------------------|-----------------|
+| **Solver** | DICE (external process) | SBD (in-process) |
+| **GPU Support** | No | Yes (CUDA) |
+| **MPI** | Spawns MPI processes | Direct MPI integration |
+| **File I/O** | Temp files for communication | In-memory (zero overhead) |
+| **Multi-Node** | Limited | Full support |
+| **Performance** | Good for CPU | Excellent for GPU clusters |
+
+### Key Advantages
+
+1. **No File I/O**: SBD integrates directly with SQD's Python API, eliminating temporary file overhead
+2. **GPU Acceleration**: Native CUDA support for large-scale calculations
+3. **Efficient MPI**: All ranks participate in collective operations, no redundant work
+4. **Automatic Detection**: MPI environment detected automatically at import time
+
+For more details, see `python/examples/README.md` and the example scripts.
+
 ## Installation
 
 ### Prerequisites
@@ -80,6 +148,11 @@ export BLAS_LIBS=openblas  # or mkl_rt, blas,lapack, etc.
 
 # GPU configuration (optional)
 export NVHPC_HOME=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/compilers
+export PATH=$NVHPC_HOME/bin:$PATH
+export CC=nvc
+export CXX=nvc++
+export CFLAGS=""
+export CXXFLAGS=""
 ```
 
 ### Installation Methods
@@ -205,36 +278,6 @@ print(f"Ground state energy: {results['energy']} Hartree")
 - Currently, only **MPI** (`comm_backend='mpi'`) is supported
 - MPI is the standard for distributed computing in HPC environments
 - Future versions may support additional backends (e.g., NCCL for GPU-only communication)
-
-### Legacy API (Backward Compatible)
-
-For backward compatibility, the legacy API with explicit mpi4py is still supported:
-
-```python
-from mpi4py import MPI
-import sbd
-
-# Get MPI communicator
-comm = MPI.COMM_WORLD
-
-# Configure calculation
-config = sbd.TPB_SBD()
-config.max_it = 100
-config.eps = 1e-6
-config.bit_length = 20
-
-# Run diagonalization
-results = sbd.tpb_diag_from_files(
-    comm=comm,
-    sbd_data=config,
-    fcidumpfile="fcidump.txt",
-    adetfile="alphadets.txt"
-)
-
-# Access results
-energy = results['energy']
-density = results['density']
-```
 
 ### Backend Selection
 
