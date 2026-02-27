@@ -10,17 +10,17 @@ Examples demonstrating SBD's capabilities for quantum chemistry calculations.
 
 ## Examples
 
-### 1. h2o_simplified.py - Basic H2O Calculation
+### 1. chemistry_simplified.py - Basic Chemistry Calculation
 
-Demonstrates simplified API for H2O molecule calculations.
+Demonstrates simplified API for quantum chemistry calculations with any molecule.
 
 **Quick Start:**
 ```bash
 # CPU backend
-mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_simplified.py --device cpu
+mpirun -np 8 -x OMP_NUM_THREADS=4 python chemistry_simplified.py --device cpu
 
 # GPU backend
-mpirun -np 8 python h2o_simplified.py --device gpu
+mpirun -np 8 python chemistry_simplified.py --device gpu
 ```
 
 **Key Options:**

@@ -334,13 +334,13 @@ config.task_comm_size = 2  # Task parallelization
 
 ## Examples
 
-### H2O Calculation (Simplified API)
+### Chemistry Calculation (Simplified API)
 
-Located in `python/examples/h2o_simplified.py` - Demonstrates the new simplified API where MPI is handled internally.
+Located in `python/examples/chemistry_simplified.py` - Demonstrates the new simplified API where MPI is handled internally. Accepts any molecule's FCIDUMP and determinant files.
 
 **Basic CPU Backend:**
 ```bash
-mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_simplified.py \
+mpirun -np 8 -x OMP_NUM_THREADS=4 python chemistry_simplified.py \
     --device cpu \
     --adet_comm_size 2 \
     --bdet_comm_size 2 \
@@ -351,7 +351,7 @@ mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_simplified.py \
 
 **Basic GPU Backend:**
 ```bash
-mpirun -np 8 python h2o_simplified.py \
+mpirun -np 8 python chemistry_simplified.py \
     --device gpu \
     --adet_comm_size 2 \
     --bdet_comm_size 2 \
