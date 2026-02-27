@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 """
-H2O calculation with simplified SBD API (no mpi4py needed!)
+Quantum chemistry calculation with simplified SBD API (no mpi4py needed!)
 
 This example demonstrates the new simplified API where MPI is handled internally.
+Input files (FCIDUMP and determinants) can be specified for any molecule.
 
 Usage:
     # CPU backend
-    mpirun -np 8 -x OMP_NUM_THREADS=4 python h2o_simplified.py --device cpu
+    mpirun -np 8 -x OMP_NUM_THREADS=4 python chemistry_simplified.py --device cpu
     
     # GPU backend
-    mpirun -np 8 python h2o_simplified.py --device gpu
+    mpirun -np 8 python chemistry_simplified.py --device gpu
     
     # Auto-detect (default)
-    mpirun -np 8 python h2o_simplified.py
+    mpirun -np 8 python chemistry_simplified.py
+
+    # N2 molecule example
+    mpirun -np 8 python chemistry_simplified.py \
+        --fcidump ../../data/n2/fcidump.txt \
+        --adetfile ../../data/n2/1em3-alpha.txt
+
+    # H2O molecule example
+    mpirun -np 8 python chemistry_simplified.py \
+        --fcidump ../../data/h2o/fcidump.txt \
+        --adetfile ../../data/h2o/h2o-1em3-alpha.txt
 """
 
 import argparse
@@ -21,7 +32,7 @@ import sys
 def parse_args():
     """Parse command line arguments for all TPB_SBD parameters"""
     parser = argparse.ArgumentParser(
-        description='H2O calculation with CPU/GPU support',
+        description='Quantum chemistry calculation with CPU/GPU support',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
@@ -110,7 +121,7 @@ def main():
     
     if rank == 0:
         print("="*70)
-        print("SBD Simplified API - H2O Calculation")
+        print("SBD Simplified API - Chemistry Calculation")
         print("="*70)
         sbd.print_info()
         print()
