@@ -230,13 +230,14 @@ def test_molecule_with_sbd(molecule_data, args, device_config=None):
     # Generate or load samples
     if args.adetfile:
         # Load determinants from file
-        print(f"Loading determinants from: {args.adetfile}")
+        print(f"Loading determinants from {args.adetfile}...")
         bit_array = load_determinants_from_file(args.adetfile, args.bdetfile, num_orbitals)
         print(f"Loaded {len(bit_array)} determinants")
     else:
         # Generate random samples
         print(f"Generating {args.samples} random samples...")
         bit_array = generate_bit_array_uniform(args.samples, num_orbitals * 2, rand_seed=rand_seed)
+    print()
     
     # Run SQD
     result_history = []
