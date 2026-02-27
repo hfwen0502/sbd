@@ -152,20 +152,18 @@ def solve_sci(
     Returns:
         The diagonalization result as SCIResult.
     """
-    n_alpha, n_beta = nelec
-    
     # Select backend based on device configuration
     if device_config is not None:
         backend = _get_backend_module(device_config.use_gpu)
     else:
         backend = sbd  # Use default backend
-    
+
     # Set up MPI communicator
     if mpi_comm is None:
         mpi_comm = MPI.COMM_WORLD
-    
+
     mpi_rank = mpi_comm.Get_rank()
-    
+
     # Set up temp directory - only rank 0 creates it, then broadcasts to all ranks
     temp_dir = temp_dir or tempfile.gettempdir()
     if mpi_rank == 0:
@@ -173,11 +171,11 @@ def solve_sci(
         sbd_dir_str = str(sbd_dir)
     else:
         sbd_dir_str = None
-    
+
     # Broadcast the directory path to all ranks
     sbd_dir_str = mpi_comm.bcast(sbd_dir_str, root=0)
     sbd_dir = Path(sbd_dir_str)
-    
+
     try:
         # Write FCIDUMP file
         fcidump_path = sbd_dir / "fcidump.txt"
@@ -189,104 +187,156 @@ def solve_sci(
                 norb,
                 nelec,
             )
-        
+
         # Wait for rank 0 to finish writing FCIDUMP file
         mpi_comm.Barrier()
-        
-        # Convert CI strings to SBD determinant format
-        strings_a, strings_b = ci_strings
-        adet = _ci_strings_to_sbd_dets(strings_a, norb, backend)
-        bdet = _ci_strings_to_sbd_dets(strings_b, norb, backend)
-        
-        # Set up SBD configuration
-        sbd_data = _create_sbd_config(sbd_config, backend, device_config)
-        
-        # Set up file to dump wavefunction in matrix form
-        wf_dump_file = sbd_dir / "wavefunction.txt"
-        sbd_data.dump_matrix_form_wf = str(wf_dump_file)
-        
-        # Load FCIDUMP
+
+        # Load FCIDUMP once and pass to inner function
         fcidump = backend.LoadFCIDump(str(fcidump_path))
-        
-        # Run SBD diagonalization
-        results = backend.tpb_diag(
-            mpi_comm,
-            sbd_data,
-            fcidump,
-            adet,
-            bdet,
-            loadname="",
-            savename=""
+
+        return _solve_sci_core(
+            ci_strings,
+            norb=norb,
+            nelec=nelec,
+            spin_sq=spin_sq,
+            mpi_comm=mpi_comm,
+            mpi_rank=mpi_rank,
+            sbd_config=sbd_config,
+            sbd_dir=sbd_dir,
+            backend=backend,
+            fcidump=fcidump,
+            device_config=device_config,
         )
-        
-        # Extract results
-        energy = results["energy"]
-        density = np.array(results["density"])
-        
-        # Convert density to orbital occupancies
-        # SBD returns density as [alpha_0, beta_0, alpha_1, beta_1, ...]
-        # We need to separate into (alpha_occs, beta_occs)
-        occupancies_a = density[::2]  # Even indices
-        occupancies_b = density[1::2]  # Odd indices
-        occupancies = (occupancies_a, occupancies_b)
-        
-        # Get carryover determinants for wavefunction reconstruction
-        co_adet = results["carryover_adet"]
-        co_bdet = results["carryover_bdet"]
-        
-        # Convert carryover determinants back to CI strings
-        co_strings_a = _sbd_dets_to_ci_strings(co_adet, norb, backend)
-        co_strings_b = _sbd_dets_to_ci_strings(co_bdet, norb, backend)
-        
-        # Read wavefunction coefficients from dumped file
-        mpi_comm.Barrier()  # Ensure file is written
-        amplitudes = None
-        if mpi_rank == 0 and wf_dump_file.exists():
-            amplitudes = _read_wavefunction_matrix(wf_dump_file)
-        
-        # Broadcast amplitudes to all ranks
-        amplitudes = mpi_comm.bcast(amplitudes, root=0)
-        
-        # Create SCIState with actual wavefunction
-        if amplitudes is not None and amplitudes.shape == (len(co_strings_a), len(co_strings_b)):
-            sci_state = SCIState(
-                amplitudes=amplitudes,
-                ci_strs_a=co_strings_a,
-                ci_strs_b=co_strings_b,
-                norb=norb,
-                nelec=nelec
-            )
-        elif len(co_strings_a) > 0 and len(co_strings_b) > 0:
-            # Fallback: use carryover dets with uniform amplitudes
-            n_a = len(co_strings_a)
-            n_b = len(co_strings_b)
-            amplitudes = np.ones((n_a, n_b)) / np.sqrt(n_a * n_b)
-            sci_state = SCIState(
-                amplitudes=amplitudes,
-                ci_strs_a=co_strings_a,
-                ci_strs_b=co_strings_b,
-                norb=norb,
-                nelec=nelec
-            )
-        else:
-            # Last resort: use input strings with uniform amplitudes
-            n_a = len(strings_a)
-            n_b = len(strings_b)
-            amplitudes = np.ones((n_a, n_b)) / np.sqrt(n_a * n_b)
-            sci_state = SCIState(
-                amplitudes=amplitudes,
-                ci_strs_a=strings_a,
-                ci_strs_b=strings_b,
-                norb=norb,
-                nelec=nelec
-            )
-        
-        return SCIResult(energy, sci_state, orbital_occupancies=occupancies)
-    
+
     finally:
         # Clean up temp directory
         if clean_temp_dir and mpi_rank == 0:
             shutil.rmtree(sbd_dir, ignore_errors=True)
+
+
+def _solve_sci_core(
+    ci_strings: tuple[np.ndarray, np.ndarray],
+    *,
+    norb: int,
+    nelec: tuple[int, int],
+    spin_sq: float | None,
+    mpi_comm,
+    mpi_rank: int,
+    sbd_config: dict | None,
+    sbd_dir: Path,
+    backend,
+    fcidump,
+    device_config=None,
+) -> SCIResult:
+    """
+    Inner diagonalization kernel that operates on a pre-loaded FCIDUMP object.
+
+    This is separated from solve_sci so that solve_sci_batch can write and load
+    the FCIDUMP only once and reuse it across all batches, avoiding redundant I/O.
+    """
+    n_alpha, n_beta = nelec
+
+    # Convert CI strings to SBD determinant format
+    strings_a, strings_b = ci_strings
+    adet = _ci_strings_to_sbd_dets(strings_a, norb, backend)
+    bdet = _ci_strings_to_sbd_dets(strings_b, norb, backend)
+
+    # Set up SBD configuration
+    sbd_data = _create_sbd_config(sbd_config, backend, device_config)
+
+    # Set up file to dump wavefunction in matrix form
+    # Use .bin extension to trigger SBD's fast binary write path
+    # (SaveMatrixFormWF in restart.h checks extension: .bin → raw doubles, .txt → slow text)
+    wf_dump_file = sbd_dir / "wavefunction.bin"
+    sbd_data.dump_matrix_form_wf = str(wf_dump_file)
+
+    # Run SBD diagonalization
+    results = backend.tpb_diag(
+        mpi_comm,
+        sbd_data,
+        fcidump,
+        adet,
+        bdet,
+        loadname="",
+        savename=""
+    )
+
+    # Extract results
+    energy = results["energy"]
+    density = np.array(results["density"])
+
+    # Convert density to orbital occupancies
+    # SBD returns density as [alpha_0, beta_0, alpha_1, beta_1, ...]
+    # We need to separate into (alpha_occs, beta_occs)
+    occupancies_a = density[::2]  # Even indices
+    occupancies_b = density[1::2]  # Odd indices
+    occupancies = (occupancies_a, occupancies_b)
+
+    # Get carryover determinants for wavefunction reconstruction
+    co_adet = results["carryover_adet"]
+    co_bdet = results["carryover_bdet"]
+
+    # Convert carryover determinants back to CI strings
+    co_strings_a = _sbd_dets_to_ci_strings(co_adet, norb, backend)
+    co_strings_b = _sbd_dets_to_ci_strings(co_bdet, norb, backend)
+
+    # Read wavefunction coefficients from binary dump file
+    mpi_comm.Barrier()  # Ensure file is written
+    n_alpha = len(co_strings_a)
+    n_beta = len(co_strings_b)
+    amplitudes = None
+    if n_alpha > 0 and n_beta > 0 and mpi_rank == 0 and wf_dump_file.exists():
+        # Fast binary read: raw float64 values in row-major (n_alpha x n_beta) order
+        flat = np.fromfile(str(wf_dump_file), dtype=np.float64)
+        if flat.size == n_alpha * n_beta:
+            amplitudes = flat.reshape(n_alpha, n_beta)
+
+    # Broadcast amplitudes to all ranks using buffer-based Bcast (faster than pickle bcast)
+    # First broadcast a flag indicating whether amplitudes is valid
+    flag = np.array([1 if amplitudes is not None else 0], dtype=np.int32)
+    mpi_comm.Bcast(flag, root=0)
+    if flag[0] == 1:
+        if mpi_rank != 0:
+            amplitudes = np.empty((n_alpha, n_beta), dtype=np.float64)
+        mpi_comm.Bcast(amplitudes, root=0)
+    else:
+        amplitudes = None
+
+    # Create SCIState with actual wavefunction
+    if amplitudes is not None and amplitudes.shape == (len(co_strings_a), len(co_strings_b)):
+        sci_state = SCIState(
+            amplitudes=amplitudes,
+            ci_strs_a=co_strings_a,
+            ci_strs_b=co_strings_b,
+            norb=norb,
+            nelec=nelec
+        )
+    elif len(co_strings_a) > 0 and len(co_strings_b) > 0:
+        # Fallback: use carryover dets with uniform amplitudes
+        n_a = len(co_strings_a)
+        n_b = len(co_strings_b)
+        amplitudes = np.ones((n_a, n_b)) / np.sqrt(n_a * n_b)
+        sci_state = SCIState(
+            amplitudes=amplitudes,
+            ci_strs_a=co_strings_a,
+            ci_strs_b=co_strings_b,
+            norb=norb,
+            nelec=nelec
+        )
+    else:
+        # Last resort: use input strings with uniform amplitudes
+        n_a = len(strings_a)
+        n_b = len(strings_b)
+        amplitudes = np.ones((n_a, n_b)) / np.sqrt(n_a * n_b)
+        sci_state = SCIState(
+            amplitudes=amplitudes,
+            ci_strs_a=strings_a,
+            ci_strs_b=strings_b,
+            norb=norb,
+            nelec=nelec
+        )
+
+    return SCIResult(energy, sci_state, orbital_occupancies=occupancies)
 
 
 def solve_sci_batch(
@@ -306,6 +356,9 @@ def solve_sci_batch(
     """
     Diagonalize Hamiltonian in multiple subspaces using SBD.
 
+    The FCIDUMP file is written once and loaded once for all batches, since the
+    Hamiltonian (one_body_tensor, two_body_tensor) is the same across batches.
+
     Args:
         ci_strings: List of pairs (strings_a, strings_b) of arrays of spin-alpha CI
             strings and spin-beta CI strings whose Cartesian product give the basis of
@@ -319,26 +372,76 @@ def solve_sci_batch(
         sbd_config: Dictionary of SBD configuration parameters.
         temp_dir: An absolute path to a directory for storing temporary files.
         clean_temp_dir: Whether to delete intermediate files.
+        device_config: DeviceConfig object to select CPU/GPU backend. If None, uses default.
 
     Returns:
         The results of the diagonalizations in the subspaces given by ci_strings.
     """
-    return [
-        solve_sci(
-            ci_strs,
-            one_body_tensor,
-            two_body_tensor,
-            norb=norb,
-            nelec=nelec,
-            spin_sq=spin_sq,
-            mpi_comm=mpi_comm,
-            sbd_config=sbd_config,
-            temp_dir=temp_dir,
-            clean_temp_dir=clean_temp_dir,
-            device_config=device_config,
-        )
-        for ci_strs in ci_strings
-    ]
+    if not ci_strings:
+        return []
+
+    # Select backend based on device configuration
+    if device_config is not None:
+        backend = _get_backend_module(device_config.use_gpu)
+    else:
+        backend = sbd  # Use default backend
+
+    # Set up MPI communicator
+    if mpi_comm is None:
+        mpi_comm = MPI.COMM_WORLD
+
+    mpi_rank = mpi_comm.Get_rank()
+
+    # Set up a single shared temp directory for all batches
+    temp_dir = temp_dir or tempfile.gettempdir()
+    if mpi_rank == 0:
+        sbd_dir = Path(tempfile.mkdtemp(prefix="sbd_files_", dir=temp_dir))
+        sbd_dir_str = str(sbd_dir)
+    else:
+        sbd_dir_str = None
+
+    sbd_dir_str = mpi_comm.bcast(sbd_dir_str, root=0)
+    sbd_dir = Path(sbd_dir_str)
+
+    try:
+        # Write FCIDUMP once — the Hamiltonian is the same for all batches
+        fcidump_path = sbd_dir / "fcidump.txt"
+        if mpi_rank == 0:
+            tools.fcidump.from_integrals(
+                str(fcidump_path),
+                one_body_tensor,
+                two_body_tensor,
+                norb,
+                nelec,
+            )
+
+        # Wait for rank 0 to finish writing
+        mpi_comm.Barrier()
+
+        # Load FCIDUMP once — reused for every batch
+        fcidump = backend.LoadFCIDump(str(fcidump_path))
+
+        # Run each batch using the shared fcidump object
+        return [
+            _solve_sci_core(
+                ci_strs,
+                norb=norb,
+                nelec=nelec,
+                spin_sq=spin_sq,
+                mpi_comm=mpi_comm,
+                mpi_rank=mpi_rank,
+                sbd_config=sbd_config,
+                sbd_dir=sbd_dir,
+                backend=backend,
+                fcidump=fcidump,
+                device_config=device_config,
+            )
+            for ci_strs in ci_strings
+        ]
+
+    finally:
+        if clean_temp_dir and mpi_rank == 0:
+            shutil.rmtree(sbd_dir, ignore_errors=True)
 
 
 def _ci_strings_to_sbd_dets(

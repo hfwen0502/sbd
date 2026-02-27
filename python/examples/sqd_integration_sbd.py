@@ -73,10 +73,18 @@ def parse_args():
                        help='SBD maximum iterations')
     parser.add_argument('--max_nb', type=int, default=50,
                        help='SBD maximum basis vectors')
+    parser.add_argument('--max_time', type=float, default=3600.0,
+                       help='SBD maximum wall time in seconds')
     parser.add_argument('--do_rdm', type=int, default=1, choices=[0, 1],
                        help='Calculate RDM (0=density only, 1=full RDM)')
+    parser.add_argument('--carryover_type', type=int, default=1,
+                       help='Carryover determinant selection type')
+    parser.add_argument('--ratio', type=float, default=0.1,
+                       help='Carryover ratio')
     parser.add_argument('--threshold', type=float, default=1e-4,
                        help='Carryover threshold')
+    parser.add_argument('--bit_length', type=int, default=64,
+                       help='Bit length for determinant representation')
     
     # MPI configuration
     parser.add_argument('--adet_comm_size', type=int, default=1,
@@ -272,9 +280,12 @@ def test_molecule_with_sbd(molecule_data, args, device_config=None):
         "eps": args.eps,
         "max_it": args.max_it,
         "max_nb": args.max_nb,
+        "max_time": args.max_time,
         "do_rdm": args.do_rdm,
-        "carryover_type": 1,
+        "carryover_type": args.carryover_type,
+        "ratio": args.ratio,
         "threshold": args.threshold,
+        "bit_length": args.bit_length,
         "adet_comm_size": args.adet_comm_size,
         "bdet_comm_size": args.bdet_comm_size,
         "task_comm_size": args.task_comm_size,
