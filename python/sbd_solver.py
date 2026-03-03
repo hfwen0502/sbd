@@ -261,67 +261,77 @@ def _solve_sci_core(
         savename=""
     )
 
-    # Extract results
+    # All post-diag result processing is rank-0-only.
+    # fermion.py only uses the SCIResult returned by the sci_solver on rank 0
+    # (lines 388-437 of fermion.py are guarded by `if distributed.is_main_rank()`).
+    # Non-rank-0 ranks return a lightweight placeholder that is never inspected,
+    # eliminating the Bcast of amplitudes (O(n_alpha * n_beta * 8 bytes) per call)
+    # and all the carryover-det conversion work on non-rank-0 ranks.
+    #
+    # The Barrier() is still needed: rank 0 reads the wavefunction file written
+    # by tpb_diag, and we must ensure tpb_diag has fully flushed it before reading.
+    mpi_comm.Barrier()
+
+    if mpi_rank != 0:
+        # Lightweight placeholder — never used by fermion.py on non-rank-0 ranks
+        return SCIResult(
+            0.0,
+            SCIState(
+                amplitudes=np.empty((0, 0), dtype=np.float64),
+                ci_strs_a=np.array([], dtype=np.int64),
+                ci_strs_b=np.array([], dtype=np.int64),
+                norb=norb,
+                nelec=nelec,
+            ),
+            orbital_occupancies=(
+                np.zeros(norb, dtype=np.float64),
+                np.zeros(norb, dtype=np.float64),
+            ),
+        )
+
+    # --- rank 0 only from here ---
+
+    # Extract energy and orbital occupancies
     energy = results["energy"]
     density = np.array(results["density"])
 
-    # Convert density to orbital occupancies
     # SBD returns density as [alpha_0, beta_0, alpha_1, beta_1, ...]
-    # We need to separate into (alpha_occs, beta_occs)
-    occupancies_a = density[::2]  # Even indices
-    occupancies_b = density[1::2]  # Odd indices
+    occupancies_a = density[::2]   # even indices → alpha
+    occupancies_b = density[1::2]  # odd  indices → beta
     occupancies = (occupancies_a, occupancies_b)
 
-    # Get carryover determinants for wavefunction reconstruction
-    co_adet = results["carryover_adet"]
-    co_bdet = results["carryover_bdet"]
-
     # Convert carryover determinants back to CI strings
-    co_strings_a = _sbd_dets_to_ci_strings(co_adet, norb, backend)
-    co_strings_b = _sbd_dets_to_ci_strings(co_bdet, norb, backend)
+    co_strings_a = _sbd_dets_to_ci_strings(results["carryover_adet"], norb, backend)
+    co_strings_b = _sbd_dets_to_ci_strings(results["carryover_bdet"], norb, backend)
 
-    # Read wavefunction coefficients from binary dump file
-    mpi_comm.Barrier()  # Ensure file is written
-    n_alpha = len(co_strings_a)
-    n_beta = len(co_strings_b)
+    # Read wavefunction coefficients from the binary dump file written by tpb_diag
+    n_alpha_co = len(co_strings_a)
+    n_beta_co = len(co_strings_b)
     amplitudes = None
-    if n_alpha > 0 and n_beta > 0 and mpi_rank == 0 and wf_dump_file.exists():
+    if n_alpha_co > 0 and n_beta_co > 0 and wf_dump_file.exists():
         # Fast binary read: raw float64 values in row-major (n_alpha x n_beta) order
         flat = np.fromfile(str(wf_dump_file), dtype=np.float64)
-        if flat.size == n_alpha * n_beta:
-            amplitudes = flat.reshape(n_alpha, n_beta)
+        if flat.size == n_alpha_co * n_beta_co:
+            amplitudes = flat.reshape(n_alpha_co, n_beta_co)
 
-    # Broadcast amplitudes to all ranks using buffer-based Bcast (faster than pickle bcast)
-    # First broadcast a flag indicating whether amplitudes is valid
-    flag = np.array([1 if amplitudes is not None else 0], dtype=np.int32)
-    mpi_comm.Bcast(flag, root=0)
-    if flag[0] == 1:
-        if mpi_rank != 0:
-            amplitudes = np.empty((n_alpha, n_beta), dtype=np.float64)
-        mpi_comm.Bcast(amplitudes, root=0)
-    else:
-        amplitudes = None
-
-    # Create SCIState with actual wavefunction
-    if amplitudes is not None and amplitudes.shape == (len(co_strings_a), len(co_strings_b)):
+    # Build SCIState — with fallbacks if the wavefunction file is missing/malformed
+    if amplitudes is not None:
         sci_state = SCIState(
             amplitudes=amplitudes,
             ci_strs_a=co_strings_a,
             ci_strs_b=co_strings_b,
             norb=norb,
-            nelec=nelec
+            nelec=nelec,
         )
-    elif len(co_strings_a) > 0 and len(co_strings_b) > 0:
-        # Fallback: use carryover dets with uniform amplitudes
-        n_a = len(co_strings_a)
-        n_b = len(co_strings_b)
-        amplitudes = np.ones((n_a, n_b)) / np.sqrt(n_a * n_b)
+    elif n_alpha_co > 0 and n_beta_co > 0:
+        # Fallback: carryover dets with uniform amplitudes
+        amplitudes = np.ones((n_alpha_co, n_beta_co)) / np.sqrt(n_alpha_co * n_beta_co)
         sci_state = SCIState(
             amplitudes=amplitudes,
             ci_strs_a=co_strings_a,
             ci_strs_b=co_strings_b,
             norb=norb,
-            nelec=nelec
+            nelec=nelec,
         )
     else:
         # Last resort: use input strings with uniform amplitudes
@@ -333,7 +343,7 @@ def _solve_sci_core(
             ci_strs_a=strings_a,
             ci_strs_b=strings_b,
             norb=norb,
-            nelec=nelec
+            nelec=nelec,
         )
 
     return SCIResult(energy, sci_state, orbital_occupancies=occupancies)
