@@ -84,21 +84,24 @@ pip install -e . --no-build-isolation
 See `python/examples/sqd_integration_sbd.py` for a complete example:
 
 ```bash
-# Run with 4 MPI processes (2×2 MPI decomposition)
-# FCIDUMP and determinant files come from qiskit-addon-sqd or your own data
+# With pre-computed determinants (--adetfile required, --samples not needed)
 mpirun -n 4 python python/examples/sqd_integration_sbd.py \
     --fcidump /path/to/fcidump.txt \
     --adetfile /path/to/alpha_dets.txt \
+    --eps 1e-3 \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2
+
+# Without pre-computed determinants (--samples used for random sampling)
+mpirun -n 4 python python/examples/sqd_integration_sbd.py \
+    --fcidump /path/to/fcidump.txt \
     --samples 1000 \
-    --samples_per_batch 200 \
-    --num_batches 5 \
-    --max_iterations 5 \
     --eps 1e-3 \
     --adet_comm_size 2 \
     --bdet_comm_size 2
 ```
 
-**Note:** `--adet_comm_size` and `--bdet_comm_size` must be specified when using more than one MPI rank. Total ranks = `task_comm_size × adet_comm_size × bdet_comm_size`.
+**Note:** `--adet_comm_size` and `--bdet_comm_size` must be specified when using more than one MPI rank. Total ranks = `task_comm_size × adet_comm_size × bdet_comm_size`. See `python/examples/README.md` for full usage details.
 
 ### Comparison with qiskit-addon-dice-solver
 
