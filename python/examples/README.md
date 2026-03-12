@@ -84,7 +84,7 @@ mpirun -np 8 python sqd_integration_sbd.py \
     --device gpu
 ```
 
-**Note:** FCIDUMP and determinant files are from `qiskit-addon-sqd` (see `../../data/`) or your own data. When using more than one MPI rank, `--adet_comm_size` and `--bdet_comm_size` must be specified. GPU acceleration (Thrust) only applies to method 0 (matrix-free); methods 1/3 fall back to CPU even with GPU backend.
+**Note:** FCIDUMP and determinant files are from `qiskit-addon-sqd` (see `../../data/`) or your own data. When using more than one MPI rank, `--adet_comm_size` and `--bdet_comm_size` must be specified. Use method 0 (matrix-free) with GPU backend for best performance.
 
 **Key Options:**
 - `--fcidump FILE` - FCIDUMP file path
