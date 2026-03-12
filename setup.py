@@ -144,6 +144,7 @@ if build_cpu:
         omp_lib = '/opt/homebrew/opt/libomp/lib'
         openblas_lib = '/opt/homebrew/opt/openblas/lib'
         cpu_compile_args = [
+            '-DSBD_TRADMODE',
             '-std=c++17', '-Xpreprocessor', '-fopenmp', '-O3',
             '-Wno-sign-compare', '-Wno-unused-variable', '-fPIC',
             '-DSBD_MODULE_NAME=_core_cpu', f'-I{omp_inc}',
@@ -154,6 +155,7 @@ if build_cpu:
         cpu_libs = libraries + ['omp']
     else:
         cpu_compile_args = [
+            '-DSBD_TRADMODE',
             '-std=c++17', '-fopenmp', '-O3',
             '-Wno-sign-compare', '-Wno-unused-variable', '-fPIC',
             '-DSBD_MODULE_NAME=_core_cpu',
@@ -191,6 +193,7 @@ if build_gpu:
         language='c++',
         extra_compile_args=[
             '-DSBD_THRUST',
+            '-DSBD_TRADMODE',
             '-mp',
             '-cuda',
             '-fast',
