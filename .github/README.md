@@ -49,6 +49,74 @@ The Python bindings expose the **Two-Particle Basis (TPB)** method, which is spe
 
 For non-TPB methods, please use the C++ CLI applications directly.
 
+## Integration with qiskit-addon-sqd
+
+SBD can be integrated with the [qiskit-addon-sqd](https://github.com/Qiskit/qiskit-addon-sqd) framework for quantum chemistry calculations.
+
+**Note**: To use SBD with qiskit-addon-sqd, you need the MPI-enabled fork at [https://github.com/hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd). The official Qiskit version does not yet support MPI-aware solvers. We plan to contribute these enhancements upstream.
+
+This integration enables:
+
+- **Automatic MPI Detection**: No manual MPI initialization required
+- **Multi-Node Multi-GPU Support**: Efficient distributed computing across clusters
+- **Zero File I/O Overhead**: Direct in-memory communication between SQD and SBD
+- **Seamless Integration**: Works with existing SQD workflows
+
+### Installation with MPI Support
+
+To use SBD with qiskit-addon-sqd's MPI-enabled version:
+
+```bash
+# Install MPI-enabled qiskit-addon-sqd fork
+git clone https://github.com/hfwen0502/qiskit-addon-sqd.git
+cd qiskit-addon-sqd
+pip install -e .
+
+# Install SBD with Python bindings
+cd /path/to/sbd
+pip install -e . --no-build-isolation
+```
+
+**Note**: The fork at [https://github.com/hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) includes MPI enhancements with automatic detection. These changes add a `distributed.py` module and modify `fermion.py` to coordinate MPI ranks efficiently. We plan to contribute these changes back to the official Qiskit repository.
+
+### Example: SQD with SBD Solver
+
+See `python/examples/sqd_integration_sbd.py` for a complete example:
+
+```bash
+# Run with 4 MPI processes (2×2 MPI decomposition)
+mpirun -n 4 python python/examples/sqd_integration_sbd.py \
+    --fcidump python/examples/molecules/n2_fci.txt \
+    --samples 1000 \
+    --samples_per_batch 200 \
+    --num_batches 5 \
+    --max_iterations 5 \
+    --method 1 \
+    --eps 1e-3 \
+    --adet_comm_size 2 \
+    --bdet_comm_size 2
+```
+
+### Comparison with qiskit-addon-dice-solver
+
+| Feature | qiskit-addon-dice-solver | SBD Integration |
+|---------|-------------------------|-----------------|
+| **Solver** | DICE (external process) | SBD (in-process) |
+| **GPU Support** | No | Yes (CUDA) |
+| **MPI** | Spawns MPI processes | Direct MPI integration |
+| **File I/O** | Temp files for communication | In-memory (zero overhead) |
+| **Multi-Node** | Limited | Full support |
+| **Performance** | Good for CPU | Excellent for GPU clusters |
+
+### Key Advantages
+
+1. **No File I/O**: SBD integrates directly with SQD's Python API, eliminating temporary file overhead
+2. **GPU Acceleration**: Native CUDA support for large-scale calculations
+3. **Efficient MPI**: All ranks participate in collective operations, no redundant work
+4. **Automatic Detection**: MPI environment detected automatically at import time
+
+For more details, see `python/examples/README.md` and the example scripts.
+
 ## Installation
 
 ### Prerequisites
@@ -266,9 +334,9 @@ config.task_comm_size = 2  # Task parallelization
 
 ## Examples
 
-### H2O Calculation (Simplified API)
+### Chemistry Calculation (Simplified API)
 
-Located in `python/examples/chemistry_simplified.py` - Demonstrates the new simplified API where MPI is handled internally.
+Located in `python/examples/chemistry_simplified.py` - Demonstrates the new simplified API where MPI is handled internally. Accepts any molecule's FCIDUMP and determinant files.
 
 **Basic CPU Backend:**
 ```bash
@@ -294,7 +362,7 @@ mpirun -np 8 python chemistry_simplified.py \
 
 **Advanced Usage with All Options:**
 ```bash
-mpirun -np 8 python chemistry_simplified.py \
+mpirun -np 8 python h2o_cpu_gpu.py \
     --device gpu \
     --method 0 \
     --max_it 100 \
@@ -332,7 +400,7 @@ All TPB_SBD parameters are configurable via command-line:
   - `--task_comm_size N` - Task communicator size
   - `--adet_comm_size N` - Alpha determinant communicator size
   - `--bdet_comm_size N` - Beta determinant communicator size
-  - `--task_comm_size N` - column indices of the Hamiltonian communicator size
+  - `--h_comm_size N` - Helper communicator size
 
 - **Diagonalization Method:**
   - `--method {0,1,2,3}` - 0=Davidson, 1=Davidson+Ham, 2=Lanczos, 3=Lanczos+Ham
