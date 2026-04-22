@@ -31,6 +31,7 @@ namespace sbd {
       int carryover_type = 0;
       double ratio = 0.0;
       double threshold = 0.01;
+      double eri_threshold = 1.0e-6;
 
       size_t bit_length = 20;
 
@@ -78,6 +79,9 @@ namespace sbd {
 	}
 	if( std::string(argv[i]) == "--carryover_threshold" ) {
 	  sbd_data.threshold = std::atof(argv[++i]);
+	}
+	if( std::string(argv[i]) == "--eri_threshold" ) {
+	  sbd_data.eri_threshold = std::atof(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--max_time" ) {
 		sbd_data.max_time = std::atof(argv[++i]);
@@ -166,6 +170,7 @@ namespace sbd {
       int do_rdm = sbd_data.do_rdm;
       double ratio = sbd_data.ratio;
       double threshold = sbd_data.threshold;
+      double eri_threshold = sbd_data.eri_threshold;
 
       size_t bit_length = sbd_data.bit_length;
 
@@ -781,6 +786,27 @@ namespace sbd {
 	sbd::SinglesDoublesExtendHalfdets(adet,bdet,bit_length,L,
 					   adet_comm_size,bdet_comm_size,b_comm,
 					   co_adet,co_bdet);
+      } else if ( sbd_data.carryover_type == 7 ) {
+	// ERI-screened S+D extend with amplitude filtering
+	double total_weight = 0.0;
+	sbd::ScreenedSinglesDoublesExtendHalfdets(W,adet,bdet,bit_length,L,
+						   adet_comm_size,bdet_comm_size,b_comm,
+						   threshold,I1,I2,eri_threshold,
+						   co_adet,co_bdet,total_weight);
+	if( mpi_rank == 0 ) {
+	  std::cout << " percentage of wf used in screened S+D augmentation: "
+		    << total_weight*100.0 << std::endl;
+	  std::cout << " ERI threshold: " << eri_threshold << std::endl;
+	}
+      } else if ( sbd_data.carryover_type == 8 ) {
+	// ERI-screened S+D extend of ALL dets (no amplitude filtering)
+	sbd::ScreenedSinglesDoublesExtendHalfdets(adet,bdet,bit_length,L,
+						   adet_comm_size,bdet_comm_size,b_comm,
+						   I1,I2,eri_threshold,
+						   co_adet,co_bdet);
+	if( mpi_rank == 0 ) {
+	  std::cout << " ERI threshold: " << eri_threshold << std::endl;
+	}
       }
 
       /**

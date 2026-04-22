@@ -664,6 +664,417 @@ namespace sbd {
     sort_bitarray(res_bdet);
   }
 
+
+
+  /**
+     ERI-screened singles+doubles extension with amplitude filtering.
+     Like SinglesDoublesExtendHalfdets but uses integral-based screening:
+     only excitations with |H matrix element| > eri_threshold are generated.
+     This produces a smaller, higher-quality subspace extension.
+   */
+  template <typename ElemT, typename RealT>
+  void ScreenedSinglesDoublesExtendHalfdets(const std::vector<ElemT> & w,
+					     const std::vector<std::vector<size_t>> & adet,
+					     const std::vector<std::vector<size_t>> & bdet,
+					     size_t bit_length,
+					     size_t norb,
+					     size_t adet_comm_size,
+					     size_t bdet_comm_size,
+					     MPI_Comm comm,
+					     RealT cutoff,
+					     const sbd::oneInt<RealT> & I1,
+					     const sbd::twoInt<RealT> & I2,
+					     RealT eri_threshold,
+					     std::vector<std::vector<size_t>> & res_adet,
+					     std::vector<std::vector<size_t>> & res_bdet,
+					     RealT & total_weight) {
+
+    int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
+    int mpi_size; MPI_Comm_size(comm,&mpi_size);
+
+    size_t adet_begin = 0;
+    size_t adet_end   = adet.size();
+    size_t bdet_begin = 0;
+    size_t bdet_end   = bdet.size();
+    int a_comm_size = static_cast<int>(adet_comm_size);
+    int b_comm_size = static_cast<int>(bdet_comm_size);
+    assert( mpi_size == a_comm_size * b_comm_size );
+    int a_comm_rank = mpi_rank / b_comm_size;
+    int b_comm_rank = mpi_rank % b_comm_size;
+
+    get_mpi_range(a_comm_size,a_comm_rank,adet_begin,adet_end);
+    get_mpi_range(b_comm_size,b_comm_rank,bdet_begin,bdet_end);
+
+    size_t adet_size = adet_end - adet_begin;
+    size_t bdet_size = bdet_end - bdet_begin;
+    std::vector<size_t> adet_count(adet.size(),0);
+    std::vector<size_t> bdet_count(bdet.size(),0);
+    RealT total_weight_local = 0.0;
+    for(size_t ia=adet_begin; ia < adet_end; ia++) {
+      for(size_t ib=bdet_begin; ib < bdet_end; ib++) {
+	size_t idx = (ia - adet_begin) * bdet_size + ib - bdet_begin;
+	RealT weight = GetReal(Conjugate(w[idx])*w[idx]);
+	if( weight > cutoff ) {
+	  total_weight_local += weight;
+	  adet_count[ia]++;
+	  bdet_count[ib]++;
+	}
+      }
+    }
+
+    MpiAllreduce(adet_count,MPI_SUM,comm);
+    MpiAllreduce(bdet_count,MPI_SUM,comm);
+    MPI_Allreduce(&total_weight_local,&total_weight,1,
+		  GetMpiType<RealT>::MpiT,MPI_SUM,comm);
+
+    size_t num_one_a = static_cast<size_t>(bitcount(adet[0],bit_length,norb));
+    size_t num_one_b = static_cast<size_t>(bitcount(bdet[0],bit_length,norb));
+
+    size_t num_vir_a = norb - num_one_a;
+    size_t num_vir_b = norb - num_one_b;
+
+    // Upper bounds (may not all pass screening)
+    size_t max_single_from_a = num_one_a * num_vir_a;
+    size_t max_single_from_b = num_one_b * num_vir_b;
+    size_t max_double_from_a = (num_one_a > 1 && num_vir_a > 1)
+      ? (num_one_a * (num_one_a-1) / 2) * (num_vir_a * (num_vir_a-1) / 2) : 0;
+    size_t max_double_from_b = (num_one_b > 1 && num_vir_b > 1)
+      ? (num_one_b * (num_one_b-1) / 2) * (num_vir_b * (num_vir_b-1) / 2) : 0;
+    size_t max_sd_from_a = max_single_from_a + max_double_from_a;
+    size_t max_sd_from_b = max_single_from_b + max_double_from_b;
+
+    size_t reduced_adet_size = 0;
+    size_t reduced_bdet_size = 0;
+    for(size_t ia=adet_begin; ia < adet_end; ia++) {
+      if( adet_count[ia] > 0 ) {
+	reduced_adet_size++;
+      }
+    }
+    for(size_t ib=bdet_begin; ib < bdet_end; ib++) {
+      if( bdet_count[ib] > 0 ) {
+	reduced_bdet_size++;
+      }
+    }
+
+    // Allocate upper-bound; actual count will be smaller due to screening
+    size_t max_sd_adet = max_sd_from_a * reduced_adet_size + reduced_adet_size;
+    size_t max_sd_bdet = max_sd_from_b * reduced_bdet_size + reduced_bdet_size;
+
+    std::vector<std::vector<size_t>> new_adet_local(max_sd_adet);
+    std::vector<std::vector<size_t>> new_bdet_local(max_sd_bdet);
+
+    size_t ia_count = 0;
+    for(size_t ia=adet_begin; ia < adet_end; ia++) {
+      if( adet_count[ia] > 0 ) {
+	new_adet_local[ia_count++] = adet[ia];
+      }
+    }
+
+    std::vector<std::vector<size_t>> hdet_singles;
+    std::vector<std::vector<size_t>> hdet_doubles;
+    std::vector<int> open_adet(num_vir_a);
+    std::vector<int> closed_adet(num_one_a);
+    size_t screened_singles_a = 0, screened_doubles_a = 0;
+    for(size_t ia=0; ia < reduced_adet_size; ia++) {
+      int nc = getOpenClosed(new_adet_local[ia],bit_length,norb,open_adet,closed_adet);
+      size_t numc = static_cast<size_t>(nc);
+      single_from_hdet_screened(new_adet_local[ia],bit_length,norb,numc,
+				open_adet,closed_adet,I1,I2,eri_threshold,hdet_singles);
+      screened_singles_a += hdet_singles.size();
+      for(size_t k=0; k < hdet_singles.size(); k++) {
+	new_adet_local[ia_count++] = hdet_singles[k];
+      }
+      double_from_hdet_screened(new_adet_local[ia],bit_length,norb,numc,
+				open_adet,closed_adet,I2,eri_threshold,hdet_doubles);
+      screened_doubles_a += hdet_doubles.size();
+      for(size_t k=0; k < hdet_doubles.size(); k++) {
+	new_adet_local[ia_count++] = hdet_doubles[k];
+      }
+    }
+    // Trim to actual count
+    new_adet_local.resize(ia_count);
+
+    size_t ib_count = 0;
+    for(size_t ib=bdet_begin; ib < bdet_end; ib++) {
+      if( bdet_count[ib] > 0 ) {
+	new_bdet_local[ib_count++] = bdet[ib];
+      }
+    }
+    std::vector<int> open_bdet(num_vir_b);
+    std::vector<int> closed_bdet(num_one_b);
+    size_t screened_singles_b = 0, screened_doubles_b = 0;
+    for(size_t ib=0; ib < reduced_bdet_size; ib++) {
+      int nc = getOpenClosed(new_bdet_local[ib],bit_length,norb,open_bdet,closed_bdet);
+      size_t numc = static_cast<size_t>(nc);
+      single_from_hdet_screened(new_bdet_local[ib],bit_length,norb,numc,
+				open_bdet,closed_bdet,I1,I2,eri_threshold,hdet_singles);
+      screened_singles_b += hdet_singles.size();
+      for(size_t k=0; k < hdet_singles.size(); k++) {
+	new_bdet_local[ib_count++] = hdet_singles[k];
+      }
+      double_from_hdet_screened(new_bdet_local[ib],bit_length,norb,numc,
+				open_bdet,closed_bdet,I2,eri_threshold,hdet_doubles);
+      screened_doubles_b += hdet_doubles.size();
+      for(size_t k=0; k < hdet_doubles.size(); k++) {
+	new_bdet_local[ib_count++] = hdet_doubles[k];
+      }
+    }
+    new_bdet_local.resize(ib_count);
+
+    // Report screening statistics on rank 0
+    if( mpi_rank == 0 ) {
+      size_t total_possible_a = max_single_from_a * reduced_adet_size
+	+ max_double_from_a * reduced_adet_size;
+      size_t total_kept_a = screened_singles_a + screened_doubles_a;
+      size_t total_possible_b = max_single_from_b * reduced_bdet_size
+	+ max_double_from_b * reduced_bdet_size;
+      size_t total_kept_b = screened_singles_b + screened_doubles_b;
+      std::cout << " ERI screening (alpha): kept " << total_kept_a
+		<< " / " << total_possible_a << " excitations ("
+		<< screened_singles_a << " S + " << screened_doubles_a << " D)"
+		<< std::endl;
+      std::cout << " ERI screening (beta):  kept " << total_kept_b
+		<< " / " << total_possible_b << " excitations ("
+		<< screened_singles_b << " S + " << screened_doubles_b << " D)"
+		<< std::endl;
+    }
+
+    MPI_Comm adet_comm;
+    MPI_Comm bdet_comm;
+
+    MPI_Comm_split(comm,b_comm_rank,a_comm_rank,&adet_comm);
+    MPI_Comm_split(comm,a_comm_rank,b_comm_rank,&bdet_comm);
+
+    std::vector<std::vector<std::vector<size_t>>> temp_adet(adet_comm_size);
+    std::vector<std::vector<std::vector<size_t>>> temp_bdet(bdet_comm_size);
+
+    for(int rank=0; rank < a_comm_size; rank++) {
+      if( rank == a_comm_rank ) {
+	temp_adet[rank] = new_adet_local;
+      }
+      MpiBcast(temp_adet[rank],rank,adet_comm);
+    }
+
+    for(int rank=0; rank < b_comm_size; rank++) {
+      if( rank == b_comm_rank ) {
+	temp_bdet[rank] = new_bdet_local;
+      }
+      MpiBcast(temp_bdet[rank],rank,bdet_comm);
+    }
+
+    size_t res_adet_size = 0;
+    size_t res_bdet_size = 0;
+    for(size_t rank=0; rank < adet_comm_size; rank++) {
+      res_adet_size += temp_adet[rank].size();
+    }
+    for(size_t rank=0; rank < bdet_comm_size; rank++) {
+      res_bdet_size += temp_bdet[rank].size();
+    }
+    res_adet.resize(res_adet_size);
+    res_bdet.resize(res_bdet_size);
+    size_t res_adet_count=0;
+    size_t res_bdet_count=0;
+    for(size_t rank=0; rank < adet_comm_size; rank++) {
+      for(size_t k=0; k < temp_adet[rank].size(); k++) {
+	res_adet[res_adet_count++] = temp_adet[rank][k];
+      }
+    }
+    for(size_t rank=0; rank < bdet_comm_size; rank++) {
+      for(size_t k=0; k < temp_bdet[rank].size(); k++) {
+	res_bdet[res_bdet_count++] = temp_bdet[rank][k];
+      }
+    }
+    sort_bitarray(res_adet);
+    sort_bitarray(res_bdet);
+  }
+
+
+  /**
+     ERI-screened singles+doubles extension without amplitude filtering.
+     Applies screened S+D to ALL input half-determinants.
+   */
+  template <typename RealT>
+  void ScreenedSinglesDoublesExtendHalfdets(const std::vector<std::vector<size_t>> & adet,
+					     const std::vector<std::vector<size_t>> & bdet,
+					     size_t bit_length,
+					     size_t norb,
+					     const size_t adet_comm_size,
+					     const size_t bdet_comm_size,
+					     MPI_Comm comm,
+					     const sbd::oneInt<RealT> & I1,
+					     const sbd::twoInt<RealT> & I2,
+					     RealT eri_threshold,
+					     std::vector<std::vector<size_t>> & res_adet,
+					     std::vector<std::vector<size_t>> & res_bdet) {
+
+    int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
+    int mpi_size; MPI_Comm_size(comm,&mpi_size);
+
+    size_t adet_begin = 0;
+    size_t adet_end   = adet.size();
+    size_t bdet_begin = 0;
+    size_t bdet_end   = bdet.size();
+    int a_comm_size = static_cast<int>(adet_comm_size);
+    int b_comm_size = static_cast<int>(bdet_comm_size);
+    assert( mpi_size == a_comm_size * b_comm_size );
+    int a_comm_rank = mpi_rank / b_comm_size;
+    int b_comm_rank = mpi_rank % b_comm_size;
+
+    get_mpi_range(a_comm_size,a_comm_rank,adet_begin,adet_end);
+    get_mpi_range(b_comm_size,b_comm_rank,bdet_begin,bdet_end);
+
+    size_t adet_size = adet_end - adet_begin;
+    size_t bdet_size = bdet_end - bdet_begin;
+
+    size_t num_one_a = static_cast<size_t>(bitcount(adet[0],bit_length,norb));
+    size_t num_one_b = static_cast<size_t>(bitcount(bdet[0],bit_length,norb));
+
+    size_t num_vir_a = norb - num_one_a;
+    size_t num_vir_b = norb - num_one_b;
+    size_t max_single_from_a = num_one_a * num_vir_a;
+    size_t max_single_from_b = num_one_b * num_vir_b;
+    size_t max_double_from_a = (num_one_a > 1 && num_vir_a > 1)
+      ? (num_one_a * (num_one_a-1) / 2) * (num_vir_a * (num_vir_a-1) / 2) : 0;
+    size_t max_double_from_b = (num_one_b > 1 && num_vir_b > 1)
+      ? (num_one_b * (num_one_b-1) / 2) * (num_vir_b * (num_vir_b-1) / 2) : 0;
+    size_t max_sd_from_a = max_single_from_a + max_double_from_a;
+    size_t max_sd_from_b = max_single_from_b + max_double_from_b;
+
+    size_t max_sd_adet = max_sd_from_a * adet_size + adet_size;
+    size_t max_sd_bdet = max_sd_from_b * bdet_size + bdet_size;
+
+    std::vector<std::vector<size_t>> new_adet_local(max_sd_adet);
+    std::vector<std::vector<size_t>> new_bdet_local(max_sd_bdet);
+
+    size_t ia_count = 0;
+    for(size_t ia=adet_begin; ia < adet_end; ia++) {
+      new_adet_local[ia_count++] = adet[ia];
+    }
+    std::vector<std::vector<size_t>> hdet_singles;
+    std::vector<std::vector<size_t>> hdet_doubles;
+    std::vector<int> open_adet(num_vir_a);
+    std::vector<int> closed_adet(num_one_a);
+    size_t screened_singles_a = 0, screened_doubles_a = 0;
+    for(size_t ia=0; ia < adet_size; ia++) {
+      int nc = getOpenClosed(new_adet_local[ia],bit_length,norb,open_adet,closed_adet);
+      size_t numc = static_cast<size_t>(nc);
+      single_from_hdet_screened(new_adet_local[ia],bit_length,norb,numc,
+				open_adet,closed_adet,I1,I2,eri_threshold,hdet_singles);
+      screened_singles_a += hdet_singles.size();
+      for(size_t k=0; k < hdet_singles.size(); k++) {
+	new_adet_local[ia_count++] = hdet_singles[k];
+      }
+      double_from_hdet_screened(new_adet_local[ia],bit_length,norb,numc,
+				open_adet,closed_adet,I2,eri_threshold,hdet_doubles);
+      screened_doubles_a += hdet_doubles.size();
+      for(size_t k=0; k < hdet_doubles.size(); k++) {
+	new_adet_local[ia_count++] = hdet_doubles[k];
+      }
+    }
+    new_adet_local.resize(ia_count);
+
+    size_t ib_count = 0;
+    for(size_t ib=bdet_begin; ib < bdet_end; ib++) {
+      new_bdet_local[ib_count++] = bdet[ib];
+    }
+    std::vector<int> open_bdet(num_vir_b);
+    std::vector<int> closed_bdet(num_one_b);
+    size_t screened_singles_b = 0, screened_doubles_b = 0;
+    for(size_t ib=0; ib < bdet_size; ib++) {
+      int nc = getOpenClosed(new_bdet_local[ib],bit_length,norb,open_bdet,closed_bdet);
+      size_t numc = static_cast<size_t>(nc);
+      single_from_hdet_screened(new_bdet_local[ib],bit_length,norb,numc,
+				open_bdet,closed_bdet,I1,I2,eri_threshold,hdet_singles);
+      screened_singles_b += hdet_singles.size();
+      for(size_t k=0; k < hdet_singles.size(); k++) {
+	new_bdet_local[ib_count++] = hdet_singles[k];
+      }
+      double_from_hdet_screened(new_bdet_local[ib],bit_length,norb,numc,
+				open_bdet,closed_bdet,I2,eri_threshold,hdet_doubles);
+      screened_doubles_b += hdet_doubles.size();
+      for(size_t k=0; k < hdet_doubles.size(); k++) {
+	new_bdet_local[ib_count++] = hdet_doubles[k];
+      }
+    }
+    new_bdet_local.resize(ib_count);
+
+    if( mpi_rank == 0 ) {
+      size_t total_possible_a = max_single_from_a * adet_size
+	+ max_double_from_a * adet_size;
+      size_t total_kept_a = screened_singles_a + screened_doubles_a;
+      size_t total_possible_b = max_single_from_b * bdet_size
+	+ max_double_from_b * bdet_size;
+      size_t total_kept_b = screened_singles_b + screened_doubles_b;
+      std::cout << " ERI screening (alpha): kept " << total_kept_a
+		<< " / " << total_possible_a << " excitations ("
+		<< screened_singles_a << " S + " << screened_doubles_a << " D)"
+		<< std::endl;
+      std::cout << " ERI screening (beta):  kept " << total_kept_b
+		<< " / " << total_possible_b << " excitations ("
+		<< screened_singles_b << " S + " << screened_doubles_b << " D)"
+		<< std::endl;
+    }
+
+    MPI_Comm adet_comm;
+    MPI_Comm bdet_comm;
+    MPI_Comm_split(comm,b_comm_rank,a_comm_rank,&adet_comm);
+    MPI_Comm_split(comm,a_comm_rank,b_comm_rank,&bdet_comm);
+
+    std::vector<std::vector<std::vector<size_t>>> temp_adet(adet_comm_size);
+    std::vector<std::vector<std::vector<size_t>>> temp_bdet(bdet_comm_size);
+
+    for(int rank=0; rank < a_comm_size; rank++) {
+      if( a_comm_rank == rank ) {
+	temp_adet[rank].resize(new_adet_local.size());
+	for(size_t k=0; k < new_adet_local.size(); k++) {
+	  temp_adet[rank][k].resize(new_adet_local[k].size());
+	  for(size_t l=0; l < new_adet_local[k].size(); l++) {
+	    temp_adet[rank][k][l] = new_adet_local[k][l];
+	  }
+	}
+      }
+      MpiBcast(temp_adet[rank],rank,adet_comm);
+    }
+
+    for(int rank=0; rank < b_comm_size; rank++) {
+      if( b_comm_rank == rank ) {
+	temp_bdet[rank].resize(new_bdet_local.size());
+	for(size_t k=0; k < new_bdet_local.size(); k++) {
+	  temp_bdet[rank][k].resize(new_bdet_local[k].size());
+	  for(size_t l=0; l < new_bdet_local[k].size(); l++) {
+	    temp_bdet[rank][k][l] = new_bdet_local[k][l];
+	  }
+	}
+      }
+      MpiBcast(temp_bdet[rank],rank,bdet_comm);
+    }
+
+    size_t res_adet_size = 0;
+    size_t res_bdet_size = 0;
+    for(size_t rank=0; rank < adet_comm_size; rank++) {
+      res_adet_size += temp_adet[rank].size();
+    }
+    for(size_t rank=0; rank < bdet_comm_size; rank++) {
+      res_bdet_size += temp_bdet[rank].size();
+    }
+    res_adet.resize(res_adet_size);
+    res_bdet.resize(res_bdet_size);
+    size_t res_adet_count=0;
+    size_t res_bdet_count=0;
+    for(size_t rank=0; rank < adet_comm_size; rank++) {
+      for(size_t k=0; k < temp_adet[rank].size(); k++) {
+	res_adet[res_adet_count++] = temp_adet[rank][k];
+      }
+    }
+    for(size_t rank=0; rank < bdet_comm_size; rank++) {
+      for(size_t k=0; k < temp_bdet[rank].size(); k++) {
+	res_bdet[res_bdet_count++] = temp_bdet[rank][k];
+      }
+    }
+    sort_bitarray(res_adet);
+    sort_bitarray(res_bdet);
+  }
+
 }
 
 #endif

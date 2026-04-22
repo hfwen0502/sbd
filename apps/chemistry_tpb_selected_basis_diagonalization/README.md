@@ -99,4 +99,11 @@ Below is an explanation of each command-line option.
   Whether to compute the 1-particle and 2-particle reduced density matrices (1pRDM and 2pRDM). If set to 0, they are not computed; otherwise, they are computed.
 - `--bit_length <int>`:  
   Specifies the bit length handled by each size_t when representing bitstrings using `std::vector<size_t>`. The default value is 20.
+- `--do_variance <int>`:  
+  If set to 1, prints energy variance $\langle H^2 \rangle - \langle H \rangle^2$ after diagonalization. Default is 0 (off).
+  When `--iteration 0` is used (variance-only mode), variance is always printed regardless of this flag.
+- `--eri_threshold <float>`:  
+  Screening threshold for Hamiltonian integrals used in ERI-screened subspace extension (`--carryover_type 7` and `8`). Only excitations with Hamiltonian matrix element magnitude exceeding this threshold are included. Default is 1e-6.
+
+For the singles+doubles subspace extension, ERI-screened extension, and energy variance features, see [Subspace Extension and Energy Variance](VARIANCE.md).
 
