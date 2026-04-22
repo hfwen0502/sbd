@@ -27,6 +27,7 @@ namespace sbd {
       int init = 0;
       int do_shuffle = 0;
       int do_rdm = 0;
+      int do_variance = 0;
       int carryover_type = 0;
       double ratio = 0.0;
       double threshold = 0.01;
@@ -65,6 +66,9 @@ namespace sbd {
 	}
 	if( std::string(argv[i]) == "--tolerance" ) {
 	  sbd_data.eps = std::atof(argv[++i]);
+	}
+	if( std::string(argv[i]) == "--do_variance" ) {
+	  sbd_data.do_variance = std::atoi(argv[++i]);
 	}
 	if( std::string(argv[i]) == "--carryover_type" ) {
 	  sbd_data.carryover_type = std::atoi(argv[++i]);
@@ -281,9 +285,71 @@ namespace sbd {
 #endif
 
       /**
-	 Diagonalization
+	 Diagonalization (skipped when max_it == 0 for variance-only mode)
       */
-      if( method == 0 || method == 2 ) {
+      if( max_it == 0 ) {
+
+	/**
+	   Variance-only mode: skip Davidson, compute H|psi> on loaded wavefunction
+	*/
+	auto time_start_qcham = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	MultTPBThrust<double> device_mult_vo;
+	device_mult_vo.Init(adet, bdet, bit_length, static_cast<size_t>(L),
+			    adet_comm_size,bdet_comm_size, helper, I0, I1, I2,
+			    h_comm,b_comm,t_comm,
+			    sbd_data.use_precalculated_dets, sbd_data.max_memory_gb_for_determinants, sbd_data.thrust_collapse_loops);
+	thrust::device_vector<double> hii;
+	device_mult_vo.makeQChamDiagTerms(hii);
+#else
+	std::vector<double> hii;
+	sbd::makeQChamDiagTerms(adet,bdet,bit_length,L,
+				helper,I0,I1,I2,hii,
+				h_comm,b_comm,t_comm);
+#endif
+	auto time_end_qcham = std::chrono::high_resolution_clock::now();
+	auto elapsed_qcham_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_qcham-time_start_qcham).count();
+	double elapsed_qcham = 1.0e-6 * elapsed_qcham_count;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for makeQChamDiagTerms " << elapsed_qcham << " (sec) " << std::endl;
+	}
+
+	std::vector<double> C(W.size(),0.0);
+	auto time_start_mult = std::chrono::high_resolution_clock::now();
+#ifdef SBD_THRUST
+	thrust::device_vector<double> W_dev(W.size());
+	thrust::copy_n(W.begin(), W.size(), W_dev.begin());
+	thrust::device_vector<double> C_dev(C.size(), 0.0);
+	device_mult_vo.run(hii, W_dev, C_dev);
+	thrust::copy_n(C_dev.begin(), C_dev.size(), C.begin());
+#else
+	sbd::mult(hii,W,C,adet,bdet,bit_length,static_cast<size_t>(L),
+		  adet_comm_size,bdet_comm_size,helper,
+		  I0,I1,I2,h_comm,b_comm,t_comm);
+#endif
+	auto time_end_mult = std::chrono::high_resolution_clock::now();
+	auto elapsed_mult_count = std::chrono::duration_cast<std::chrono::microseconds>(time_end_mult-time_start_mult).count();
+	double elapsed_mult = 0.000001 * elapsed_mult_count;
+	if( mpi_rank == 0 ) {
+	  std::cout << " Elapsed time for mult " << elapsed_mult << " (sec) " << std::endl;
+	}
+
+	double WW = 0.0;
+	sbd::InnerProduct(W,W,WW,b_comm);
+	double E = 0.0;
+	sbd::InnerProduct(W,C,E,b_comm);
+	double EE = 0.0;
+	sbd::InnerProduct(C,C,EE,b_comm);
+	std::cout.precision(16);
+	if( mpi_rank == 0 ) {
+	  std::cout << " Wavefunction norm^2 = " << WW << std::endl;
+	  std::cout << " Energy (raw) = " << E << std::endl;
+	  std::cout << " Energy (normalized) = " << E / WW << std::endl;
+	  std::cout << " Energy variance = " << EE / WW - (E / WW) * (E / WW) << std::endl;
+	}
+	energy = E / WW;
+
+      } else if( method == 0 || method == 2 ) {
 
 	/**
 	   Default method 0: Calculation without storing hamiltonian elements
@@ -397,6 +463,9 @@ namespace sbd {
 	std::cout.precision(16);
 	if( mpi_rank == 0 ) {
 	  std::cout << " Energy = " << E << std::endl;
+	  if( sbd_data.do_variance != 0 ) {
+	    std::cout << " Energy variance = " << EE - E * E << std::endl;
+	  }
 	}
 	energy = E;
       } else if ( method == 1 || method == 3 ) {
@@ -520,6 +589,11 @@ namespace sbd {
 	std::cout.precision(16);
 	if( mpi_rank == 0 ) {
 	  std::cout << " Energy = " << E << std::endl;
+	  if( sbd_data.do_variance != 0 ) {
+	    double EE = 0.0;
+	    sbd::InnerProduct(C,C,EE,b_comm);
+	    std::cout << " Energy variance = " << EE - E * E << std::endl;
+	  }
 	}
 	energy = E;
 
@@ -659,6 +733,54 @@ namespace sbd {
 	  std::cout << " percentage of wf used in augmentation: "
 		    << total_weight*100.0 << std::endl;
 	}
+      } else if ( sbd_data.carryover_type == 4 ) {
+	// Singles + doubles extend with amplitude filtering
+	double total_weight = 0.0;
+	sbd::SinglesDoublesExtendHalfdets(W,adet,bdet,bit_length,L,
+					   adet_comm_size,bdet_comm_size,b_comm,
+					   threshold,co_adet,co_bdet,total_weight);
+	if( mpi_rank == 0 ) {
+	  std::cout << " percentage of wf used in S+D augmentation: "
+		    << total_weight*100.0 << std::endl;
+	}
+      } else if ( sbd_data.carryover_type == 5 ) {
+	// Amplitude carryover + singles+doubles extend
+	if ( ratio == 0.0 ) {
+	  sbd::CarryOverAdet(W,adet,bdet,
+			     adet_comm_size,bdet_comm_size,
+			     b_comm,co_adet,threshold);
+	  sbd::CarryOverBdet(W,adet,bdet,
+			     adet_comm_size,bdet_comm_size,
+			     b_comm,co_bdet,threshold);
+	} else {
+	  size_t n_kept_a = static_cast<size_t>(ratio * adet.size());
+	  double truncated_weight = 0.0;
+	  sbd::CarryOverAdet(W,adet,bdet,
+			     adet_comm_size,bdet_comm_size,
+			     b_comm,n_kept_a,co_adet,truncated_weight);
+	  if( mpi_rank == 0 ) {
+	    std::cout << " truncated weight in carry-over for alpha-det = " << truncated_weight << std::endl;
+	  }
+	  size_t n_kept_b = static_cast<size_t>(ratio * bdet.size());
+	  sbd::CarryOverBdet(W,adet,bdet,
+			     adet_comm_size,bdet_comm_size,
+			     b_comm,n_kept_b,co_bdet,truncated_weight);
+	  if( mpi_rank == 0 ) {
+	    std::cout << " truncated weight in carry-over for beta-det = " << truncated_weight << std::endl;
+	  }
+	}
+	std::vector<std::vector<size_t>> res_adet;
+	std::vector<std::vector<size_t>> res_bdet;
+	sbd::SinglesDoublesExtendHalfdets(co_adet,co_bdet,bit_length,L,
+					   adet_comm_size,bdet_comm_size,b_comm,
+					   res_adet,res_bdet);
+	co_adet = res_adet;
+	co_bdet = res_bdet;
+      } else if ( sbd_data.carryover_type == 6 ) {
+	// Singles + doubles extend of ALL dets (no amplitude filtering)
+	sbd::SinglesDoublesExtendHalfdets(adet,bdet,bit_length,L,
+					   adet_comm_size,bdet_comm_size,b_comm,
+					   co_adet,co_bdet);
       }
 
       /**
