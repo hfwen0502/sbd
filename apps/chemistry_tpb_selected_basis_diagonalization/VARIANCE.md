@@ -148,6 +148,70 @@ Starting from 995 sampled determinants (29 orbitals, 5 electrons per spin) with 
 - **Step 1**: After S+D expansion to 2881 dets and diagonalization (loading step 0's wavefunction as initial guess), the energy improves by 1.63 Ha and variance drops 20x to 0.085 Ha^2.
 - **Step 2**: Rediagonalization in the same 2881-det space (loading step 1's wavefunction) gives an additional 0.016 Ha improvement with variance dropping to ~0, indicating the subspace is closed under the dominant Hamiltonian connections.
 
+### TrimSQD: Trimming Between Expansion Steps
+
+The iterative expansion can produce large subspaces where many determinants have negligible wavefunction weight. TrimSQD (inspired by the [SONIC/Cleveland Clinic workflow](https://arxiv.org/abs/2501.09442)) adds a **trim step** between expansion rounds: after diagonalizing in the expanded space, select only the determinants with significant amplitude, then re-expand from that trimmed set. This keeps the subspace compact while still allowing the expansion to explore new directions at each iteration.
+
+The workflow per step becomes:
+
+1. **Diagonalize** in the current subspace (N dets) → save wavefunction
+2. **Expand** via ERI-screened S+D excitations → produce expanded det set (M dets, M > N)
+3. **Compute variance** of the current wavefunction in the expanded space
+4. **Trim** (new): diagonalize in the expanded space (M dets), then select the top determinants by marginal amplitude weight → produce trimmed det set (K dets, K < M)
+5. Use the **trimmed** set as input for the next step
+
+The trim step is controlled by a separate threshold from the expansion:
+
+- **`--carryover_threshold`** (with `--carryover_type 7`): controls which determinants **seed new excitations** during the S+D expansion. Dets with amplitude below this threshold don't generate excitations. A low value (e.g., `1e-4`) allows weakly-weighted dets to contribute, enabling iterative growth.
+- **`--eri_threshold`** (with `--carryover_type 7/8`): controls which **excitations are kept** based on Hamiltonian integral magnitude. A higher value (e.g., `1e-3`) aggressively filters out excitations with negligible coupling.
+- **`TRIM_THRESHOLD`** (env var for the convergence script): controls which determinants **survive** after rediagonalization in the expanded space. Dets with marginal weight below this threshold are discarded. This uses `--carryover_type 1` internally.
+
+The key insight: `--carryover_threshold` and `TRIM_THRESHOLD` serve different roles even though both filter by amplitude. The expansion threshold decides which dets *generate* new excitations; the trim threshold decides which dets *remain* in the subspace after diagonalization reveals their actual importance.
+
+**Choosing `TRIM_THRESHOLD`:**
+
+| Trim threshold | Effect | Typical use |
+|----------------|--------|-------------|
+| (unset) | No trimming, full expanded subspace carried forward | Baseline comparison |
+| `1e-6` | Mild trim, removes only negligible-weight dets | Best accuracy/size tradeoff |
+| `1e-4` | Aggressive trim, keeps only dominant dets | Fast convergence but lower accuracy ceiling |
+
+#### Example: TrimSQD on 29-Orbital System
+
+Starting from the same 995 sampled determinants, comparing with and without trimming:
+
+```bash
+# With trim (TRIM_THRESHOLD=1e-6)
+CARRYOVER_TYPE=7 THRESHOLD=1e-4 ERI_THRESHOLD=1e-3 TRIM_THRESHOLD=1e-6 NP=8 \
+    bash scripts/variance_convergence.sh ./diag fci_dump.txt determinants_alpha.txt
+
+# Without trim (original)
+CARRYOVER_TYPE=7 THRESHOLD=1e-4 ERI_THRESHOLD=1e-3 NP=8 \
+    bash scripts/variance_convergence.sh ./diag fci_dump.txt determinants_alpha.txt
+```
+
+**With TrimSQD (`TRIM_THRESHOLD=1e-6`):**
+
+| Step | N_dets | Energy (Ha) | Variance (Ha²) | Expanded | Trimmed |
+|------|--------|-------------|-----------------|----------|---------|
+| 0 | 995 | -101.9406 | 1.649 | 879 | 656 |
+| 1 | 656 | -103.1844 | 0.530 | 11289 | 4442 |
+| 2 | 4442 | -103.5931 | 0.007 | 11042 | 5794 |
+| 3 | 5794 | **-103.5938** | 0.001 | 11042 | 5794 |
+
+**Without TrimSQD (original):**
+
+| Step | N_dets | Energy (Ha) | Variance (Ha²) | Expanded |
+|------|--------|-------------|-----------------|----------|
+| 0 | 995 | -101.9406 | 1.649 | 879 |
+| 1 | 879 | -103.1845 | 0.529 | 11289 |
+| 2 | 11289 | -103.5931 | 0.006 | 11042 |
+| 3 | 11042 | **-103.5938** | ~0 | — |
+
+Both reach the same energy (-103.5938 Ha, 0.16 mHa from FCI), but TrimSQD converges with **5794 dets** instead of 11042 — a **47% reduction** in final subspace size. The trimmed subspace has nonzero variance (0.001 Ha²) because some $H$-connected dets were removed, but this has negligible impact on the energy (0.03 mHa difference).
+
+**Cost tradeoff:** TrimSQD adds an extra diagonalization per step (in the expanded space) to determine which dets to keep. For this small 29-orbital system, the extra cost outweighs the savings from smaller subsequent subspaces — the trim run takes ~850s total vs ~200s without trim. The payoff comes for **larger systems** where diagonalization cost scales steeply with subspace dimension (roughly $O(N^2)$ to $O(N^3)$ depending on method and sparsity). When expanded subspaces reach 100k+ dets, trimming to a compact subset before the next round can significantly reduce both diagonalization time and memory.
+
 ### Convergence Script
 
 The script `scripts/variance_convergence.sh` automates this sequence:
@@ -158,12 +222,18 @@ bash scripts/variance_convergence.sh ./diag fcidump.txt alpha_dets.txt
 # With custom parameters
 THRESHOLD=0.001 CARRYOVER_TYPE=4 MAX_DETS=50000 NP=4 \
     bash scripts/variance_convergence.sh ./diag fcidump.txt alpha_dets.txt
+
+# ERI-screened with TrimSQD
+CARRYOVER_TYPE=7 THRESHOLD=1e-4 ERI_THRESHOLD=1e-3 TRIM_THRESHOLD=1e-6 NP=8 \
+    bash scripts/variance_convergence.sh ./diag fcidump.txt alpha_dets.txt
 ```
 
 Environment variables:
 - `NP` — MPI ranks (default: 1)
 - `THRESHOLD` — amplitude cutoff for S+D extension (default: 0.001)
-- `CARRYOVER_TYPE` — 4, 5, or 6 (default: 4)
+- `CARRYOVER_TYPE` — 4, 5, 6, 7, or 8 (default: 4)
+- `ERI_THRESHOLD` — ERI screening threshold for types 7/8 (default: 1e-6)
+- `TRIM_THRESHOLD` — if set, trim expanded dets by amplitude between steps (default: off). Uses `--carryover_type 1` internally. See [TrimSQD](#trimsqd-trimming-between-expansion-steps)
 - `MAX_DETS` — stop if expanded dets exceed this limit (default: 50000)
 - `MAX_STEPS` — maximum number of iterations (default: 6)
 - `MPIRUN_EXTRA` — additional mpirun flags (e.g., `--allow-run-as-root`)

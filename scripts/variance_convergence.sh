@@ -17,6 +17,7 @@ MPIRUN_EXTRA=${MPIRUN_EXTRA:-}  # e.g. "--allow-run-as-root"
 THRESHOLD=${THRESHOLD:-0.001}   # amplitude threshold for S+D extend
 CARRYOVER_TYPE=${CARRYOVER_TYPE:-4}  # 4=threshold S+D, 6=unfiltered S+D, 7=ERI-screened S+D, 8=ERI-screened all
 ERI_THRESHOLD=${ERI_THRESHOLD:-1e-6}  # ERI screening threshold (types 7/8 only)
+TRIM_THRESHOLD=${TRIM_THRESHOLD:-}   # if set, trim expanded dets by amplitude before next step
 MAX_DETS=${MAX_DETS:-50000}     # stop if expanded dets exceed this
 MAX_STEPS=${MAX_STEPS:-6}
 
@@ -34,11 +35,17 @@ echo " Variance Convergence Sequence"
 echo " FCIDUMP: $FCIDUMP"
 echo " Initial dets: $ADETFILE"
 echo " Carryover type: $CARRYOVER_TYPE, threshold: $THRESHOLD, eri_threshold: $ERI_THRESHOLD"
+echo " Trim threshold: ${TRIM_THRESHOLD:-off}"
 echo " MPI ranks: $NP, max dets: $MAX_DETS"
 echo "================================================================"
 echo ""
-printf "%-6s %10s %22s %16s %12s %10s\n" "Step" "N_dets" "Energy" "Variance" "Expanded" "Time(s)"
-printf "%-6s %10s %22s %16s %12s %10s\n" "----" "------" "------" "--------" "--------" "------"
+if [ -n "$TRIM_THRESHOLD" ]; then
+    printf "%-6s %10s %22s %16s %12s %10s %10s\n" "Step" "N_dets" "Energy" "Variance" "Expanded" "Trimmed" "Time(s)"
+    printf "%-6s %10s %22s %16s %12s %10s %10s\n" "----" "------" "------" "--------" "--------" "-------" "------"
+else
+    printf "%-6s %10s %22s %16s %12s %10s\n" "Step" "N_dets" "Energy" "Variance" "Expanded" "Time(s)"
+    printf "%-6s %10s %22s %16s %12s %10s\n" "----" "------" "------" "--------" "--------" "------"
+fi
 
 for step in $(seq 0 $MAX_STEPS); do
     STEP_ADET="$WORKDIR/step${step}_alpha.txt"
@@ -105,10 +112,38 @@ for step in $(seq 0 $MAX_STEPS); do
         VARIANCE="(skipped)"
     fi
 
+    # Optional trim: diag in expanded space, then select top dets by amplitude
+    if [ -n "$TRIM_THRESHOLD" ] && [ -f "$STEP_EXPANDED" ] && [ "$N_EXPANDED" != "-" ] && [ "$N_EXPANDED" -le "$MAX_DETS" ]; then
+        TRIMMED="$WORKDIR/step${step}_trimmed_alpha.txt"
+
+        # Diag in expanded space (using current wf as initial guess),
+        # then select top dets by marginal amplitude weight.
+        # Overwrite step wf so the next step loads the expanded-space eigenvector.
+        mpirun $MPIRUN_EXTRA -x LD_LIBRARY_PATH=$LD_LIBRARY_PATH -np $NP "$DIAG" \
+            --fcidump "$FCIDUMP" \
+            --adetfile "$STEP_EXPANDED" \
+            --loadname "$STEP_WF" \
+            --iteration 300 \
+            --savename "$STEP_WF" \
+            --carryover_type 1 --carryover_threshold "$TRIM_THRESHOLD" \
+            --carryover_adetfile "$TRIMMED" \
+            > "$WORKDIR/step${step}_trim.log" 2>&1
+
+        N_TRIMMED=$(wc -l < "$TRIMMED" | tr -d ' ')
+
+        # Replace the next step's input with the trimmed set
+        cp "$TRIMMED" "$WORKDIR/step$((step+1))_alpha.txt"
+    fi
+
     STEP_END=$(date +%s)
     ELAPSED=$((STEP_END - STEP_START))
 
-    printf "%-6s %10s %22s %16s %12s %10s\n" "$step" "$N_DETS" "$DIAG_ENERGY" "$VARIANCE" "$N_EXPANDED" "$ELAPSED"
+    if [ -n "$TRIM_THRESHOLD" ] && [ -n "${N_TRIMMED:-}" ]; then
+        printf "%-6s %10s %22s %16s %12s %10s %10s\n" "$step" "$N_DETS" "$DIAG_ENERGY" "$VARIANCE" "$N_EXPANDED" "$N_TRIMMED" "$ELAPSED"
+    else
+        printf "%-6s %10s %22s %16s %12s %10s\n" "$step" "$N_DETS" "$DIAG_ENERGY" "$VARIANCE" "$N_EXPANDED" "$ELAPSED"
+    fi
+    N_TRIMMED=""
 
     # Stop if expanded exceeds limit (next diag would be too slow)
     if [ "$N_EXPANDED" != "-" ] && [ "$N_EXPANDED" -gt "$MAX_DETS" ]; then
