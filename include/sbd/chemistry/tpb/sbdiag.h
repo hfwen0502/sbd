@@ -5,6 +5,8 @@
 #ifndef SBD_CHEMISTRY_TPB_SBDIAG_H
 #define SBD_CHEMISTRY_TPB_SBDIAG_H
 
+#include <limits>
+
 #ifdef USE_OMP_OFFLOAD
 #include "../basic/omp_offload.h"
 #endif
@@ -32,6 +34,7 @@ namespace sbd {
       double ratio = 0.0;
       double threshold = 0.01;
       double eri_threshold = 1.0e-6;
+      size_t max_carryover_dets = 0;   // 0 = unlimited; safety valve for types 6/8
 
       size_t bit_length = 20;
 
@@ -83,6 +86,9 @@ namespace sbd {
 	if( std::string(argv[i]) == "--eri_threshold" ) {
 	  sbd_data.eri_threshold = std::atof(argv[++i]);
 	}
+	if( std::string(argv[i]) == "--max_carryover_dets" ) {
+	  sbd_data.max_carryover_dets = static_cast<size_t>(std::atoll(argv[++i]));
+	}
 	if( std::string(argv[i]) == "--max_time" ) {
 		sbd_data.max_time = std::atof(argv[++i]);
 	}
@@ -130,6 +136,10 @@ namespace sbd {
        @param[out] carryover_bitstrings: dominant bitstrings for alpha-spin orbitals
        @param[out] one_p_rdm: one-particle reduced density matrix if sbd_data.do_rdm != 0
        @param[out] two_p_rdm: two-particle reduced density matrix if sbd_data.do_rdm != 0
+       @param[out] energy_variance: <H^2>-<H>^2 evaluated on the final wavefunction
+                   (always populated in max_it==0 variance-only mode;
+                    populated for method 0/2 and 1/3 only when do_variance != 0;
+                    NaN otherwise)
      */
     void diag(const MPI_Comm & comm,
 	      const SBD & sbd_data,
@@ -143,7 +153,10 @@ namespace sbd {
 	      std::vector<std::vector<size_t>> & co_adet,
 	      std::vector<std::vector<size_t>> & co_bdet,
 	      std::vector<std::vector<double>> & one_p_rdm,
-	      std::vector<std::vector<double>> & two_p_rdm) {
+	      std::vector<std::vector<double>> & two_p_rdm,
+	      double & energy_variance) {
+
+      energy_variance = std::numeric_limits<double>::quiet_NaN();
 
       int mpi_master = 0;
       int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
@@ -353,6 +366,7 @@ namespace sbd {
 	  std::cout << " Energy variance = " << EE / WW - (E / WW) * (E / WW) << std::endl;
 	}
 	energy = E / WW;
+	energy_variance = EE / WW - (E / WW) * (E / WW);
 
       } else if( method == 0 || method == 2 ) {
 
@@ -471,6 +485,9 @@ namespace sbd {
 	  if( sbd_data.do_variance != 0 ) {
 	    std::cout << " Energy variance = " << EE - E * E << std::endl;
 	  }
+	}
+	if( sbd_data.do_variance != 0 ) {
+	  energy_variance = EE - E * E;
 	}
 	energy = E;
       } else if ( method == 1 || method == 3 ) {
@@ -598,6 +615,7 @@ namespace sbd {
 	    double EE = 0.0;
 	    sbd::InnerProduct(C,C,EE,b_comm);
 	    std::cout << " Energy variance = " << EE - E * E << std::endl;
+	    energy_variance = EE - E * E;
 	  }
 	}
 	energy = E;
@@ -809,6 +827,21 @@ namespace sbd {
 	}
       }
 
+      // Safety-valve cap on expanded carryover dets (0 = unlimited).
+      // Deterministic first-N truncation; not quality-preserving — use TRIM_THRESHOLD
+      // for quality-preserving size control.
+      if( sbd_data.max_carryover_dets > 0 ) {
+	if( co_adet.size() > sbd_data.max_carryover_dets ) {
+	  co_adet.resize(sbd_data.max_carryover_dets);
+	}
+	if( co_bdet.size() > sbd_data.max_carryover_dets ) {
+	  co_bdet.resize(sbd_data.max_carryover_dets);
+	}
+	if( mpi_rank == 0 ) {
+	  std::cout << " Carryover dets capped at " << sbd_data.max_carryover_dets << std::endl;
+	}
+      }
+
       /**
 	 Save wavefunctions
        */
@@ -861,7 +894,8 @@ namespace sbd {
 	      std::vector<std::vector<size_t>> & co_adet,
 	      std::vector<std::vector<size_t>> & co_bdet,
 	      std::vector<std::vector<double>> & one_p_rdm,
-	      std::vector<std::vector<double>> & two_p_rdm) {
+	      std::vector<std::vector<double>> & two_p_rdm,
+	      double & energy_variance) {
 
       int mpi_master = 0;
       int mpi_rank; MPI_Comm_rank(comm,&mpi_rank);
@@ -943,7 +977,7 @@ namespace sbd {
       diag(comm,sbd_data,fcidump,adet,bdet,
 	   loadname,savename,
 	   energy,density,co_adet,co_bdet,
-	   one_p_rdm,two_p_rdm);
+	   one_p_rdm,two_p_rdm,energy_variance);
 
     } // end diag for file-name version
 

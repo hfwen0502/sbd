@@ -94,12 +94,18 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
                       "Shuffle determinants flag")
         .def_readwrite("do_rdm", &sbd::tpb::SBD::do_rdm,
                       "Calculate RDM flag (0=density only, 1=full RDM)")
+        .def_readwrite("do_variance", &sbd::tpb::SBD::do_variance,
+                      "If != 0, compute energy variance alongside the energy")
         .def_readwrite("carryover_type", &sbd::tpb::SBD::carryover_type,
                       "Carryover determinant selection type")
         .def_readwrite("ratio", &sbd::tpb::SBD::ratio,
                       "Carryover ratio")
         .def_readwrite("threshold", &sbd::tpb::SBD::threshold,
                       "Carryover threshold")
+        .def_readwrite("eri_threshold", &sbd::tpb::SBD::eri_threshold,
+                      "ERI screening threshold for carryover types 7/8")
+        .def_readwrite("max_carryover_dets", &sbd::tpb::SBD::max_carryover_dets,
+                      "Hard cap on carryover dets per half-det (0 = unlimited). Safety valve for types 6/8.")
         .def_readwrite("bit_length", &sbd::tpb::SBD::bit_length,
                       "Bit length for determinant representation")
         .def_readwrite("dump_matrix_form_wf", &sbd::tpb::SBD::dump_matrix_form_wf,
@@ -187,32 +193,34 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             
             // Output variables
             double energy;
+            double energy_variance;
             std::vector<double> density;
             std::vector<std::vector<size_t>> co_adet;
             std::vector<std::vector<size_t>> co_bdet;
             std::vector<std::vector<double>> one_p_rdm;
             std::vector<std::vector<double>> two_p_rdm;
-            
+
             // Release GIL for long computation
             py::gil_scoped_release release;
-            
+
             // Call C++ function
             sbd::tpb::diag(comm, sbd_data, fcidump, adet, bdet,
                           loadname, savename, energy, density,
-                          co_adet, co_bdet, one_p_rdm, two_p_rdm);
-            
+                          co_adet, co_bdet, one_p_rdm, two_p_rdm, energy_variance);
+
             // Reacquire GIL for Python object creation
             py::gil_scoped_acquire acquire;
-            
+
             // Return results as dictionary
             py::dict results;
             results["energy"] = energy;
+            results["energy_variance"] = energy_variance;
             results["density"] = density;
             results["carryover_adet"] = co_adet;
             results["carryover_bdet"] = co_bdet;
             results["one_p_rdm"] = one_p_rdm;
             results["two_p_rdm"] = two_p_rdm;
-            
+
             return results;
         },
         "Perform TPB diagonalization with pre-loaded data structures",
@@ -259,32 +267,34 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             
             // Output variables
             double energy;
+            double energy_variance;
             std::vector<double> density;
             std::vector<std::vector<size_t>> co_adet;
             std::vector<std::vector<size_t>> co_bdet;
             std::vector<std::vector<double>> one_p_rdm;
             std::vector<std::vector<double>> two_p_rdm;
-            
+
             // Release GIL for long computation
             py::gil_scoped_release release;
-            
+
             // Call file-based C++ function
             sbd::tpb::diag(comm, sbd_data, fcidumpfile, adetfile,
                           loadname, savename, energy, density,
-                          co_adet, co_bdet, one_p_rdm, two_p_rdm);
-            
+                          co_adet, co_bdet, one_p_rdm, two_p_rdm, energy_variance);
+
             // Reacquire GIL for Python object creation
             py::gil_scoped_acquire acquire;
-            
+
             // Return results as dictionary
             py::dict results;
             results["energy"] = energy;
+            results["energy_variance"] = energy_variance;
             results["density"] = density;
             results["carryover_adet"] = co_adet;
             results["carryover_bdet"] = co_bdet;
             results["one_p_rdm"] = one_p_rdm;
             results["two_p_rdm"] = two_p_rdm;
-            
+
             return results;
         },
         "Perform TPB diagonalization from files (convenience function)",

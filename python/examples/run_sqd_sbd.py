@@ -75,9 +75,21 @@ def parse_args():
     p.add_argument("--rdm", "--do_rdm", type=int, default=0, dest="do_rdm",
                    help="0=density only (default, sufficient for SQD), 1=full RDM")
     p.add_argument("--shuffle", "--do_shuffle", type=int, default=0, dest="do_shuffle")
-    p.add_argument("--carryover_type", type=int, default=1)
+    p.add_argument("--carryover_type", type=int, default=1,
+                   help="1-3 = singles-only; 4-6 = brute S+D; 7-8 = ERI-screened S+D")
     p.add_argument("--carryover_ratio", "--ratio", type=float, default=0.1, dest="ratio")
-    p.add_argument("--carryover_threshold", "--threshold", type=float, default=1e-4, dest="threshold")
+    p.add_argument("--carryover_threshold", "--threshold", type=float, default=1e-4, dest="threshold",
+                   help="SBD-side amplitude cutoff: which dets seed S+D excitations "
+                        "(distinct from --sqd_carryover_threshold)")
+    p.add_argument("--eri_threshold", type=float, default=1e-6,
+                   help="ERI screening threshold for carryover types 7/8")
+    p.add_argument("--max_carryover_dets", type=int, default=0,
+                   help="Hard cap on carryover dets per half-det (0 = unlimited). "
+                        "Safety valve for types 6/8; truncation is deterministic, not quality-preserving.")
+    p.add_argument("--sqd_carryover_threshold", type=float, default=1e-4,
+                   help="qiskit-addon-sqd's between-iteration carryover threshold. "
+                        "Filters SBD-expanded SCIState before the next SQD iteration. "
+                        "Set to 0 to disable between-iteration trimming.")
 
     # MPI sub-communicator sizes
     p.add_argument("--adet_comm_size", type=int, default=1)
@@ -204,6 +216,8 @@ def main():
         "carryover_type": args.carryover_type,
         "ratio": args.ratio,
         "threshold": args.threshold,
+        "eri_threshold": args.eri_threshold,
+        "max_carryover_dets": args.max_carryover_dets,
         "bit_length": 64,
         "adet_comm_size": args.adet_comm_size,
         "bdet_comm_size": args.bdet_comm_size,
@@ -260,6 +274,7 @@ def main():
             sci_solver=sbd_solver,
             symmetrize_spin=True,
             callback=callback,
+            carryover_threshold=args.sqd_carryover_threshold,
             seed=rand_seed,
         )
     except RuntimeError as e:

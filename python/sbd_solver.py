@@ -470,3 +470,96 @@ def create_sbd_solver(
         clean_temp_dir=clean_temp_dir,
         device_config=device_config,
     )
+
+
+def compute_variance_on_subspace(
+    ci_strings: tuple[np.ndarray, np.ndarray],
+    one_body_tensor: np.ndarray,
+    two_body_tensor: np.ndarray,
+    norb: int,
+    nelec: tuple[int, int],
+    *,
+    loadname: str | Path,
+    mpi_comm: MPI.Comm | None = None,
+    sbd_config: dict | None = None,
+    temp_dir: str | Path | None = None,
+    clean_temp_dir: bool = True,
+    device_config=None,
+) -> tuple[float, float]:
+    """Compute energy and variance of a pre-saved wavefunction on a det subspace.
+
+    Uses SBD's --iteration 0 path: skip Davidson, load the wavefunction, compute
+    ``H|psi>``, and return ``(energy, variance) = (<H>, <H^2> - <H>^2)`` evaluated
+    in the provided CI-string subspace.
+
+    The subspace must be a **superset** of the determinant set that produced the
+    saved wavefunction; missing coefficients are zero-padded. This mirrors the
+    two-step protocol in apps/chemistry_tpb_selected_basis_diagonalization/VARIANCE.md
+    (diagonalize-and-save, then evaluate variance in the expanded space).
+
+    Args:
+        ci_strings: Pair ``(strings_a, strings_b)`` of CI string arrays defining
+            the (possibly expanded) subspace.
+        one_body_tensor: One-body Hamiltonian tensor.
+        two_body_tensor: Two-body Hamiltonian tensor (chemist convention, 8-fold).
+        norb: Number of spatial orbitals.
+        nelec: ``(n_alpha, n_beta)``.
+        loadname: Path to the SBD wavefunction binary (created with
+            ``sbd_data.dump_matrix_form_wf`` or ``--savename``).
+        mpi_comm: MPI communicator. Defaults to ``MPI.COMM_WORLD``.
+        sbd_config: Optional extra SBD config (method, max_nb, comm sizes, ...).
+        temp_dir: Directory for temp FCIDUMP. Defaults to ``tempfile.gettempdir()``.
+        clean_temp_dir: Remove the temp directory on return.
+        device_config: Optional DeviceConfig to select CPU/GPU backend.
+
+    Returns:
+        ``(energy, variance)`` on rank 0. Non-zero ranks get ``(0.0, nan)``.
+    """
+    if pyscf_tools is None:
+        raise ImportError("pyscf is required for compute_variance_on_subspace")
+
+    backend = _resolve_backend(device_config)
+
+    if mpi_comm is None:
+        mpi_comm = MPI.COMM_WORLD
+    mpi_rank = mpi_comm.Get_rank()
+
+    temp_dir = temp_dir or tempfile.gettempdir()
+    if mpi_rank == 0:
+        sbd_dir = Path(tempfile.mkdtemp(prefix="sbd_variance_", dir=temp_dir))
+        sbd_dir_str = str(sbd_dir)
+    else:
+        sbd_dir_str = None
+    sbd_dir_str = mpi_comm.bcast(sbd_dir_str, root=0)
+    sbd_dir = Path(sbd_dir_str)
+
+    try:
+        fcidump_path = sbd_dir / "fcidump.txt"
+        if mpi_rank == 0:
+            pyscf_tools.fcidump.from_integrals(
+                str(fcidump_path), one_body_tensor, two_body_tensor, norb, nelec,
+            )
+        mpi_comm.Barrier()
+        fcidump = backend.LoadFCIDump(str(fcidump_path))
+
+        strings_a, strings_b = ci_strings
+        adet = _ci_strings_to_sbd_dets(strings_a, norb, backend)
+        bdet = _ci_strings_to_sbd_dets(strings_b, norb, backend)
+
+        config = dict(sbd_config) if sbd_config else {}
+        config["max_it"] = 0   # variance-only mode
+        sbd_data = _create_sbd_config(config, backend, device_config)
+
+        results = backend.tpb_diag(
+            mpi_comm, sbd_data, fcidump, adet, bdet,
+            loadname=str(loadname), savename="",
+        )
+        mpi_comm.Barrier()
+
+        if mpi_rank != 0:
+            return 0.0, float("nan")
+
+        return float(results["energy"]), float(results["energy_variance"])
+    finally:
+        if clean_temp_dir and mpi_rank == 0:
+            shutil.rmtree(sbd_dir, ignore_errors=True)
