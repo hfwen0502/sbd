@@ -55,6 +55,7 @@ def solve_sci(
     temp_dir: str | Path | None = None,
     clean_temp_dir: bool = True,
     device_config=None,
+    fcidump_path: str | Path | None = None,
 ) -> SCIResult:
     """
     Diagonalize Hamiltonian in subspace defined by CI strings using SBD.
@@ -71,6 +72,12 @@ def solve_sci(
         temp_dir: Directory for temporary files.
         clean_temp_dir: Whether to delete intermediate files.
         device_config: DeviceConfig object to select CPU/GPU backend.
+        fcidump_path: If set, load the FCIDUMP directly from this path on
+            every rank and skip the tensor->file round-trip. MUST be on a
+            filesystem visible to every rank (shared on multi-node runs).
+            When None (default), rank 0 writes a regenerated FCIDUMP into
+            ``temp_dir`` and every rank opens that file, which requires
+            ``temp_dir`` to be shared for multi-node runs.
 
     Returns:
         The diagonalization result as SCIResult.
@@ -86,25 +93,13 @@ def solve_sci(
         mpi_comm = MPI.COMM_WORLD
     mpi_rank = mpi_comm.Get_rank()
 
-    # Rank 0 creates temp dir, broadcasts to all ranks
-    temp_dir = temp_dir or tempfile.gettempdir()
-    if mpi_rank == 0:
-        sbd_dir = Path(tempfile.mkdtemp(prefix="sbd_files_", dir=temp_dir))
-        sbd_dir_str = str(sbd_dir)
-    else:
-        sbd_dir_str = None
-    sbd_dir_str = mpi_comm.bcast(sbd_dir_str, root=0)
-    sbd_dir = Path(sbd_dir_str)
+    sbd_dir, owns_sbd_dir = _make_sbd_dir(mpi_comm, mpi_rank, temp_dir)
 
     try:
-        fcidump_path = sbd_dir / "fcidump.txt"
-        if mpi_rank == 0:
-            pyscf_tools.fcidump.from_integrals(
-                str(fcidump_path), one_body_tensor, two_body_tensor, norb, nelec,
-            )
-        mpi_comm.Barrier()
-
-        fcidump = backend.LoadFCIDump(str(fcidump_path))
+        fcidump, ecore_offset = _load_or_regenerate_fcidump(
+            backend, mpi_rank, mpi_comm, sbd_dir, fcidump_path,
+            one_body_tensor, two_body_tensor, norb, nelec,
+        )
 
         return _solve_sci_core(
             ci_strings,
@@ -118,9 +113,10 @@ def solve_sci(
             backend=backend,
             fcidump=fcidump,
             device_config=device_config,
+            ecore_offset=ecore_offset,
         )
     finally:
-        if clean_temp_dir and mpi_rank == 0:
+        if clean_temp_dir and owns_sbd_dir and mpi_rank == 0:
             shutil.rmtree(sbd_dir, ignore_errors=True)
 
 
@@ -137,6 +133,7 @@ def _solve_sci_core(
     backend,
     fcidump,
     device_config=None,
+    ecore_offset: float = 0.0,
 ) -> SCIResult:
     """
     Inner diagonalization kernel that operates on a pre-loaded FCIDUMP object.
@@ -180,7 +177,11 @@ def _solve_sci_core(
 
     # --- rank 0 only ---
 
-    energy = results["energy"]
+    # Subtract ECORE so SCIResult.energy is the pure electronic piece,
+    # matching the contract callers rely on (they add nuclear_repulsion
+    # separately). The regenerate path writes ECORE=0, so offset=0 there;
+    # the direct-load path passes whatever ECORE lives in the user file.
+    energy = results["energy"] - ecore_offset
     density = np.array(results["density"])
     occupancies_a = density[::2]
     occupancies_b = density[1::2]
@@ -244,11 +245,12 @@ def solve_sci_batch(
     temp_dir: str | Path | None = None,
     clean_temp_dir: bool = True,
     device_config=None,
+    fcidump_path: str | Path | None = None,
 ) -> list[SCIResult]:
     """
     Diagonalize Hamiltonian in multiple subspaces using SBD.
 
-    The FCIDUMP file is written once and loaded once for all batches.
+    The FCIDUMP file is loaded once and reused across all batches.
 
     Args:
         ci_strings: List of (strings_a, strings_b) pairs.
@@ -262,6 +264,12 @@ def solve_sci_batch(
         temp_dir: Directory for temporary files.
         clean_temp_dir: Whether to delete intermediate files.
         device_config: DeviceConfig object to select CPU/GPU backend.
+        fcidump_path: If set, load the FCIDUMP directly from this path on
+            every rank and skip the tensor->file round-trip. MUST be on a
+            filesystem visible to every rank (shared on multi-node runs).
+            When None (default), rank 0 writes a regenerated FCIDUMP into
+            ``temp_dir`` and every rank opens that file, which requires
+            ``temp_dir`` to be shared for multi-node runs.
 
     Returns:
         List of SCIResult for each batch.
@@ -275,24 +283,13 @@ def solve_sci_batch(
         mpi_comm = MPI.COMM_WORLD
     mpi_rank = mpi_comm.Get_rank()
 
-    temp_dir = temp_dir or tempfile.gettempdir()
-    if mpi_rank == 0:
-        sbd_dir = Path(tempfile.mkdtemp(prefix="sbd_files_", dir=temp_dir))
-        sbd_dir_str = str(sbd_dir)
-    else:
-        sbd_dir_str = None
-    sbd_dir_str = mpi_comm.bcast(sbd_dir_str, root=0)
-    sbd_dir = Path(sbd_dir_str)
+    sbd_dir, owns_sbd_dir = _make_sbd_dir(mpi_comm, mpi_rank, temp_dir)
 
     try:
-        fcidump_path = sbd_dir / "fcidump.txt"
-        if mpi_rank == 0:
-            pyscf_tools.fcidump.from_integrals(
-                str(fcidump_path), one_body_tensor, two_body_tensor, norb, nelec,
-            )
-        mpi_comm.Barrier()
-
-        fcidump = backend.LoadFCIDump(str(fcidump_path))
+        fcidump, ecore_offset = _load_or_regenerate_fcidump(
+            backend, mpi_rank, mpi_comm, sbd_dir, fcidump_path,
+            one_body_tensor, two_body_tensor, norb, nelec,
+        )
 
         return [
             _solve_sci_core(
@@ -307,12 +304,80 @@ def solve_sci_batch(
                 backend=backend,
                 fcidump=fcidump,
                 device_config=device_config,
+                ecore_offset=ecore_offset,
             )
             for ci_strs in ci_strings
         ]
     finally:
-        if clean_temp_dir and mpi_rank == 0:
+        if clean_temp_dir and owns_sbd_dir and mpi_rank == 0:
             shutil.rmtree(sbd_dir, ignore_errors=True)
+
+
+def _make_sbd_dir(mpi_comm, mpi_rank, temp_dir):
+    """Create a per-run tempdir on rank 0 and broadcast its path.
+
+    Used to hold the wavefunction.bin written by rank 0 (and the
+    regenerated fcidump.txt when ``fcidump_path`` is not provided).
+    Returns (path, owns_sbd_dir) where owns_sbd_dir is True on rank 0
+    (so the caller knows to rmtree it on exit).
+    """
+    temp_dir = temp_dir or tempfile.gettempdir()
+    if mpi_rank == 0:
+        sbd_dir_str = str(Path(tempfile.mkdtemp(prefix="sbd_files_", dir=temp_dir)))
+    else:
+        sbd_dir_str = None
+    sbd_dir_str = mpi_comm.bcast(sbd_dir_str, root=0)
+    return Path(sbd_dir_str), (mpi_rank == 0)
+
+
+def _load_or_regenerate_fcidump(
+    backend, mpi_rank, mpi_comm, sbd_dir, fcidump_path,
+    one_body_tensor, two_body_tensor, norb, nelec,
+):
+    """Return ``(fcidump, ecore_offset)``.
+
+    ``ecore_offset`` is the ECORE constant baked into whatever FCIDUMP
+    SBD is about to load, and is subtracted from the raw energy so that
+    the SCIResult contract (``energy`` is the pure electronic piece) is
+    preserved in both the regenerate and direct-load paths.
+
+    If ``fcidump_path`` is given, every rank loads that file directly
+    (must be on a filesystem visible to every rank). Otherwise rank 0
+    regenerates an FCIDUMP with ECORE=0 into ``sbd_dir/fcidump.txt`` and
+    every rank opens that file.
+    """
+    if fcidump_path is not None:
+        ecore_offset = _read_fcidump_ecore(fcidump_path)
+        return backend.LoadFCIDump(str(fcidump_path)), ecore_offset
+
+    fcidump_path = sbd_dir / "fcidump.txt"
+    if mpi_rank == 0:
+        pyscf_tools.fcidump.from_integrals(
+            str(fcidump_path), one_body_tensor, two_body_tensor, norb, nelec,
+        )
+    mpi_comm.Barrier()
+    return backend.LoadFCIDump(str(fcidump_path)), 0.0
+
+
+def _read_fcidump_ecore(fcidump_path):
+    """Pull the ECORE constant out of an FCIDUMP file.
+
+    ECORE is the line whose four orbital indices are all zero. Return
+    0.0 if no such line exists (some FCIDUMPs simply omit it).
+    """
+    with open(fcidump_path) as f:
+        for line in f:
+            # FCIDUMP integral lines look like: "<val> i j k l"
+            parts = line.split()
+            if len(parts) == 5:
+                try:
+                    val = float(parts[0])
+                    i, j, k, l = (int(x) for x in parts[1:])
+                except ValueError:
+                    continue
+                if i == j == k == l == 0:
+                    return val
+    return 0.0
 
 
 def _ci_strings_to_sbd_dets(

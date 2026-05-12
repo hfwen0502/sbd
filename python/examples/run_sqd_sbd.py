@@ -20,6 +20,13 @@ Usage (MPI required):
         --fcidump /path/to/fci_dump.txt \
         --counts /path/to/count_dict.json \
         --samples_per_batch 800 --num_batches 3
+
+Multi-node note:
+    This script passes --fcidump directly to the SBD solver, so the
+    FCIDUMP path itself must be on a filesystem visible to every rank
+    (just like --counts). --temp_dir only needs to hold a per-run
+    wavefunction.bin that rank 0 writes and reads, so it can stay
+    node-local (default /tmp works).
 """
 
 import argparse
@@ -77,16 +84,13 @@ def parse_args():
     p.add_argument("--bdet_comm_size", type=int, default=1)
     p.add_argument("--task_comm_size", type=int, default=1)
 
-    # Tempdir for the FCIDUMP rank-0 writes and broadcasts to all ranks.
-    # Defaults to $TMPDIR / /tmp, which is node-local on most clusters —
-    # multi-node runs must point this at a shared filesystem.
+    # tempdir for the wavefunction.bin file that rank 0 writes and reads
+    # each iteration. Only rank 0 touches it, so node-local /tmp is fine
+    # even for multi-node runs.
     p.add_argument("--temp_dir", default=None,
-                   help="Directory for the intermediate FCIDUMP file that rank 0 "
-                        "writes and every rank opens. Defaults to $TMPDIR or /tmp. "
-                        "For multi-node runs, set this to a path on a filesystem "
-                        "visible to all ranks (e.g., $HOME/sbd-tmp) — a node-local "
-                        "/tmp will cause 'Failed to open FCIDUMP' errors on ranks "
-                        "not co-located with rank 0.")
+                   help="Directory for the per-iteration wavefunction.bin that "
+                        "rank 0 writes and reads. Defaults to $TMPDIR or /tmp. "
+                        "Node-local /tmp is fine even for multi-node runs.")
 
     return p.parse_args()
 
@@ -206,6 +210,10 @@ def main():
         sbd_config=sbd_config,
         device_config=device_config,
         temp_dir=args.temp_dir,
+        # Skip the tensor->file round-trip: hand SBD the user's FCIDUMP
+        # directly. Assumes --fcidump is on a filesystem visible to every
+        # rank, which is already true for any realistic multi-node run.
+        fcidump_path=args.fcidump,
     )
 
     # Optional profiler
@@ -248,14 +256,13 @@ def main():
             seed=rand_seed,
         )
     except RuntimeError as e:
-        if "Failed to open FCIDUMP" in str(e) and args.temp_dir is None:
+        if "Failed to open FCIDUMP" in str(e):
             if rank == 0:
                 print(
-                    "\nERROR: non-rank-0 processes could not open the FCIDUMP that "
-                    "rank 0 wrote. This usually means --temp_dir defaulted to a "
-                    "node-local path (e.g., /tmp) on a multi-node run. Re-run with "
-                    "--temp_dir pointing at a shared filesystem, e.g.\n"
-                    "    --temp_dir $HOME/sbd-tmp",
+                    f"\nERROR: at least one rank could not open the FCIDUMP at "
+                    f"{args.fcidump!r}. Make sure --fcidump points at a file on "
+                    f"a filesystem visible to every rank (shared home, not "
+                    f"node-local /tmp).",
                     flush=True,
                 )
         raise
