@@ -91,6 +91,12 @@ def parse_args():
                    help="Directory for the per-iteration wavefunction.bin that "
                         "rank 0 writes and reads. Defaults to $TMPDIR or /tmp. "
                         "Node-local /tmp is fine even for multi-node runs.")
+    p.add_argument("--keep_temp_dir", action="store_true", default=False,
+                   help="Keep the per-iteration sbd_files_* subdirectories "
+                        "(wavefunction.bin, any regenerated FCIDUMP) under "
+                        "--temp_dir after each call. Useful for debugging or "
+                        "inspecting intermediate wavefunctions; default is to "
+                        "delete them.")
 
     return p.parse_args()
 
@@ -210,6 +216,7 @@ def main():
         sbd_config=sbd_config,
         device_config=device_config,
         temp_dir=args.temp_dir,
+        clean_temp_dir=not args.keep_temp_dir,
         # Skip the tensor->file round-trip: hand SBD the user's FCIDUMP
         # directly. Assumes --fcidump is on a filesystem visible to every
         # rank, which is already true for any realistic multi-node run.
