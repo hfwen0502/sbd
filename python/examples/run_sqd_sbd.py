@@ -77,6 +77,17 @@ def parse_args():
     p.add_argument("--bdet_comm_size", type=int, default=1)
     p.add_argument("--task_comm_size", type=int, default=1)
 
+    # Tempdir for the FCIDUMP rank-0 writes and broadcasts to all ranks.
+    # Defaults to $TMPDIR / /tmp, which is node-local on most clusters —
+    # multi-node runs must point this at a shared filesystem.
+    p.add_argument("--temp_dir", default=None,
+                   help="Directory for the intermediate FCIDUMP file that rank 0 "
+                        "writes and every rank opens. Defaults to $TMPDIR or /tmp. "
+                        "For multi-node runs, set this to a path on a filesystem "
+                        "visible to all ranks (e.g., $HOME/sbd-tmp) — a node-local "
+                        "/tmp will cause 'Failed to open FCIDUMP' errors on ranks "
+                        "not co-located with rank 0.")
+
     return p.parse_args()
 
 
@@ -194,6 +205,7 @@ def main():
         mpi_comm=comm,
         sbd_config=sbd_config,
         device_config=device_config,
+        temp_dir=args.temp_dir,
     )
 
     # Optional profiler
@@ -220,20 +232,33 @@ def main():
         print("Starting SQD loop...")
         t0 = time.perf_counter()
 
-    result = diagonalize_fermionic_hamiltonian(
-        hcore,
-        eri,
-        bit_array,
-        samples_per_batch=args.samples_per_batch,
-        norb=norb,
-        nelec=(num_elec_a, num_elec_b),
-        num_batches=args.num_batches,
-        max_iterations=args.max_iterations,
-        sci_solver=sbd_solver,
-        symmetrize_spin=True,
-        callback=callback,
-        seed=rand_seed,
-    )
+    try:
+        result = diagonalize_fermionic_hamiltonian(
+            hcore,
+            eri,
+            bit_array,
+            samples_per_batch=args.samples_per_batch,
+            norb=norb,
+            nelec=(num_elec_a, num_elec_b),
+            num_batches=args.num_batches,
+            max_iterations=args.max_iterations,
+            sci_solver=sbd_solver,
+            symmetrize_spin=True,
+            callback=callback,
+            seed=rand_seed,
+        )
+    except RuntimeError as e:
+        if "Failed to open FCIDUMP" in str(e) and args.temp_dir is None:
+            if rank == 0:
+                print(
+                    "\nERROR: non-rank-0 processes could not open the FCIDUMP that "
+                    "rank 0 wrote. This usually means --temp_dir defaulted to a "
+                    "node-local path (e.g., /tmp) on a multi-node run. Re-run with "
+                    "--temp_dir pointing at a shared filesystem, e.g.\n"
+                    "    --temp_dir $HOME/sbd-tmp",
+                    flush=True,
+                )
+        raise
 
     if rank == 0:
         total_time = time.perf_counter() - t0

@@ -1,0 +1,198 @@
+# SBD Python Bindings — CoreWeave GB200 Setup
+# =============================================
+# Updated: 2026-05-12
+#
+# Slurm cluster, ARM64 (aarch64) GB200 compute nodes with 4 GPUs each.
+# Login node is x86_64 — every build and run has to happen on a compute
+# node via `srun` or `sbatch`.
+
+# 1. aarch64 miniforge (the login node's x86_64 one will not run on compute)
+cd ~
+curl -sL -o miniforge-arm.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh
+srun -p hpc-mid -N 1 -n 1 -t 15 bash ~/miniforge-arm.sh -b -p ~/miniforge3
+
+# 2. Python 3.12 conda env (system python3 is 3.10, no ensurepip, no sudo)
+srun -p hpc-mid -N 1 -n 1 -t 10 \
+    ~/miniforge3/bin/mamba create -n py312 -y python=3.12 lld -c conda-forge
+
+# 3. venv from the aarch64 conda Python (don't run this on login — the
+#    Python binary is aarch64 and will die with `Exec format error`)
+srun -p hpc-mid -N 1 -n 1 -t 10 bash -c '
+  ~/miniforge3/envs/py312/bin/python -m venv ~/venv-sbd &&
+  source ~/venv-sbd/bin/activate &&
+  pip install --upgrade pip setuptools wheel
+'
+
+# 4. Environment variables — drop this into ~/sbd-env.sh and `source` it
+cat > ~/sbd-env.sh << 'EOF'
+# Login node is x86_64; compute nodes are aarch64 (GB200).
+# NVHPC / HPC-X / miniforge are all aarch64-only — all builds and runs
+# must happen on a compute node (srun / sbatch).
+
+export NVHPC=/mnt/home/walkup/hpc_sdk
+export NVHPC_VER=26.1
+export NVHPC_ROOT=$NVHPC/Linux_aarch64/$NVHPC_VER
+
+export HPCX_ROOT=$NVHPC_ROOT/comm_libs/12.9/hpcx/hpcx-2.25.1
+export MPI_HOME=$HPCX_ROOT/ompi
+export HPCX_UCX_DIR=$HPCX_ROOT/ucx
+export NVHPC_HOME=$NVHPC_ROOT/compilers
+
+# Pin CUDA to 12.9 to match HPC-X 12.9 and the system's ld.so cache.
+# (NVHPC's /cuda symlink otherwise points at 13.1, which causes a
+# libcudart.so.12 vs libcudart.so.13 collision as soon as SBD + MPI
+# coexist in the same process — presents as Energy=0 + segfault on
+# multi-rank runs, works fine single-rank.)
+export CUDA_HOME=$NVHPC_ROOT/cuda/12.9
+export MATH_LIBS_PATH=$NVHPC_ROOT/math_libs/12.9/targets/sbsa-linux/lib
+
+# HPC-X was built with a different install prefix; tell OpenMPI where
+# its data files actually live at runtime.
+export OPAL_PREFIX=$MPI_HOME
+
+# sbd_solver writes an FCIDUMP into TMPDIR on rank 0 and broadcasts the
+# path. /tmp is node-local, so multi-node runs need a shared filesystem.
+# (You can also pass --temp_dir on the run_sqd_sbd.py CLI directly.)
+export TMPDIR=$HOME/sbd-tmp
+mkdir -p "$TMPDIR"
+
+export BLAS_LIB_PATH=/mnt/home/walkup/OpenBLAS-0.3.31/lib
+export BLAS_INCLUDE_PATH=/mnt/home/walkup/OpenBLAS-0.3.31/include
+export BLAS_LIBS=openblas
+
+# C++ compiler used by mpicxx. nvc++ is required for SBD's GPU/CUDA paths.
+export OMPI_CXX=nvc++
+# Intentionally NOT exporting OMPI_CC=nvc: mpi4py / other Python ext
+# builds inject gcc-only flags (-fno-strict-overflow) that nvc rejects.
+
+export PATH=$NVHPC_HOME/bin:$CUDA_HOME/bin:$MPI_HOME/bin:$PATH
+# Prefix HPC-X's bundled UCX 1.20 before the system /opt/hpcx/ucx 1.19.
+export LD_LIBRARY_PATH=$HPCX_UCX_DIR/lib:$MPI_HOME/lib:$CUDA_HOME/lib64:$MATH_LIBS_PATH:$NVHPC_HOME/lib:$BLAS_LIB_PATH:$LD_LIBRARY_PATH
+
+source ~/venv-sbd/bin/activate
+EOF
+
+# 5. Python deps (on a compute node — aarch64 wheels)
+srun -p hpc-mid -N 1 -n 1 -t 15 bash -c '
+  source ~/sbd-env.sh &&
+  pip install numpy pybind11 pyscf cython &&
+  OMPI_CC=gcc MPICC=$(which mpicc) pip install --no-binary mpi4py --no-build-isolation mpi4py &&
+  pip install git+https://github.com/hfwen0502/qiskit-addon-sqd@patch-ferminon-sbd
+'
+# Note on mpi4py: force OMPI_CC=gcc for its build only. nvc rejects some
+# gcc-only flags Python ext builds pass through (e.g. -fno-strict-overflow).
+
+# 6. Clone the repo
+cd ~
+git clone https://github.com/hfwen0502/sbd.git
+cd sbd
+# git checkout singles-doubles-extend    # if you want the branch features
+
+# 7. setup.py needs a local tweak to pin the CUDA toolkit nvc++ targets.
+#    Without this, nvc++ links GPU libs from the 13.1 tree (its default),
+#    which mismatches HPC-X 12.9 and causes the multi-rank zero-energy +
+#    segfault described in section 4. Change in setup.py, both compile
+#    and link extra_args for the GPU extension:
+#
+#      '-gpu=sm_90'                                    →
+#      '-gpu=sm_90,cuda12.9'
+#
+#      extra_link_args=... + ['-mp', '-cuda', '-cudalib']                  →
+#      extra_link_args=... + ['-mp', '-cuda', '-cudalib', '-gpu=sm_90,cuda12.9']
+#
+#    This edit is NOT upstreamed — `cuda12.9` would break users on
+#    clusters with CUDA 13 toolchains (e.g. bluevela). Re-apply after
+#    `git pull`.
+
+# 8. Build (both CPU + GPU backends, on a compute node)
+srun -p hpc-mid -N 1 -n 1 -c 16 -t 30 --gres=gpu:1 bash -c '
+  source ~/sbd-env.sh &&
+  cd ~/sbd &&
+  SBD_BUILD_BACKEND=both CC=nvc CXX=nvc++ CFLAGS= CXXFLAGS= \
+      pip install -e . --no-build-isolation --force-reinstall --no-deps
+'
+
+# 9. Verify (compute node required — sbd imports need CUDA + MPI runtime).
+#    Don't run from ~ because ./sbd/ shadows the editable install as a
+#    namespace package and you get an empty module. cd elsewhere first.
+srun -p hpc-mid -N 1 -n 1 -t 5 --gres=gpu:1 bash -c '
+  source ~/sbd-env.sh &&
+  cd /tmp &&
+  python -c "import sbd; print(sbd.available_backends())"
+'
+# Expected: ['cpu', 'gpu']
+
+# 10. Run tests (sbatch — 2 nodes × 4 GPUs = 8 GPUs)
+cat > ~/sbd-test.sh << 'JOBEOF'
+#!/bin/bash
+#SBATCH --job-name=sbd-test
+#SBATCH --partition=hpc-mid
+#SBATCH --account=cw-sup
+#SBATCH --output=sbd-%j.out
+#SBATCH --error=sbd-%j.err
+#SBATCH --nodes=2
+#SBATCH --ntasks=8
+#SBATCH --ntasks-per-node=4
+#SBATCH --gres=gpu:4
+#SBATCH --cpus-per-task=12
+#SBATCH --time=03:00:00
+
+source ~/sbd-env.sh
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-12}
+
+cd ~/sbd/python/examples
+
+echo "=== GPU diag test ==="
+mpirun -np ${SLURM_NTASKS} \
+    -x OMP_NUM_THREADS -x OPAL_PREFIX -x LD_LIBRARY_PATH -x PATH \
+    python run_sbd_diag.py \
+        --device gpu \
+        --fcidump ../../data/h2o/fcidump.txt \
+        --adetfile ../../data/h2o/h2o-1em5-alpha.txt \
+        --adet_comm_size 4 --bdet_comm_size 2 \
+        --tolerance 1e-5
+
+echo "=== SQD + SBD test ==="
+mpirun -np ${SLURM_NTASKS} \
+    -x OMP_NUM_THREADS -x OPAL_PREFIX -x LD_LIBRARY_PATH -x PATH \
+    python run_sqd_sbd.py \
+        --fcidump ../../data/h2o/fcidump.txt \
+        --counts count_dict_h2o.json \
+        --device gpu \
+        --samples_per_batch 300 --num_batches 3 --max_iterations 3 \
+        --adet_comm_size 4 --bdet_comm_size 2 \
+        --tolerance 1e-5 \
+        --temp_dir $HOME/sbd-tmp
+
+echo "=== DONE ==="
+JOBEOF
+
+sbatch ~/sbd-test.sh
+
+# Expected results (validated job 4415):
+# - GPU diag H2O 1em5 energy: -76.2437350420 Hartree
+# - SQD+SBD total energy:      -18.9902836024 Hartree (2 iterations, 7.1s wall)
+#
+# Key paths:
+#   env:         ~/sbd-env.sh
+#   venv:        ~/venv-sbd
+#   miniforge:   ~/miniforge3   (aarch64)
+#   SBD repo:    ~/sbd
+#   scratch:     ~/sbd-tmp      (shared TMPDIR for multi-node FCIDUMP broadcast)
+#   NVHPC SDK:   /mnt/home/walkup/hpc_sdk/Linux_aarch64/26.1
+#   OpenBLAS:    /mnt/home/walkup/OpenBLAS-0.3.31
+#
+# Gotchas specific to this cluster:
+# - aarch64 compute nodes, x86_64 login. All `pip install` + builds via
+#   srun/sbatch, not on the login node.
+# - /tmp is node-local — for multi-node SQD runs, either set TMPDIR to a
+#   shared path (done in sbd-env.sh) or pass --temp_dir on the CLI.
+# - NVHPC /cuda symlink points at 13.1; HPC-X is 12.9. Force nvc++ to
+#   target CUDA 12.9 with -gpu=sm_90,cuda12.9 (setup.py edit above) and
+#   pin CUDA_HOME + MATH_LIBS_PATH at the 12.9 trees.
+# - mpi4py build needs OMPI_CC=gcc (nvc rejects gcc-only flags that
+#   Python's distutils injects). Set it only during the mpi4py install.
+# - HPC-X was built with a different install prefix: set OPAL_PREFIX,
+#   or MPI_Init fails looking for help-mpi-runtime.txt.
+# - HPC-X's bundled UCX is 1.20, system's /opt/hpcx/ucx is 1.19. Prefix
+#   the bundled one in LD_LIBRARY_PATH to avoid the runtime warning.
