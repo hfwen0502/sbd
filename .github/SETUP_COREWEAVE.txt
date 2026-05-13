@@ -50,12 +50,6 @@ export MATH_LIBS_PATH=$NVHPC_ROOT/math_libs/12.9/targets/sbsa-linux/lib
 # its data files actually live at runtime.
 export OPAL_PREFIX=$MPI_HOME
 
-# sbd_solver writes an FCIDUMP into TMPDIR on rank 0 and broadcasts the
-# path. /tmp is node-local, so multi-node runs need a shared filesystem.
-# (You can also pass --temp_dir on the run_sqd_sbd.py CLI directly.)
-export TMPDIR=$HOME/sbd-tmp
-mkdir -p "$TMPDIR"
-
 export BLAS_LIB_PATH=/mnt/home/walkup/OpenBLAS-0.3.31/lib
 export BLAS_INCLUDE_PATH=/mnt/home/walkup/OpenBLAS-0.3.31/include
 export BLAS_LIBS=openblas
@@ -161,8 +155,7 @@ mpirun -np ${SLURM_NTASKS} \
         --device gpu \
         --samples_per_batch 300 --num_batches 3 --max_iterations 3 \
         --adet_comm_size 4 --bdet_comm_size 2 \
-        --tolerance 1e-5 \
-        --temp_dir $HOME/sbd-tmp
+        --tolerance 1e-5
 
 echo "=== DONE ==="
 JOBEOF
@@ -178,15 +171,16 @@ sbatch ~/sbd-test.sh
 #   venv:        ~/venv-sbd
 #   miniforge:   ~/miniforge3   (aarch64)
 #   SBD repo:    ~/sbd
-#   scratch:     ~/sbd-tmp      (shared TMPDIR for multi-node FCIDUMP broadcast)
 #   NVHPC SDK:   /mnt/home/walkup/hpc_sdk/Linux_aarch64/26.1
 #   OpenBLAS:    /mnt/home/walkup/OpenBLAS-0.3.31
 #
 # Gotchas specific to this cluster:
 # - aarch64 compute nodes, x86_64 login. All `pip install` + builds via
 #   srun/sbatch, not on the login node.
-# - /tmp is node-local — for multi-node SQD runs, either set TMPDIR to a
-#   shared path (done in sbd-env.sh) or pass --temp_dir on the CLI.
+# - --fcidump must live on a filesystem visible to every rank (shared
+#   home), since run_sqd_sbd.py hands the path straight to every rank's
+#   SBD backend. --temp_dir only holds rank 0's wavefunction.bin and can
+#   stay node-local (default /tmp is fine).
 # - NVHPC /cuda symlink points at 13.1; HPC-X is 12.9. Force nvc++ to
 #   target CUDA 12.9 with -gpu=sm_90,cuda12.9 (setup.py edit above) and
 #   pin CUDA_HOME + MATH_LIBS_PATH at the 12.9 trees.
