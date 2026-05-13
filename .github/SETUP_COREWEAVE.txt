@@ -82,21 +82,24 @@ git clone https://github.com/hfwen0502/sbd.git
 cd sbd
 # git checkout singles-doubles-extend    # if you want the branch features
 
-# 7. setup.py needs a local tweak to pin the CUDA toolkit nvc++ targets.
-#    Without this, nvc++ links GPU libs from the 13.1 tree (its default),
-#    which mismatches HPC-X 12.9 and causes the multi-rank zero-energy +
-#    segfault described in section 4. Change in setup.py, both compile
+# 7. setup.py needs a local tweak so nvc++ targets the right GPU arch +
+#    CUDA toolkit. GB200 is Blackwell (compute capability 10.0) and the
+#    rest of our stack (HPC-X, system ld cache) is CUDA 12.9. Without
+#    both pins, nvc++ links against the NVHPC-default CUDA 13.1 runtime,
+#    which mismatches HPC-X 12.9 and causes the multi-rank zero-energy
+#    + segfault described in section 4. Change in setup.py, both compile
 #    and link extra_args for the GPU extension:
 #
-#      '-gpu=sm_90'                                    →
-#      '-gpu=sm_90,cuda12.9'
+#      '-gpu=sm_90'                                     →
+#      '-gpu=sm_100,cuda12.9'
 #
-#      extra_link_args=... + ['-mp', '-cuda', '-cudalib']                  →
-#      extra_link_args=... + ['-mp', '-cuda', '-cudalib', '-gpu=sm_90,cuda12.9']
+#      extra_link_args=... + ['-mp', '-cuda', '-cudalib']                   →
+#      extra_link_args=... + ['-mp', '-cuda', '-cudalib', '-gpu=sm_100,cuda12.9']
 #
-#    This edit is NOT upstreamed — `cuda12.9` would break users on
-#    clusters with CUDA 13 toolchains (e.g. bluevela). Re-apply after
-#    `git pull`.
+#    sm_100 gives native Blackwell codegen; sm_90 also runs via PTX JIT
+#    with a ~0.7 s one-time warmup on the first Davidson step. This edit
+#    is NOT upstreamed — the arch/CUDA pins would break users on Hopper
+#    / CUDA-13 clusters (e.g. bluevela). Re-apply after `git pull`.
 
 # 8. Build (both CPU + GPU backends, on a compute node)
 srun -p hpc-mid -N 1 -n 1 -c 16 -t 30 --gres=gpu:1 bash -c '
@@ -182,8 +185,9 @@ sbatch ~/sbd-test.sh
 #   SBD backend. --temp_dir only holds rank 0's wavefunction.bin and can
 #   stay node-local (default /tmp is fine).
 # - NVHPC /cuda symlink points at 13.1; HPC-X is 12.9. Force nvc++ to
-#   target CUDA 12.9 with -gpu=sm_90,cuda12.9 (setup.py edit above) and
-#   pin CUDA_HOME + MATH_LIBS_PATH at the 12.9 trees.
+#   target CUDA 12.9 with -gpu=sm_100,cuda12.9 (setup.py edit above) and
+#   pin CUDA_HOME + MATH_LIBS_PATH at the 12.9 trees. sm_100 is the
+#   native Blackwell arch for GB200 (compute capability 10.0).
 # - mpi4py build needs OMPI_CC=gcc (nvc rejects gcc-only flags that
 #   Python's distutils injects). Set it only during the mpi4py install.
 # - HPC-X was built with a different install prefix: set OPAL_PREFIX,
