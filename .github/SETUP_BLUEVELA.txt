@@ -36,8 +36,10 @@ pip install numpy pybind11 mpi4py pyscf
 
 # 3. Clone repo (if not already cloned)
 cd /u/hfwen/qcsc
-git clone https://github.com/hfwen0502/sbd.git
+git clone --recurse-submodules https://github.com/hfwen0502/sbd.git
 cd sbd
+# If you cloned without --recurse-submodules:
+# git submodule update --init --recursive
 
 # 4. Environment variables
 export PATH=/u/hfwen/qcsc/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/compilers/bin:/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_libs/12.9/hpcx/hpcx-2.25.1/ompi/bin:$PATH
@@ -76,10 +78,10 @@ export LD_LIBRARY_PATH=/proj/datasets/quantum/hpc_sdk/Linux_x86_64/26.1/comm_lib
 cd /u/hfwen/qcsc/sbd/python/examples
 
 echo "=== CPU diag test ==="
-mpirun -np 1 -x OMP_NUM_THREADS=96 ~/qcsc/bin/helper.sh python run_sbd_diag.py --device cpu --fcidump ../../data/h2o/fcidump.txt  --adetfile ../../data/h2o/h2o-1em4-alpha.txt --adet_comm_size 1 --bdet_comm_size 1 --tolerance 1e-4
+mpirun -np 1 -x OMP_NUM_THREADS=96 ~/qcsc/bin/helper.sh python run_sbd_diag.py --device cpu --fcidump ../../vendor/sbd-upstream/data/h2o/fcidump.txt  --adetfile ../../vendor/sbd-upstream/data/h2o/h2o-1em4-alpha.txt --adet_comm_size 1 --bdet_comm_size 1 --tolerance 1e-4
 
 echo "=== GPU diag test ==="
-mpirun -np 8 -x OMP_NUM_THREADS=12 ~/qcsc/bin/helper.sh python run_sbd_diag.py --device gpu --fcidump ../../data/h2o/fcidump.txt --adetfile ../../data/h2o/h2o-1em5-alpha.txt --adet_comm_size 4 --bdet_comm_size 2 --tolerance 1e-5
+mpirun -np 8 -x OMP_NUM_THREADS=12 ~/qcsc/bin/helper.sh python run_sbd_diag.py --device gpu --fcidump ../../vendor/sbd-upstream/data/h2o/fcidump.txt --adetfile ../../vendor/sbd-upstream/data/h2o/h2o-1em5-alpha.txt --adet_comm_size 4 --bdet_comm_size 2 --tolerance 1e-5
 
 echo "=== SQD + SBD test ==="
 mpirun -np 8  -x UCX_TLS=^cuda_ipc -x OMP_NUM_THREADS=12 ~/qcsc/bin/helper.sh python run_sqd_sbd.py --fcidump CLUST_0020/fci_dump.txt --counts CLUST_0020/count_dict.json --device gpu --samples_per_batch 1000  --num_batches 1 --max_iterations 5 --adet_comm_size 4 --bdet_comm_size 2  --tolerance 1e-5
@@ -104,8 +106,10 @@ bsub < test_full.sh
 #   OpenBLAS:          /u/walkup/OpenBLAS-0.3.30/lib/libopenblas.a
 #
 # Known issues:
-# - Upstream RIKEN GPU code (b12db05) has a bug in the RHF thrust path
-#   (UHF refactoring broke it). Our fork reverts to the working pre-UHF
-#   GPU code. Reported to developer.
 # - conda Python needs the ld wrapper because it injects -B compiler_compat
 #   which causes nvc++ to fail with "read in flex scanner failed".
+#
+# Note: a previous note here said "upstream RIKEN GPU (b12db05) has a bug
+# in the RHF thrust path (UHF refactoring broke it)". That has since been
+# fixed upstream (commit 756c84f and PRs #41 / #42 / #29) and our submodule
+# pin advances past it.
