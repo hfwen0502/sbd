@@ -7,7 +7,7 @@ name = "sbd"
 version = "1.2.0"
 description = "Python bindings for Selected Basis Diagonalization (SBD) library"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Tomonori Shirakawa"}
@@ -20,11 +20,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: C++",
 ]
 dependencies = [

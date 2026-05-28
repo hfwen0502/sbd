@@ -18,7 +18,7 @@ SBD (Selected Basis Diagonalization) is a high-performance library for quantum c
 
 ### Prerequisites
 
-**Required:** Python 3.8+, MPI (OpenMPI/MPICH), BLAS (OpenBLAS/MKL), pybind11, mpi4py, numpy.
+**Required:** Python 3.11+, MPI (OpenMPI/MPICH), BLAS (OpenBLAS/MKL), pybind11, mpi4py, numpy.
 
 **Optional (GPU):** NVIDIA HPC SDK (nvc++), CUDA-capable GPU, CUDA-aware MPI.
 

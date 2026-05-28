@@ -234,7 +234,7 @@ setup(
         'mpi4py>=3.0.0',
         'numpy>=1.19.0',
     ],
-    python_requires='>=3.7',
+    python_requires='>=3.11',
     zip_safe=False,
 )
 
