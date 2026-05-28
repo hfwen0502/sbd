@@ -108,8 +108,3 @@ bsub < test_full.sh
 # Known issues:
 # - conda Python needs the ld wrapper because it injects -B compiler_compat
 #   which causes nvc++ to fail with "read in flex scanner failed".
-#
-# Note: a previous note here said "upstream RIKEN GPU (b12db05) has a bug
-# in the RHF thrust path (UHF refactoring broke it)". That has since been
-# fixed upstream (commit 756c84f and PRs #41 / #42 / #29) and our submodule
-# pin advances past it.

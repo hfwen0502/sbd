@@ -43,9 +43,6 @@ The SQD integration (`run_sqd_sbd.py`, `sbd_solver.py`) requires the MPI-aware f
 
 ## Known Issues
 
-### Upstream UHF merge breaks GPU (2026-04-03)
-RIKEN upstream commits (ba07d7b — UHF integrals, thrust refactoring) cause GPU Davidson to diverge to wrong energy (-84.69 vs -76.24 for H2O). CPU unaffected. Reverted in our branch. Do not merge upstream/main until fixed.
-
 ### Fulqrum RHEL 9 crash
 Fulqrum's C++ extensions crash on RHEL 9 / Fedora / CentOS Stream 9 due to `_GLIBCXX_ASSERTIONS`. Rebuild with:
 ```bash
