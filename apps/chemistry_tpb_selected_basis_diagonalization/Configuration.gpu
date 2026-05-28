@@ -12,6 +12,10 @@ CCCOM=mpicxx
 # accelerate using Thrust
 #CCFLAGS= -mp -cuda -fast -Minfo=accel --diag_suppress declared_but_not_referenced,set_but_not_used -fmax-errors=0 -I/opt/nvidia/hpc_sdk/Linux_x86_64/2025/cuda/include/cccl -I/usr/local/cuda/include -DSBD_THRUST
 CCFLAGS = -mp -cuda -gpu=sm_90 -fast --diag_suppress declared_but_not_referenced,set_but_not_used -fmax-errors=0 -DSBD_THRUST -DSBD_TRADMODE
+# Linker flags — upstream's Makefile no longer passes $(CCFLAGS) at link
+# time, so -mp -cuda -gpu must be repeated in LDFLAGS for nvc++ to link
+# against cudart / openmp runtime correctly.
+LDFLAGS = -mp -cuda -gpu=sm_90
 #-DSBD_PREFECT
 #-DSBD_DEBUG_MULT
 #-DSBD_THRUST_NO_COLLAPSE
