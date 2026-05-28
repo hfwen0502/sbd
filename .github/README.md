@@ -163,6 +163,7 @@ result = diagonalize_fermionic_hamiltonian(
     sci_solver=sbd_solver,
     norb=norb, nelec=nelec,
     samples_per_batch=300, num_batches=3, max_iterations=5,
+    symmetrize_spin=True,
 )
 ```
 
