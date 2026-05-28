@@ -2,9 +2,9 @@
 
 ## Repository
 
-- **Upstream (RIKEN):** https://github.com/r-ccs-cms/sbd (remote: `upstream`)
+- **Upstream (RIKEN):** https://github.com/r-ccs-cms/sbd — vendored as a git submodule at `vendor/sbd-upstream/`, pinned at a specific commit (run `git submodule status` for the current SHA).
 - **Fork:** https://github.com/hfwen0502/sbd (remote: `origin`)
-- **Active branch:** `sbd-python-cleanup` — refactored Python bindings with runtime CPU/GPU switching
+- **Active branches:** `main` (Python bindings + vendored upstream), `singles-doubles-extend` (variance / max_carryover_dets / S+D expansion features layered over `main`).
 
 ## Build
 
