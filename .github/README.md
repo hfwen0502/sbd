@@ -76,16 +76,20 @@ SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation
 SBD_BUILD_BACKEND=both pip install -e . --no-build-isolation
 ```
 
-The GPU build in `setup.py` targets one specific code path:
-**NVIDIA / NVHPC nvc++ with Thrust** (`-DSBD_THRUST -mp -cuda -gpu=sm_XX`).
-This is what we validate on every submodule pin bump. Upstream's
+The GPU build in `setup.py` defaults to the **NVIDIA / NVHPC nvc++ with
+Thrust** path (`-DSBD_THRUST -mp -cuda -gpu=sm_XX`). This is the only
+GPU code path we validate on every submodule pin bump. Upstream's
 `vendor/sbd-upstream/apps/.../Configuration` template documents two
-additional GPU paths — OpenMP-5 offload for NVIDIA via clang/nvptx
-and for AMD via amdgcn — but `setup.py` does not expose them. If you
-need either, build the standalone `diag` binary from
-`vendor/sbd-upstream/apps/...` against the upstream Makefile and a
-suitable Configuration; the Python bindings only build the Thrust
-path.
+additional GPU paths — OpenMP-5 offload for NVIDIA via clang/nvptx and
+for AMD via amdgcn (e.g., MI200/MI300 / Frontier). The Python bindings
+themselves are agnostic to which path is used — `bindings.cpp` just
+wraps the templated SBD API, and the underlying library selects between
+Thrust and OpenMP-offload kernels via `-D` macros. So a user who edits
+the `extra_compile_args` / `extra_link_args` in `setup.py`'s
+`build_gpu` block to use the OpenMP-offload flags from upstream's
+Configuration template can build `_core_gpu.so` against either of those
+paths instead. We just don't test those configurations, and they are
+not exposed via `SBD_BUILD_BACKEND=gpu` out of the box.
 
 ### Verify
 
