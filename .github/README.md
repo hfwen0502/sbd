@@ -145,15 +145,15 @@ SBD can serve as the eigensolver backend for qiskit-addon-sqd's SQD workflow.
 
 ```python
 from functools import partial
-from mpi4py import MPI
 from sbd.sbd_solver import solve_sci_batch
 from sbd.device_config import DeviceConfig
 from qiskit_addon_sqd.fermion import diagonalize_fermionic_hamiltonian
 
-# No sbd.init() needed — auto-initializes on first solver call
+# No sbd.init() and no explicit mpi_comm needed — solve_sci_batch
+# auto-initializes the SBD backend on first call and falls back to
+# MPI.COMM_WORLD when mpi_comm is not provided.
 sbd_solver = partial(
     solve_sci_batch,
-    mpi_comm=MPI.COMM_WORLD,
     sbd_config={"method": 0, "eps": 1e-8, "max_it": 100},
     device_config=DeviceConfig.gpu(),  # or .cpu()
 )
