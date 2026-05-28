@@ -36,12 +36,11 @@ git submodule update --init --recursive
 ```
 
 If you need a newer upstream revision (for a recently-landed GPU fix
-etc.), advance the pin with:
+etc.), advance the local submodule and rebuild:
 
 ```bash
 git submodule update --remote vendor/sbd-upstream
-# rebuild + run a regression test before committing the new pin
-git add vendor/sbd-upstream && git commit -m "bump sbd-upstream"
+pip install -e . --no-build-isolation --force-reinstall --no-deps
 ```
 
 ### Environment Variables
