@@ -1,49 +1,31 @@
-# ---- OS files ----
-.DS_Store
-Thumbs.db
-
-# ---- build files ----
-*.o
-*.obj
+# build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 *.so
-*.dll
-*.dylib
-*.exe
-*.out
-*.a
-*.lib
-
-# ---- build directory ----
+*.o
+*.dSYM/
 build/
-bin/
-lib/
+dist/
+*.egg-info/
 
-# ---- CMake files ----
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-*.ninja
-*.ninja_deps
-*.ninja_log
-
-# ---- log and temporary files ----
-*.log
-*.tmp
-
-# ---- IDE files ----
-# Visual Studio Code
-.vscode/
-# CLion
-.idea/
-# Xcode
-*.xcworkspace
-*.xcuserstate
-*.xcuserdatad
-*.xcodeproj
-
-# ---- other backup files ----
-*~
+# editor / OS noise
+.DS_Store
 *.swp
 
+# local-only files
+.env
+.venv/
+venv/
+typescript
 
-test/
+# generated debug / dev artifacts
+callgraph.png
+prof.out
+*.bak
+
+# don't commit binaries built locally inside the submodule's working tree
+vendor/sbd-upstream/apps/*/diag
+vendor/sbd-upstream/apps/*/main.o
+vendor/sbd-upstream/apps/*/Configuration

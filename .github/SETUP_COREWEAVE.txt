@@ -76,9 +76,9 @@ srun -p hpc-mid -N 1 -n 1 -t 15 bash -c '
 # Note on mpi4py: force OMPI_CC=gcc for its build only. nvc rejects some
 # gcc-only flags Python ext builds pass through (e.g. -fno-strict-overflow).
 
-# 6. Clone the repo
+# 6. Clone the repo (with the vendored sbd-upstream submodule)
 cd ~
-git clone https://github.com/hfwen0502/sbd.git
+git clone --recurse-submodules https://github.com/hfwen0502/sbd.git
 cd sbd
 # git checkout singles-doubles-extend    # if you want the branch features
 
@@ -101,10 +101,14 @@ cd sbd
 #    is NOT upstreamed — the arch/CUDA pins would break users on Hopper
 #    / CUDA-13 clusters (e.g. bluevela). Re-apply after `git pull`.
 
-# 8. Build (both CPU + GPU backends, on a compute node)
+# 8. Build (both CPU + GPU backends, on a compute node).
+#    SBD's C++ headers are consumed from vendor/sbd-upstream/. setup.py
+#    references that path automatically; just make sure the submodule is
+#    initialized (--recurse-submodules above does this).
 srun -p hpc-mid -N 1 -n 1 -c 16 -t 30 --gres=gpu:1 bash -c '
   source ~/sbd-env.sh &&
   cd ~/sbd &&
+  git submodule update --init --recursive &&
   SBD_BUILD_BACKEND=both CC=nvc CXX=nvc++ CFLAGS= CXXFLAGS= \
       pip install -e . --no-build-isolation --force-reinstall --no-deps
 '
@@ -144,8 +148,8 @@ mpirun -np ${SLURM_NTASKS} \
     -x OMP_NUM_THREADS -x OPAL_PREFIX -x LD_LIBRARY_PATH -x PATH \
     python run_sbd_diag.py \
         --device gpu \
-        --fcidump ../../data/h2o/fcidump.txt \
-        --adetfile ../../data/h2o/h2o-1em5-alpha.txt \
+        --fcidump ../../vendor/sbd-upstream/data/h2o/fcidump.txt \
+        --adetfile ../../vendor/sbd-upstream/data/h2o/h2o-1em5-alpha.txt \
         --adet_comm_size 4 --bdet_comm_size 2 \
         --tolerance 1e-5
 
@@ -153,7 +157,7 @@ echo "=== SQD + SBD test ==="
 mpirun -np ${SLURM_NTASKS} \
     -x OMP_NUM_THREADS -x OPAL_PREFIX -x LD_LIBRARY_PATH -x PATH \
     python run_sqd_sbd.py \
-        --fcidump ../../data/h2o/fcidump.txt \
+        --fcidump ../../vendor/sbd-upstream/data/h2o/fcidump.txt \
         --counts count_dict_h2o.json \
         --device gpu \
         --samples_per_batch 300 --num_batches 3 --max_iterations 3 \

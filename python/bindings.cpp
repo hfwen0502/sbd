@@ -9,6 +9,12 @@
  * The module name is controlled by the SBD_MODULE_NAME macro.
  */
 
+// SBD's mpi_utility.h uses std::cout without including <iostream>.
+// Linux/libstdc++ pulls it in transitively; macOS/libc++ doesn't.
+// Force-include here before any SBD header so the patch stays in our
+// repo rather than in the vendored upstream submodule.
+#include <iostream>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
