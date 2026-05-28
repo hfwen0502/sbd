@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "mpi.h"
-#include <iostream>
 
 namespace sbd {
 
