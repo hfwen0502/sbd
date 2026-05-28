@@ -22,13 +22,12 @@ SBD (Selected Basis Diagonalization) is a high-performance library for quantum c
 
 **Optional (GPU):** NVIDIA HPC SDK (nvc++), CUDA-capable GPU, CUDA-aware MPI.
 
-### C++ source layout
+### Get the SBD C++ source
 
-The SBD C++ headers and standalone-app sources are not committed in this
-repo directly — they're consumed from upstream
+The SBD C++ headers and apps come from upstream
 [r-ccs-cms/sbd](https://github.com/r-ccs-cms/sbd) via a git submodule at
-`vendor/sbd-upstream/`, **pinned at a specific commit**. After cloning,
-initialize it:
+`vendor/sbd-upstream/`, **pinned at a specific commit** (recorded in
+`.gitmodules`; run `git submodule status` to see the current SHA).
 
 ```bash
 git clone --recurse-submodules https://github.com/hfwen0502/sbd.git
@@ -36,46 +35,14 @@ git clone --recurse-submodules https://github.com/hfwen0502/sbd.git
 git submodule update --init --recursive
 ```
 
-Why pinned: a pinned commit makes builds reproducible, and a bad upstream
-revision can't enter our build until we explicitly bump and validate.
-The current pin is recorded in `.gitmodules` and the parent commit's
-tree (run `git submodule status` to see the SHA).
-
-### Bumping the submodule to a newer upstream
-
-When a desired upstream improvement (GPU optimization, bug fix, …) lands
-in r-ccs-cms/sbd, we bump our pin in three steps:
+If you need a newer upstream revision (for a recently-landed GPU fix
+etc.), advance the pin with:
 
 ```bash
-# 1. Fetch upstream and inspect what's new
-cd vendor/sbd-upstream
-git fetch
-git log --oneline HEAD..origin/main
-cd ../..
-
-# 2. Advance the pin to upstream's main tip
 git submodule update --remote vendor/sbd-upstream
-
-# 3. Validate the new revision (rebuild + run regression tests on a
-#    representative system: H2O CPU + GPU, plus a larger Fe4S4 GPU run
-#    if available) BEFORE committing the pin bump.
-SBD_BUILD_BACKEND=both pip install -e . --no-build-isolation --force-reinstall --no-deps
-mpirun -np 1 python python/examples/run_sqd_sbd.py \
-    --fcidump vendor/sbd-upstream/data/h2o/fcidump.txt --device cpu \
-    --samples_per_batch 300 --num_batches 2 --max_iterations 2
-
-# 4. If validation passes, commit and push the new pin
-git add vendor/sbd-upstream
-git commit -m "bump sbd-upstream to <new sha>"
-git push
+# rebuild + run a regression test before committing the new pin
+git add vendor/sbd-upstream && git commit -m "bump sbd-upstream"
 ```
-
-If validation fails, `git submodule update --remote` can be reverted with
-`git checkout -- vendor/sbd-upstream` (resets the working tree of the
-submodule) — the parent repo's pin doesn't change until you `git add` +
-`git commit`. Branches with local C++ patches on top of the upstream
-submodule (e.g. `singles-doubles-extend`) need their patches replayed on
-the new submodule HEAD before the bump can be merged forward.
 
 ### Environment Variables
 
