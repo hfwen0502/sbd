@@ -76,6 +76,17 @@ SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation
 SBD_BUILD_BACKEND=both pip install -e . --no-build-isolation
 ```
 
+The GPU build in `setup.py` targets one specific code path:
+**NVIDIA / NVHPC nvc++ with Thrust** (`-DSBD_THRUST -mp -cuda -gpu=sm_XX`).
+This is what we validate on every submodule pin bump. Upstream's
+`vendor/sbd-upstream/apps/.../Configuration` template documents two
+additional GPU paths — OpenMP-5 offload for NVIDIA via clang/nvptx
+and for AMD via amdgcn — but `setup.py` does not expose them. If you
+need either, build the standalone `diag` binary from
+`vendor/sbd-upstream/apps/...` against the upstream Makefile and a
+suitable Configuration; the Python bindings only build the Thrust
+path.
+
 ### Verify
 
 ```bash
