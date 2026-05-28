@@ -5,8 +5,11 @@
 #ifndef SBD_CHEMISTRY_TPB_HELPER_THRUST_H
 #define SBD_CHEMISTRY_TPB_HELPER_THRUST_H
 
-namespace sbd {
+#include "sbd/chemistry/tpb/helper.h"
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 
+namespace sbd {
 
 template <typename ElemT>
 class TaskHelpersThrust {
