@@ -75,15 +75,11 @@ mpi4py_inc = get_mpi4py_include()
 if not mpi4py_inc:
     print("Warning: Could not find mpi4py include path")
 
-# Build include/library directories.
-# SBD's C++ headers come from the vendored upstream submodule.
-# After cloning the parent repo, run:  git submodule update --init --recursive
-SBD_UPSTREAM_INCLUDE = os.path.join('vendor', 'sbd-upstream', 'include')
-if not os.path.isdir(SBD_UPSTREAM_INCLUDE):
-    print(f"Error: {SBD_UPSTREAM_INCLUDE} not found.")
-    print("Run: git submodule update --init --recursive")
-    sys.exit(1)
-include_dirs = [get_pybind_include(), SBD_UPSTREAM_INCLUDE] + mpi_includes
+# Build include/library directories. C++ headers are embedded at the
+# repo root (this branch carries local C++ patches on top of the upstream
+# snapshot, so it does not use the vendor/sbd-upstream submodule layout
+# that main does).
+include_dirs = [get_pybind_include(), 'include'] + mpi_includes
 if mpi4py_inc:
     include_dirs.append(mpi4py_inc)
 
