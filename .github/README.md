@@ -205,7 +205,7 @@ from qiskit_addon_sqd.fermion import diagonalize_fermionic_hamiltonian
 sbd_solver = partial(
     solve_sci_batch,
     sbd_config={"method": 0, "eps": 1e-8, "max_it": 100},
-    device_config=DeviceConfig.gpu(),  # or .cpu()
+    device_config=DeviceConfig.gpu(),  # or .cpu(), .gpu_omp()
 )
 
 result = diagonalize_fermionic_hamiltonian(
