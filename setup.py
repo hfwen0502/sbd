@@ -70,13 +70,22 @@ def find_nvidia_hpc_sdk():
 def find_llvm_offload():
     """Return (clang++_path, has_llvm) for an LLVM-with-offload install.
 
-    Looks at LLVM_HOME and verifies the install has the libomptarget CUDA
-    plugin — stock distro clang (RHEL clang-19, etc.) ships codegen but
-    not the runtime plugin, so without the plugin omp_get_num_devices()
-    returns 0 and offload silently falls back to host.
+    Looks at LLVM_HOME and verifies:
+      1. bin/clang++ exists,
+      2. lib/x86_64-unknown-linux-gnu/libomptarget.so* (host runtime
+         dispatcher) is present,
+      3. lib/nvptx64-nvidia-cuda/libomptarget-nvptx.bc (device-side
+         bitcode for NVIDIA) is present.
 
-    See .github/SETUP_LLVM_OFFLOAD.txt for how to build LLVM trunk with
-    the Offload runtime enabled.
+    All three indicate a working OMP-offload install. Stock distro clang
+    (RHEL clang-19, etc.) usually has #1 and #2 but not #3 — without the
+    device bitcode omp_get_num_devices() returns 0 and offload silently
+    falls back to host. See .github/SETUP_LLVM_OFFLOAD.txt for how to
+    build LLVM trunk with the Offload runtime enabled.
+
+    Note: in older LLVM (<=18 or so) the CUDA RTL was a separate
+    libomptarget.rtl.cuda*.so file. In LLVM trunk this has been merged
+    into libomptarget.so itself, so we don't search for the RTL file.
     """
     llvm_home = os.environ.get('LLVM_HOME', None)
     if not llvm_home:
@@ -86,12 +95,21 @@ def find_llvm_offload():
         print(f"Warning: LLVM_HOME={llvm_home} but {clangxx} not found")
         return None, False
     import glob
-    triple_lib = os.path.join(llvm_home, 'lib', 'x86_64-unknown-linux-gnu')
-    plugin_glob = glob.glob(os.path.join(triple_lib, 'libomptarget.rtl.cuda*.so*'))
-    if not plugin_glob:
+    host_lib = os.path.join(llvm_home, 'lib', 'x86_64-unknown-linux-gnu')
+    if not glob.glob(os.path.join(host_lib, 'libomptarget.so*')):
         print(f"Warning: LLVM_HOME={llvm_home} has clang++ but no "
-              f"libomptarget.rtl.cuda*.so in {triple_lib}; "
-              f"GPU offload would not work — skipping OMP-offload backend.")
+              f"libomptarget.so* in {host_lib}; build LLVM with "
+              f"LLVM_RUNTIME_TARGETS including 'default' (see "
+              f".github/SETUP_LLVM_OFFLOAD.txt). Skipping OMP-offload backend.")
+        return None, False
+    nvptx_bc = os.path.join(llvm_home, 'lib', 'nvptx64-nvidia-cuda',
+                            'libomptarget-nvptx.bc')
+    if not os.path.exists(nvptx_bc):
+        print(f"Warning: LLVM_HOME={llvm_home} is missing the NVIDIA "
+              f"device-side runtime ({nvptx_bc}); GPU offload would "
+              f"compile but produce no device kernels. Build LLVM with "
+              f"LLVM_RUNTIME_TARGETS including 'nvptx64-nvidia-cuda'. "
+              f"Skipping OMP-offload backend.")
         return None, False
     print(f"Found LLVM-with-offload at: {llvm_home}")
     return clangxx, True
