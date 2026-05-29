@@ -299,6 +299,15 @@ if build_gpu_omp_nvidia:
     os.environ['CXX']      = omp_clang
     os.environ['LDSHARED'] = f'{omp_clang} -shared'
 
+    # Clear sysconfig-inherited flags. RHEL CPython ships with
+    # -fcf-protection={branch,return} which are x86-only and clang
+    # rejects when compiling the nvptx offload pass. We pass our own
+    # full flag list via extra_compile_args below.
+    os.environ['CFLAGS']   = ''
+    os.environ['CXXFLAGS'] = ''
+    # Same for distutils' default optimization flag set
+    os.environ['CPPFLAGS'] = ''
+
     offload_arch = os.environ.get('SBD_OFFLOAD_ARCH_NVIDIA', 'sm_90')
     llvm_home    = os.environ['LLVM_HOME']
     triple_lib   = os.path.join(llvm_home, 'lib', 'x86_64-unknown-linux-gnu')
