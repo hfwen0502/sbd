@@ -103,16 +103,17 @@ or `_core_gpu.so` untouched. Requires `LLVM_HOME` pointing at an LLVM
 trunk install with the offload runtime built — see
 [SETUP_LLVM_OFFLOAD.txt](SETUP_LLVM_OFFLOAD.txt).
 
-**Other GPU backends not exposed via `setup.py`:** upstream's
-`vendor/sbd-upstream/apps/.../Configuration` template also documents
-OpenMP-5 offload for AMD via amdgcn (MI200/MI300 / Frontier). The
-bindings themselves are agnostic to the GPU code path — `bindings.cpp`
-just wraps the templated SBD API and lets `-D` macros pick between
-Thrust and OpenMP-offload kernels at compile time. A user who edits
-the `extra_compile_args` block in `setup.py`'s `build_gpu_omp_nvidia`
-section to point at AMD flags from the Configuration template could
-produce a `_core_gpu_omp_amd.so` analogously. We don't validate or
-ship that today.
+**Other GPU backends not exposed via `setup.py`:** the bindings
+themselves are GPU-path-agnostic — `bindings.cpp` just wraps the
+templated SBD API, and the underlying library picks between Thrust
+and OpenMP-offload kernels via `-D` macros at compile time. Adding an
+AMD OMP-offload backend (`_core_gpu_omp_amd`) would mean cloning the
+`build_gpu_omp_nvidia` block in `setup.py`, renaming the `Extension`
+and `-DSBD_MODULE_NAME`, and swapping `-fopenmp-targets` /
+`--offload-arch` to `amdgcn-amd-amdhsa` / `gfxXXX` per upstream's
+`vendor/sbd-upstream/apps/.../Configuration` AMD example. We don't
+ship that today; happy to revisit when AMD hardware is in our test
+loop.
 
 ### Verify
 
