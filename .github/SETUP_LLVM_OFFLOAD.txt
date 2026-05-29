@@ -72,8 +72,12 @@ ninja -j64 install
 # 5. Verify the install populated host runtime + CUDA plugin
 ls /mnt/data/llvm-offload/bin/clang++
 ls /mnt/data/llvm-offload/lib/clang/*/include/omp.h
-ls /mnt/data/llvm-offload/lib/libomp*.so* /mnt/data/llvm-offload/lib/libomptarget*.so*
-# All four checks must succeed. If "libomptarget*" is missing, the host
+ls /mnt/data/llvm-offload/lib/x86_64-unknown-linux-gnu/libomp*.so*
+ls /mnt/data/llvm-offload/lib/x86_64-unknown-linux-gnu/libomptarget*.so*
+# Note: with LLVM_RUNTIME_TARGETS="default;..." the host runtime libs
+# install into the triple subdir lib/x86_64-unknown-linux-gnu/, NOT
+# directly into lib/ (which holds only the static libLLVM*.a archives).
+# All checks must succeed. If "libomptarget*" is missing, the host
 # runtime didn't get built — re-check LLVM_RUNTIME_TARGETS includes
 # "default", reconfigure, ninja install again.
 
@@ -94,7 +98,8 @@ EOF
 CLANGXX=/mnt/data/llvm-offload/bin/clang++
 $CLANGXX -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda --offload-arch=sm_90 \
     /tmp/omp_offload_test.cpp -o /tmp/omp_offload_test
-LD_LIBRARY_PATH=/mnt/data/llvm-offload/lib:$LD_LIBRARY_PATH /tmp/omp_offload_test
+export LD_LIBRARY_PATH=/mnt/data/llvm-offload/lib/x86_64-unknown-linux-gnu:$LD_LIBRARY_PATH
+/tmp/omp_offload_test
 # Expected:  OpenMP devices: 1
 #            0 1 4 9 16 25 36 49 64 81
 # If "OpenMP devices: 0" — the runtime isn't finding the GPU; re-check
