@@ -22,22 +22,32 @@ __version__ = "1.5.0"
 
 # ---------------------------------------------------------------------------
 # Backend registry — eagerly load all available backends at import time.
-# Both _core_cpu and _core_gpu can coexist: they are separate .so files
-# with separate pybind11 namespaces, no global C++ state conflicts.
+# All compiled backends can coexist: separate .so files with separate
+# pybind11 namespaces, no global C++ state conflicts.
 # ---------------------------------------------------------------------------
 _backends = {}
 
-try:
-    from . import _core_cpu
-    _backends['cpu'] = _core_cpu
-except ImportError:
-    pass
+# Device-string aliases. Keys are user-facing strings; values are the
+# canonical key in _backends. e.g. 'gpu-omp' resolves to whatever
+# OMP-offload backend is built.
+_device_aliases = {}
 
-try:
-    from . import _core_gpu
-    _backends['gpu'] = _core_gpu
-except ImportError:
-    pass
+
+def _try_load(module_name, primary_device, *aliases):
+    try:
+        from importlib import import_module
+        mod = import_module(f'.{module_name}', package=__name__)
+    except ImportError:
+        return False
+    _backends[primary_device] = mod
+    for a in aliases:
+        _device_aliases[a] = primary_device
+    return True
+
+
+_try_load('_core_cpu',            'cpu')
+_try_load('_core_gpu',            'gpu', 'gpu-nvidia', 'cuda')
+_try_load('_core_gpu_omp_nvidia', 'gpu-nvidia-omp', 'gpu-omp')
 
 # ---------------------------------------------------------------------------
 # Global session state
@@ -68,14 +78,19 @@ def _gpu_available():
 
 
 def _resolve_device(device):
-    """Resolve 'auto' to a concrete device name."""
+    """Resolve 'auto' or an alias to a concrete backend key.
+
+    Auto-resolution prefers Thrust GPU (`'gpu'`) over OMP-offload
+    (`'gpu-nvidia-omp'`) when both are built and a GPU is present, since
+    the Thrust path is the long-validated default.
+    """
     if device == 'auto':
         if 'gpu' in _backends and _gpu_available():
             return 'gpu'
+        if 'gpu-nvidia-omp' in _backends and _gpu_available():
+            return 'gpu-nvidia-omp'
         return 'cpu'
-    if device in ('gpu', 'cuda'):
-        return 'gpu'
-    return device
+    return _device_aliases.get(device, device)
 
 
 def init(device='cpu', comm_backend='mpi'):
