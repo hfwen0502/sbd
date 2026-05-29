@@ -54,7 +54,7 @@ export BLAS_LIBS=openblas  # or mkl_rt
 export CC=/usr/bin/clang
 export CXX=/usr/bin/clang++
 
-# GPU (optional)
+# NVIDIA Thrust GPU backend (optional, requires NVHPC nvc++)
 export NVHPC_HOME=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/compilers
 export CC=nvc
 export CXX=nvc++
@@ -62,41 +62,65 @@ export CXX=nvc++
 # and break nvc++ compilation
 export CFLAGS=''
 export CXXFLAGS=''
+
+# OpenMP-offload GPU backend (optional, requires LLVM/clang trunk
+# with the offload runtime built — see .github/SETUP_LLVM_OFFLOAD.txt).
+# Auto-detected from LLVM_HOME if set; only built when invoked
+# explicitly with SBD_BUILD_BACKEND=gpu_omp_nvidia.
+export LLVM_HOME=/path/to/llvm-offload
 ```
 
 ### Build
 
+Three backends are available; one `SBD_BUILD_BACKEND` mode per `pip
+install` invocation. Their `_core_*.so` files coexist, so users who
+want multiple backends just run `pip install` again with a different
+mode.
+
 ```bash
-# Auto-detect: builds CPU always, GPU if detected
+# Auto-detect: builds CPU always, plus NVHPC Thrust GPU if NVHPC found
 pip install -e . --no-build-isolation
 
-# Force specific backend
-SBD_BUILD_BACKEND=cpu pip install -e . --no-build-isolation
-SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation
-SBD_BUILD_BACKEND=both pip install -e . --no-build-isolation
+# Explicit modes
+SBD_BUILD_BACKEND=cpu                pip install -e . --no-build-isolation
+SBD_BUILD_BACKEND=gpu                pip install -e . --no-build-isolation  # NVHPC Thrust
+SBD_BUILD_BACKEND=both               pip install -e . --no-build-isolation  # CPU + Thrust
+SBD_BUILD_BACKEND=gpu_omp_nvidia     pip install -e . --no-build-isolation  # OpenMP-offload, NVIDIA
 ```
 
-The GPU build in `setup.py` defaults to the **NVIDIA / NVHPC nvc++ with
-Thrust** path (`-DSBD_THRUST -mp -cuda -gpu=sm_XX`). This is the only
-GPU code path we validate on every submodule pin bump. Upstream's
-`vendor/sbd-upstream/apps/.../Configuration` template documents two
-additional GPU paths — OpenMP-5 offload for NVIDIA via clang/nvptx and
-for AMD via amdgcn (e.g., MI200/MI300 / Frontier). The Python bindings
-themselves are agnostic to which path is used — `bindings.cpp` just
-wraps the templated SBD API, and the underlying library selects between
-Thrust and OpenMP-offload kernels via `-D` macros. So a user who edits
-the `extra_compile_args` / `extra_link_args` in `setup.py`'s
-`build_gpu` block to use the OpenMP-offload flags from upstream's
-Configuration template can build `_core_gpu.so` against either of those
-paths instead. We just don't test those configurations, and they are
-not exposed via `SBD_BUILD_BACKEND=gpu` out of the box.
+| Backend | Module | Compiler | Macros | Device strings |
+|---|---|---|---|---|
+| CPU OpenMP host | `_core_cpu` | gcc/clang | `-fopenmp` (host) | `'cpu'` |
+| NVIDIA Thrust | `_core_gpu` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=sm_XX` | `'gpu'`, `'gpu-nvidia'`, `'cuda'` |
+| NVIDIA OpenMP-offload | `_core_gpu_omp_nvidia` | LLVM clang++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -fopenmp-targets=nvptx64-nvidia-cuda` | `'gpu-omp'`, `'gpu-nvidia-omp'` |
+
+**`SBD_BUILD_BACKEND=gpu_omp_nvidia` must be invoked alone** (not
+combined with `cpu` / `gpu` / `both`) because clang, gcc, and nvc++
+can't share a single distutils `CC`/`CXX` setting. The setup runs
+ignoring `auto`'s preferences when this mode is set, builds only
+`_core_gpu_omp_nvidia.so`, and leaves any pre-existing `_core_cpu.so`
+or `_core_gpu.so` untouched. Requires `LLVM_HOME` pointing at an LLVM
+trunk install with the offload runtime built — see
+[SETUP_LLVM_OFFLOAD.txt](SETUP_LLVM_OFFLOAD.txt).
+
+**Other GPU backends not exposed via `setup.py`:** upstream's
+`vendor/sbd-upstream/apps/.../Configuration` template also documents
+OpenMP-5 offload for AMD via amdgcn (MI200/MI300 / Frontier). The
+bindings themselves are agnostic to the GPU code path — `bindings.cpp`
+just wraps the templated SBD API and lets `-D` macros pick between
+Thrust and OpenMP-offload kernels at compile time. A user who edits
+the `extra_compile_args` block in `setup.py`'s `build_gpu_omp_nvidia`
+section to point at AMD flags from the Configuration template could
+produce a `_core_gpu_omp_amd.so` analogously. We don't validate or
+ship that today.
 
 ### Verify
 
 ```bash
 python -c "import sbd; print(sbd.available_backends())"
-# CPU only: ['cpu']
-# Both:     ['cpu', 'gpu']
+# CPU only:                                 ['cpu']
+# CPU + NVHPC Thrust:                       ['cpu', 'gpu']
+# CPU + NVHPC Thrust + OMP-offload NVIDIA:  ['cpu', 'gpu', 'gpu-nvidia-omp']
 ```
 
 ## Usage
@@ -123,25 +147,35 @@ print(f"Energy: {results['energy']:.10f} Hartree")
 sbd.finalize()
 ```
 
-### Runtime CPU/GPU Switching
+### Runtime backend switching
 
-Both backends are loaded at import time into separate namespaces. Switch per-call with the `device` parameter — no re-initialization needed:
+Whichever backends were built coexist as separate `_core_*.so` modules
+and load at `import sbd` into independent pybind11 namespaces. Pick
+one per call with the `device` parameter:
 
 ```python
 import sbd
 
-# Override per call — auto-initializes on first use
-result_cpu = sbd.tpb_diag(..., device='cpu')
-result_gpu = sbd.tpb_diag(..., device='gpu')
+# All compiled backends are auto-loaded
+sbd.available_backends()
+# e.g. ['cpu', 'gpu', 'gpu-nvidia-omp']
 
-# Or set a default device explicitly
-sbd.init(device='gpu')   # optional — only if you want a non-auto default
-result = sbd.tpb_diag(...)  # uses GPU
+# Per-call override — auto-initializes on first use
+result_cpu     = sbd.tpb_diag(..., device='cpu')
+result_thrust  = sbd.tpb_diag(..., device='gpu')         # alias 'gpu-nvidia', 'cuda'
+result_omp     = sbd.tpb_diag(..., device='gpu-omp')     # alias 'gpu-nvidia-omp'
+
+# Or set a default device explicitly (optional)
+sbd.init(device='gpu')      # default = NVHPC Thrust
+result = sbd.tpb_diag(...)
 
 # Or get the backend module directly
-backend = sbd.get_backend('gpu')
+backend = sbd.get_backend('gpu-omp')
 fcidump = backend.LoadFCIDump('fcidump.txt')
 ```
+
+In `auto` mode (the default), `_resolve_device('auto')` picks the first
+compiled GPU backend in the order Thrust → OMP-offload → CPU.
 
 ### Resource Cleanup
 
