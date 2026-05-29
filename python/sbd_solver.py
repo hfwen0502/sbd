@@ -30,15 +30,15 @@ except ImportError:
 
 
 def _resolve_backend(device_config=None):
-    """
-    Resolve a backend module from a DeviceConfig or the default.
+    """Resolve a backend module from a DeviceConfig or the default.
 
-    Uses sbd.get_backend() which supports runtime CPU/GPU switching.
+    Reads ``device_config.device`` (string key, e.g. 'cpu', 'gpu',
+    'gpu-nvidia-omp') and routes through ``sbd.get_backend()`` which
+    handles aliases ('gpu-omp', 'cuda', etc.).
     """
     from . import get_backend
     if device_config is not None:
-        device = 'gpu' if device_config.use_gpu else 'cpu'
-        return get_backend(device)
+        return get_backend(device_config.device)
     return get_backend()
 
 

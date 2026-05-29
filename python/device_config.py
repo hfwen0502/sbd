@@ -27,18 +27,28 @@ class DeviceConfig:
         config.apply(sbd_config)
     """
     
-    def __init__(self, use_gpu: bool = False, 
+    def __init__(self, device: str = 'cpu',
                  use_precalculated_dets: bool = True,
-                 max_memory_gb: int = -1):
+                 max_memory_gb: int = -1,
+                 use_gpu: bool | None = None):
         """
         Initialize device configuration.
-        
+
         Args:
-            use_gpu: Whether to use GPU (requires SBD compiled with THRUST)
+            device: Backend device key — 'cpu', 'gpu' (NVHPC Thrust),
+                'gpu-nvidia-omp' (clang OpenMP-offload, NVIDIA), or any
+                alias known to ``sbd._device_aliases``. Default 'cpu'.
             use_precalculated_dets: Use precalculated determinants (GPU only)
             max_memory_gb: Maximum GPU memory in GB (-1 = auto)
+            use_gpu: Deprecated boolean. If supplied without ``device``,
+                ``True`` maps to 'gpu' (Thrust) and ``False`` to 'cpu'
+                for backward compatibility with pre-OMP-offload code.
         """
-        self.use_gpu = use_gpu
+        if use_gpu is not None and device == 'cpu':
+            # Legacy boolean path
+            device = 'gpu' if use_gpu else 'cpu'
+        self.device = device
+        self.use_gpu = device != 'cpu'
         self.use_precalculated_dets = use_precalculated_dets
         self.max_memory_gb = max_memory_gb
     
@@ -58,40 +68,51 @@ class DeviceConfig:
         has_hip = cls._check_hip()
         
         use_gpu = has_cuda or has_hip
-        
+
         if use_gpu:
             print(f"GPU detected ({'CUDA' if has_cuda else 'HIP'}), using GPU acceleration")
         else:
             print("No GPU detected, using CPU")
-        
-        return cls(use_gpu=use_gpu, max_memory_gb=max_memory_gb)
-    
+
+        device = 'gpu' if use_gpu else 'cpu'
+        return cls(device=device, max_memory_gb=max_memory_gb)
+
     @classmethod
     def cpu(cls) -> 'DeviceConfig':
-        """
-        Force CPU execution.
-        
-        Returns:
-            DeviceConfig configured for CPU
-        """
-        return cls(use_gpu=False)
-    
+        """Force CPU execution."""
+        return cls(device='cpu')
+
     @classmethod
     def gpu(cls, use_precalculated_dets: bool = True,
             max_memory_gb: int = -1) -> 'DeviceConfig':
+        """Force NVHPC Thrust GPU execution.
+
+        Requires SBD compiled with THRUST (the ``_core_gpu`` extension,
+        i.e. ``SBD_BUILD_BACKEND=gpu`` or ``=both``).
         """
-        Force GPU execution.
-        
-        Args:
-            use_precalculated_dets: Use precalculated determinants
-            max_memory_gb: Maximum GPU memory in GB (-1 = auto)
-            
-        Returns:
-            DeviceConfig configured for GPU
+        return cls(device='gpu',
+                   use_precalculated_dets=use_precalculated_dets,
+                   max_memory_gb=max_memory_gb)
+
+    @classmethod
+    def gpu_omp(cls, max_memory_gb: int = -1) -> 'DeviceConfig':
+        """Force OpenMP-offload GPU execution (NVIDIA).
+
+        Requires SBD compiled with the OMP-offload backend (the
+        ``_core_gpu_omp_nvidia`` extension, i.e.
+        ``SBD_BUILD_BACKEND=gpu_omp_nvidia``). Alias for
+        :meth:`gpu_nvidia_omp`.
         """
-        return cls(use_gpu=True, 
-                  use_precalculated_dets=use_precalculated_dets,
-                  max_memory_gb=max_memory_gb)
+        return cls.gpu_nvidia_omp(max_memory_gb=max_memory_gb)
+
+    @classmethod
+    def gpu_nvidia_omp(cls, max_memory_gb: int = -1) -> 'DeviceConfig':
+        """Force OpenMP-offload GPU execution on NVIDIA hardware.
+
+        See :meth:`gpu_omp` for details. Use this name when you want to
+        be explicit (e.g. when AMD OMP-offload is also configured).
+        """
+        return cls(device='gpu-nvidia-omp', max_memory_gb=max_memory_gb)
     
     # Cached detection results (None = not yet checked)
     _cuda_cache: bool | None = None
@@ -143,11 +164,11 @@ class DeviceConfig:
                 print("Falling back to CPU execution.")
     
     def __repr__(self) -> str:
-        if self.use_gpu:
-            return (f"DeviceConfig(GPU, precalc_dets={self.use_precalculated_dets}, "
-                   f"max_mem={self.max_memory_gb}GB)")
-        else:
+        if self.device == 'cpu':
             return "DeviceConfig(CPU)"
+        return (f"DeviceConfig(device={self.device!r}, "
+                f"precalc_dets={self.use_precalculated_dets}, "
+                f"max_mem={self.max_memory_gb}GB)")
 
 
 def get_device_info() -> dict:
