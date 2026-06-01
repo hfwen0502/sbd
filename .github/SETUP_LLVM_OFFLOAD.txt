@@ -129,11 +129,10 @@ export OMPI_CXX=/mnt/data/llvm-offload/bin/clang++
 #    Pin each rank to its socket-local cores. Without pinning, host-side
 #    OMP loops in SBD (notably qcham.h:makeQChamDiagTerms — see Known
 #    issues below) thrash across NUMA nodes and can run 7x slower; the
-#    Davidson sub-iter rate also degrades 2-3x and we have observed
-#    spurious cuMemAlloc failures from libomptarget on long unpinned
-#    runs. Use numactl (or any equivalent affinity wrapper) to bind each
-#    rank to one socket. Example for a 2-socket box with 8 ranks
-#    (ranks 0-3 -> socket 0, ranks 4-7 -> socket 1):
+#    Davidson sub-iter rate also degrades 2-3x. Use numactl (or any
+#    equivalent affinity wrapper) to bind each rank to one socket.
+#    Example for a 2-socket box with 8 ranks (ranks 0-3 -> socket 0,
+#    ranks 4-7 -> socket 1):
 mpirun --mca pml ucx --mca osc ucx --mca btl '^smcuda,vader' \
        -x UCX_TLS=cuda_copy,cuda_ipc,sm,self \
        --allow-run-as-root -np 8 -x OMP_NUM_THREADS=10 \
