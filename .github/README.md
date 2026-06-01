@@ -251,8 +251,8 @@ See [python/examples/README.md](../python/examples/README.md) for usage details.
 
 | Function | Description |
 |----------|-------------|
-| `sbd.get_backend(device=None)` | Get backend module (`_core_cpu` or `_core_gpu`). `None` = default |
-| `sbd.available_backends()` | List of compiled backends (`['cpu']` or `['cpu', 'gpu']`) |
+| `sbd.get_backend(device=None)` | Get backend module (`_core_cpu`, `_core_gpu`, or `_core_gpu_omp_nvidia`). `None` = default |
+| `sbd.available_backends()` | List of compiled backends, e.g. `['cpu']`, `['cpu', 'gpu']`, `['cpu', 'gpu', 'gpu-nvidia-omp']` |
 
 ### Query
 
@@ -312,10 +312,11 @@ sbd.print_info()
 
 ## Backend Architecture
 
-- **`_core_cpu.so`** and **`_core_gpu.so`** are separate pybind11 modules with separate C++ namespaces — no symbol collision.
-- Both are loaded eagerly at `import sbd` into `sbd._backends`.
-- `get_backend(device)` returns the appropriate module; all wrapper functions accept an optional `device` parameter.
-- GPU device assignment: `gpu_id = mpi_rank % num_gpus` (set per `tpb_diag()` call in `bindings.cpp`).
+- Each backend is a separate pybind11 module — `_core_cpu.so`, `_core_gpu.so` (NVHPC Thrust), `_core_gpu_omp_nvidia.so` (LLVM OpenMP-offload). All compiled from the same `python/bindings.cpp` source with different `-D` macros (`SBD_THRUST`, `USE_GPU + USE_OMP_OFFLOAD`, or neither for CPU) and different compilers (gcc/clang, nvc++, clang++ respectively). Distinct C++ namespaces — no symbol collision when multiple coexist.
+- All compiled backends are loaded eagerly at `import sbd` into `sbd._backends`. Aliases (`'gpu-omp'` → `'gpu-nvidia-omp'`, `'cuda'`/`'gpu-nvidia'` → `'gpu'`) live in `sbd._device_aliases`.
+- `get_backend(device)` resolves aliases and returns the appropriate module; all wrapper functions accept an optional `device` parameter.
+- GPU device assignment: `gpu_id = mpi_rank % num_gpus` (set per `tpb_diag()` call in `bindings.cpp`); same logic for both Thrust and OMP-offload paths.
+- Backends differ in which phases run on the GPU vs the host. Davidson and the matvec (`mult`) live on the GPU under both Thrust and OMP-offload. The diagonal-Hamiltonian preconditioner (`makeQChamDiagTerms`) is GPU-resident under Thrust but runs on the host under OMP-offload (no `#pragma omp target` port in `tpb/qcham.h`) — see `.github/SETUP_LLVM_OFFLOAD.txt` for details.
 
 ## Troubleshooting
 
@@ -330,7 +331,8 @@ sbd.print_info()
 ## Performance Tips
 
 **CPU:** `OMP_NUM_THREADS` = cores per MPI rank.
-**GPU:** 1 rank per GPU, `OMP_NUM_THREADS=1`, use method 0 (matrix-free Davidson).
+**GPU (Thrust):** 1 rank per GPU, `OMP_NUM_THREADS=1`, use method 0 (matrix-free Davidson).
+**GPU (OMP-offload):** 1 rank per GPU, `OMP_NUM_THREADS` ≈ socket-local cores per rank, **pin each rank to one socket** (e.g. `mpirun --map-by ppr:N:socket --bind-to socket …` or wrap with `numactl --cpunodebind=… --membind=…`). Without pinning, the host-side `makeQChamDiagTerms` loop and the host-side orchestration inside Davidson degrade ~7× and 2–3× respectively because OMP threads thrash across NUMA nodes. Long unpinned runs have also produced spurious `cuMemAlloc[Host|Managed]` failures from libomptarget that don't reproduce when pinned.
 
 ---
 
