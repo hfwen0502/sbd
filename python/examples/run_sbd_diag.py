@@ -34,8 +34,11 @@ def parse_args():
     )
     
     # Device selection
-    parser.add_argument('--device', choices=['auto', 'cpu', 'gpu'], default='cpu',
-                       help='Device to use (auto=detect, cpu=force CPU, gpu=force GPU)')
+    parser.add_argument('--device',
+                       choices=['auto', 'cpu', 'gpu', 'gpu-omp', 'gpu-nvidia-omp'],
+                       default='cpu',
+                       help='Device: cpu | gpu (NVHPC Thrust) | '
+                            'gpu-omp = gpu-nvidia-omp (LLVM OpenMP-offload) | auto')
     
     # Input files
     parser.add_argument('--fcidump', default='../../data/h2o/fcidump.txt',
