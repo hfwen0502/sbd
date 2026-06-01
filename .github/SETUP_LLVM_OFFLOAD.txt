@@ -125,18 +125,33 @@ export OMPI_CXX=/mnt/data/llvm-offload/bin/clang++
 #    "cuMemHostRegister return value: 1" warning at startup (cosmetic,
 #    falls back to staged copies — numerics unaffected). Suppress by
 #    routing through UCX-only:
+#
+#    Pin each rank to its socket-local cores. Without pinning, host-side
+#    OMP loops in SBD (notably qcham.h:makeQChamDiagTerms — see Known
+#    issues below) thrash across NUMA nodes and can run 7x slower; the
+#    Davidson sub-iter rate also degrades 2-3x and we have observed
+#    spurious cuMemAlloc failures from libomptarget on long unpinned
+#    runs. Use numactl (or any equivalent affinity wrapper) to bind each
+#    rank to one socket. Example for a 2-socket box with 8 ranks
+#    (ranks 0-3 -> socket 0, ranks 4-7 -> socket 1):
 mpirun --mca pml ucx --mca osc ucx --mca btl '^smcuda,vader' \
        -x UCX_TLS=cuda_copy,cuda_ipc,sm,self \
        --allow-run-as-root -np 8 -x OMP_NUM_THREADS=10 \
+       --map-by ppr:4:socket --bind-to socket \
        ./diag --fcidump ../../data/fe4s4/fcidump.txt \
               --adetfile ../../data/fe4s4/alpha_dets_27901.txt \
               --method 0 --block 10 --tolerance 1.0e-5 \
               --adet_comm_size 4 --bdet_comm_size 2
+# (Equivalent with explicit numactl per rank, useful when --bind-to is
+# overridden by the cluster scheduler:
+#   ... -np 8 bash -c 'numactl --cpunodebind=$((OMPI_COMM_WORLD_RANK/4)) \
+#                              --membind=$((OMPI_COMM_WORLD_RANK/4)) ./diag ...')
 
-# Validated results (Fe4S4 27,901-det subspace, 8x H100):
+# Validated results (Fe4S4 27,901-det subspace, 8x H100, pinned):
 #   Energy = -326.821832430028 Ha   (matches Thrust build to 12 digits)
-#   Final mult (single H|psi>): 23.0 s    (vs 36.5 s for Thrust build)
-#   Davidson 10 iters:          315 s     (vs 371 s for Thrust)
+#   Final mult (single H|psi>): 23.2 s    (vs 36.5 s for Thrust build)
+#   Davidson 10 sub-iters:      316 s     (vs 371 s for Thrust)
+#   makeQChamDiagTerms:          57 s     (vs  32 s for Thrust; see below)
 
 # Known issues
 # ------------
@@ -153,3 +168,22 @@ mpirun --mca pml ucx --mca osc ucx --mca btl '^smcuda,vader' \
 # - System gcc 11.5 advertises -foffload=nvptx-none but doesn't ship
 #   accel-cc1 / mkoffload, so gcc OpenMP offload doesn't work
 #   end-to-end. Stay with the LLVM toolchain we just built.
+# - makeQChamDiagTerms runs on the host under OMP-offload, on the GPU
+#   under Thrust. The dispatch in tpb/sbdiag.h is:
+#       #ifdef SBD_THRUST
+#           device_mult.makeQChamDiagTerms(hii);   // GPU kernel,
+#                                                  // tpb/mult_thrust.h
+#       #else
+#           sbd::makeQChamDiagTerms(adet,bdet,...,hii,...);  // host OMP,
+#                                                            // tpb/qcham.h
+#       #endif
+#   The host implementation in qcham.h uses #pragma omp parallel + omp
+#   for over the bra subspace and computes hii[k] = ZeroExcite(det,...)
+#   per determinant. There is NO #pragma omp target version — the
+#   OMP-offload build deliberately falls back to host execution for
+#   this routine. Cost on Fe4S4 27,901 / 8x H100: 57 s pinned,
+#   ~405 s unpinned (vs 32 s for Thrust on the GPU). Davidson and
+#   Final mult are the headline phases that genuinely run on the GPU
+#   under both backends; OMP-offload wins those by ~15-37%, then loses
+#   ~25 s back on this host-side preconditioner setup. Net win is still
+#   positive on multi-iter runs where setup amortizes.
