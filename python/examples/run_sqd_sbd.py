@@ -53,7 +53,11 @@ def parse_args():
                    help="Path to count_dict.json (bitstring counts from hardware)")
     p.add_argument("--samples", type=int, default=10000,
                    help="Number of uniform random samples (used when --counts is not given)")
-    p.add_argument("--device", choices=["auto", "cpu", "gpu"], default="cpu")
+    p.add_argument("--device",
+                   choices=["auto", "cpu", "gpu", "gpu-omp", "gpu-nvidia-omp"],
+                   default="cpu",
+                   help="cpu | gpu (NVHPC Thrust) | gpu-omp = gpu-nvidia-omp "
+                        "(LLVM OpenMP-offload) | auto")
 
     # Profiling
     p.add_argument("--profile", action="store_true", default=False,
@@ -166,7 +170,12 @@ def main():
         print_device_info()
         print()
 
-    device_config = DeviceConfig.gpu() if device_str == "gpu" else DeviceConfig.cpu()
+    if device_str == "gpu":
+        device_config = DeviceConfig.gpu()
+    elif device_str in ("gpu-omp", "gpu-nvidia-omp"):
+        device_config = DeviceConfig.gpu_omp()
+    else:
+        device_config = DeviceConfig.cpu()
 
     # --- Load molecular integrals ---
     mf_as = tools.fcidump.to_scf(str(args.fcidump))
