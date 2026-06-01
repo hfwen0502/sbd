@@ -149,19 +149,24 @@ class DeviceConfig:
     def apply(self, sbd_config) -> None:
         """
         Apply device configuration to an SBD TPB_SBD configuration object.
-        
+
         Args:
             sbd_config: sbd.TPB_SBD configuration object
         """
-        # GPU-specific parameters are only available if compiled with THRUST
-        if self.use_gpu:
+        # `use_precalculated_dets` and `max_memory_gb_for_determinants`
+        # are Thrust-only struct fields (guarded by SBD_THRUST in
+        # sbdiag.h). The OMP-offload backend doesn't expose them — that
+        # path doesn't have the precalculated-dets cache yet, so there's
+        # nothing to wire up.
+        if self.device == 'gpu':
             try:
                 sbd_config.use_precalculated_dets = self.use_precalculated_dets
                 sbd_config.max_memory_gb_for_determinants = self.max_memory_gb
             except AttributeError:
-                print("WARNING: GPU parameters not available. "
-                      "SBD may not be compiled with THRUST support.")
-                print("Falling back to CPU execution.")
+                print("WARNING: Thrust GPU knobs not exposed by this "
+                      "backend module — likely a CPU/OMP-offload build "
+                      "loaded under device='gpu'. Numerics still run on "
+                      "the selected backend.")
     
     def __repr__(self) -> str:
         if self.device == 'cpu':
