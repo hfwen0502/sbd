@@ -189,9 +189,26 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
 #endif
 #endif
 #ifdef USE_OMP_OFFLOAD
-            // Assign OMP-offload device based on MPI rank
+            // Assign OMP-offload device based on MPI rank.
+            //
+            // Note: when this .so is loaded via Python dlopen, the symbol
+            // omp_get_num_devices binds to libomp.so's stub (which returns 0
+            // because libomp itself doesn't manage offload devices) instead
+            // of libomptarget's working version. omp_set_default_device
+            // IS shared between the two, so once we know the count we can
+            // still set the device correctly. Fall back to parsing
+            // CUDA_VISIBLE_DEVICES when omp_get_num_devices reports 0.
             {
                 int n_dev = omp_get_num_devices();
+                if (n_dev <= 0) {
+                    const char* cvd = std::getenv("CUDA_VISIBLE_DEVICES");
+                    if (cvd && *cvd) {
+                        n_dev = 1;
+                        for (const char* p = cvd; *p; ++p) {
+                            if (*p == ',') ++n_dev;
+                        }
+                    }
+                }
                 if (n_dev > 0) {
                     omp_set_default_device(mpi_rank % n_dev);
                 }
@@ -270,9 +287,26 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
 #endif
 #endif
 #ifdef USE_OMP_OFFLOAD
-            // Assign OMP-offload device based on MPI rank
+            // Assign OMP-offload device based on MPI rank.
+            //
+            // Note: when this .so is loaded via Python dlopen, the symbol
+            // omp_get_num_devices binds to libomp.so's stub (which returns 0
+            // because libomp itself doesn't manage offload devices) instead
+            // of libomptarget's working version. omp_set_default_device
+            // IS shared between the two, so once we know the count we can
+            // still set the device correctly. Fall back to parsing
+            // CUDA_VISIBLE_DEVICES when omp_get_num_devices reports 0.
             {
                 int n_dev = omp_get_num_devices();
+                if (n_dev <= 0) {
+                    const char* cvd = std::getenv("CUDA_VISIBLE_DEVICES");
+                    if (cvd && *cvd) {
+                        n_dev = 1;
+                        for (const char* p = cvd; *p; ++p) {
+                            if (*p == ',') ++n_dev;
+                        }
+                    }
+                }
                 if (n_dev > 0) {
                     omp_set_default_device(mpi_rank % n_dev);
                 }
