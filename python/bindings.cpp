@@ -23,6 +23,10 @@
 
 #include "sbd/sbd.h"
 
+#ifdef USE_OMP_OFFLOAD
+#include <omp.h>
+#endif
+
 namespace py = pybind11;
 
 /**
@@ -184,6 +188,15 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             hipSetDevice(myDevice);
 #endif
 #endif
+#ifdef USE_OMP_OFFLOAD
+            // Assign OMP-offload device based on MPI rank
+            {
+                int n_dev = omp_get_num_devices();
+                if (n_dev > 0) {
+                    omp_set_default_device(mpi_rank % n_dev);
+                }
+            }
+#endif
             
             // Output variables
             double energy;
@@ -255,6 +268,15 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             myDevice = mpi_rank % numDevices;
             hipSetDevice(myDevice);
 #endif
+#endif
+#ifdef USE_OMP_OFFLOAD
+            // Assign OMP-offload device based on MPI rank
+            {
+                int n_dev = omp_get_num_devices();
+                if (n_dev > 0) {
+                    omp_set_default_device(mpi_rank % n_dev);
+                }
+            }
 #endif
             
             // Output variables
