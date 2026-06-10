@@ -67,13 +67,46 @@ def find_nvidia_hpc_sdk():
     return None, False
 
 
+def _llvm_host_triple_subdir(llvm_home):
+    """Pick the host-runtime subdir under LLVM_HOME/lib/.
+
+    LLVM with -DLLVM_RUNTIME_TARGETS=default installs the host runtime
+    libs (libomp, libomptarget) into lib/<triple>/ where <triple>
+    matches the host arch — x86_64-unknown-linux-gnu on Intel/AMD x86,
+    aarch64-unknown-linux-gnu on ARM (Grace, Neoverse, etc.).
+
+    We prefer the platform-derived guess but fall back to whichever
+    triple subdir actually contains libomptarget.so so non-standard
+    installs still work.
+    """
+    import glob, platform
+    arch_to_triple = {
+        'x86_64':  'x86_64-unknown-linux-gnu',
+        'aarch64': 'aarch64-unknown-linux-gnu',
+    }
+    primary = arch_to_triple.get(platform.machine())
+    candidates = [primary] if primary else []
+    # Fallback: scan lib/ for any *-unknown-linux-gnu subdir with omptarget
+    for d in glob.glob(os.path.join(llvm_home, 'lib', '*-unknown-linux-gnu')):
+        name = os.path.basename(d)
+        if name not in candidates:
+            candidates.append(name)
+    for triple in candidates:
+        path = os.path.join(llvm_home, 'lib', triple)
+        if glob.glob(os.path.join(path, 'libomptarget.so*')):
+            return path
+    # Last resort — return primary path even if libomptarget isn't there;
+    # the caller logs a clear "missing libomptarget" warning in that case.
+    return os.path.join(llvm_home, 'lib', primary or 'x86_64-unknown-linux-gnu')
+
+
 def find_llvm_offload():
-    """Return (clang++_path, has_llvm) for an LLVM-with-offload install.
+    """Return (clang++_path, has_llvm, host_lib_dir) for an LLVM-with-offload install.
 
     Looks at LLVM_HOME and verifies:
       1. bin/clang++ exists,
-      2. lib/x86_64-unknown-linux-gnu/libomptarget.so* (host runtime
-         dispatcher) is present,
+      2. lib/<host-triple>/libomptarget.so* (host runtime dispatcher) is
+         present (host triple auto-detected — x86_64 or aarch64),
       3. lib/nvptx64-nvidia-cuda/libomptarget-nvptx.bc (device-side
          bitcode for NVIDIA) is present.
 
@@ -89,19 +122,19 @@ def find_llvm_offload():
     """
     llvm_home = os.environ.get('LLVM_HOME', None)
     if not llvm_home:
-        return None, False
+        return None, False, None
     clangxx = os.path.join(llvm_home, 'bin', 'clang++')
     if not os.path.exists(clangxx):
         print(f"Warning: LLVM_HOME={llvm_home} but {clangxx} not found")
-        return None, False
+        return None, False, None
     import glob
-    host_lib = os.path.join(llvm_home, 'lib', 'x86_64-unknown-linux-gnu')
+    host_lib = _llvm_host_triple_subdir(llvm_home)
     if not glob.glob(os.path.join(host_lib, 'libomptarget.so*')):
         print(f"Warning: LLVM_HOME={llvm_home} has clang++ but no "
               f"libomptarget.so* in {host_lib}; build LLVM with "
               f"LLVM_RUNTIME_TARGETS including 'default' (see "
               f".github/SETUP_LLVM_OFFLOAD.txt). Skipping OMP-offload backend.")
-        return None, False
+        return None, False, None
     nvptx_bc = os.path.join(llvm_home, 'lib', 'nvptx64-nvidia-cuda',
                             'libomptarget-nvptx.bc')
     if not os.path.exists(nvptx_bc):
@@ -110,9 +143,9 @@ def find_llvm_offload():
               f"compile but produce no device kernels. Build LLVM with "
               f"LLVM_RUNTIME_TARGETS including 'nvptx64-nvidia-cuda'. "
               f"Skipping OMP-offload backend.")
-        return None, False
-    print(f"Found LLVM-with-offload at: {llvm_home}")
-    return clangxx, True
+        return None, False, None
+    print(f"Found LLVM-with-offload at: {llvm_home} (host triple: {os.path.basename(host_lib)})")
+    return clangxx, True, host_lib
 
 
 # Get MPI configuration
@@ -157,7 +190,7 @@ print(f"RPATH will be set to: {library_dirs}")
 
 # Detect GPU compilers
 gpu_compiler, has_nvhpc = find_nvidia_hpc_sdk()
-omp_clang,    has_llvm  = find_llvm_offload()
+omp_clang, has_llvm, llvm_host_lib = find_llvm_offload()
 
 # Determine which backends to build
 build_backend = os.environ.get('SBD_BUILD_BACKEND', 'auto').lower()
@@ -309,8 +342,8 @@ if build_gpu_omp_nvidia:
     os.environ['CPPFLAGS'] = ''
 
     offload_arch = os.environ.get('SBD_OFFLOAD_ARCH_NVIDIA', 'sm_90')
-    llvm_home    = os.environ['LLVM_HOME']
-    triple_lib   = os.path.join(llvm_home, 'lib', 'x86_64-unknown-linux-gnu')
+    # Host-arch-aware: x86_64 -> x86_64-unknown-linux-gnu/, aarch64 -> aarch64-...
+    triple_lib   = llvm_host_lib
 
     gpu_omp_nvidia_ext = Extension(
         'sbd._core_gpu_omp_nvidia',
