@@ -18,7 +18,7 @@ SBD (Selected Basis Diagonalization) is a high-performance library for quantum c
 
 ### Prerequisites
 
-**Required:** Python 3.11+, MPI (OpenMPI/MPICH), BLAS (OpenBLAS/MKL), pybind11, mpi4py, numpy.
+**Required:** Python 3.10+, MPI (OpenMPI/MPICH), BLAS (OpenBLAS/MKL), pybind11, mpi4py, numpy.
 
 **Optional (GPU):** NVIDIA HPC SDK (nvc++), CUDA-capable GPU, CUDA-aware MPI.
 
@@ -62,12 +62,18 @@ export CXX=nvc++
 # and break nvc++ compilation
 export CFLAGS=''
 export CXXFLAGS=''
+# Override the NVHPC -gpu=<arch> flag (default sm_90 for H100). Use
+# cc100 for GB200/Blackwell, sm_80 for A100, etc.
+export SBD_GPU_ARCH_NVIDIA=cc100
 
 # OpenMP-offload GPU backend (optional, requires LLVM/clang trunk
 # with the offload runtime built — see .github/SETUP_LLVM_OFFLOAD.txt).
 # Auto-detected from LLVM_HOME if set; only built when invoked
 # explicitly with SBD_BUILD_BACKEND=gpu_omp_nvidia.
 export LLVM_HOME=/path/to/llvm-offload
+# Override the clang --offload-arch=<arch> flag (default sm_90).
+# sm_100 for GB200/Blackwell, sm_80 for A100, gfx90a for AMD MI200, etc.
+export SBD_OFFLOAD_ARCH_NVIDIA=sm_100
 ```
 
 ### Build
@@ -91,8 +97,8 @@ SBD_BUILD_BACKEND=gpu_omp_nvidia     pip install -e . --no-build-isolation  # Op
 | Backend | Module | Compiler | Macros | Device strings |
 |---|---|---|---|---|
 | CPU OpenMP host | `_core_cpu` | gcc/clang | `-fopenmp` (host) | `'cpu'` |
-| NVIDIA Thrust | `_core_gpu` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=sm_XX` | `'gpu'`, `'gpu-nvidia'`, `'cuda'` |
-| NVIDIA OpenMP-offload | `_core_gpu_omp_nvidia` | LLVM clang++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -fopenmp-targets=nvptx64-nvidia-cuda` | `'gpu-omp'`, `'gpu-nvidia-omp'` |
+| NVIDIA Thrust | `_core_gpu` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=$SBD_GPU_ARCH_NVIDIA` | `'gpu'`, `'gpu-nvidia'`, `'cuda'` |
+| NVIDIA OpenMP-offload | `_core_gpu_omp_nvidia` | LLVM clang++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -fopenmp-targets=nvptx64-nvidia-cuda --offload-arch=$SBD_OFFLOAD_ARCH_NVIDIA` | `'gpu-omp'`, `'gpu-nvidia-omp'` |
 
 **`SBD_BUILD_BACKEND=gpu_omp_nvidia` must be invoked alone** (not
 combined with `cpu` / `gpu` / `both`) because clang, gcc, and nvc++
@@ -327,6 +333,10 @@ sbd.print_info()
 **GPU not building:** Check `which nvc++` and set `NVHPC_HOME`.
 
 **MPI errors:** Verify `MPI_HOME`, check `python -c "from mpi4py import MPI; print(MPI.Get_version())"`.
+
+**OMP-offload runs all land on GPU 0 in multi-GPU jobs:** symptom — every MPI rank shows large memory only on GPU 0 in `nvidia-smi`. The bindings already call `omp_set_default_device(mpi_rank % n_dev)`, but when `_core_gpu_omp_nvidia.so` is loaded via Python's dlopen, `omp_get_num_devices()` binds to libomp's stub (returns 0) instead of libomptarget's working version (returns the real count). The bindings fall back to parsing `CUDA_VISIBLE_DEVICES` to recover the device count, so make sure that env var is exported and lists all your GPUs (e.g. `0,1,2,3`). Slurm/`srun --gres=gpu:N` and OpenMPI's default binding policy already do this; if you've custom-restricted `CUDA_VISIBLE_DEVICES` to a single GPU per rank, set it manually before launch.
+
+**OMP-offload + UCX MPI fails with `MPI_INIT failed`:** mpi4py 4.x requests `MPI_THREAD_MULTIPLE` by default, which UCX in HPCX rejects with `UCP worker does not support MPI_THREAD_MULTIPLE`. Set `MPI4PY_RC_THREAD_LEVEL=serialized` (or `funneled`/`single`) in the environment, or `import mpi4py; mpi4py.rc.thread_level = 'serialized'` before `from mpi4py import MPI`.
 
 ## Performance Tips
 
