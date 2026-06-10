@@ -192,15 +192,9 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             // Assign OMP-offload device based on MPI rank
             {
                 int n_dev = omp_get_num_devices();
-                int my_dev = (n_dev > 0) ? (mpi_rank % n_dev) : 0;
                 if (n_dev > 0) {
-                    omp_set_default_device(my_dev);
+                    omp_set_default_device(mpi_rank % n_dev);
                 }
-                std::cerr << "SBD-OMP rank=" << mpi_rank
-                          << " n_dev=" << n_dev
-                          << " set_default=" << my_dev
-                          << " (after) get_default=" << omp_get_default_device()
-                          << std::endl;
             }
 #endif
             
@@ -279,15 +273,9 @@ PYBIND11_MODULE(SBD_MODULE_NAME, m) {
             // Assign OMP-offload device based on MPI rank
             {
                 int n_dev = omp_get_num_devices();
-                int my_dev = (n_dev > 0) ? (mpi_rank % n_dev) : 0;
                 if (n_dev > 0) {
-                    omp_set_default_device(my_dev);
+                    omp_set_default_device(mpi_rank % n_dev);
                 }
-                std::cerr << "SBD-OMP rank=" << mpi_rank
-                          << " n_dev=" << n_dev
-                          << " set_default=" << my_dev
-                          << " (after) get_default=" << omp_get_default_device()
-                          << std::endl;
             }
 #endif
             
