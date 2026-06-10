@@ -186,3 +186,44 @@ mpirun --mca pml ucx --mca osc ucx --mca btl '^smcuda,vader' \
 #   under both backends; OMP-offload wins those by ~15-37%, then loses
 #   ~25 s back on this host-side preconditioner setup. Net win is still
 #   positive on multi-iter runs where setup amortizes.
+
+# GB200 / aarch64 / Ubuntu 22.04 variant (CoreWeave Slurm cluster)
+# ----------------------------------------------------------------
+# Tested on:
+#   Host:    Ubuntu 22.04, aarch64 (Grace 72-core), NVIDIA GB200 superchip
+#            (compute capability 10.0, Blackwell, 189 GB HBM)
+#   CUDA:    13.0 at /usr/local/cuda (loaded via `module load image-defaults`)
+#   Bootstrap compiler: gcc 11.4.0
+#   MPI:     HPC-X OpenMPI 4.1.9a1 at /opt/hpcx/ompi
+#
+# Key cmake-flag deltas vs the H100/x86 recipe above:
+#
+#   -DLLVM_TARGETS_TO_BUILD="AArch64;NVPTX"
+#   -DRUNTIMES_nvptx64-nvidia-cuda_LLVM_ENABLE_RUNTIMES="openmp"
+#
+# Two reasons for the trimmed nvptx runtime list:
+#   1. Ubuntu 22.04 multiarch puts libc bits at /usr/include/aarch64-linux-gnu/
+#      bits/, which the cross-compile clang -target=nvptx64-nvidia-cuda
+#      doesn't auto-discover. compiler-rt's nvptx instrumentation source
+#      includes /usr/include/string.h -> bits/libc-header-start.h and fails
+#      with "'bits/wordsize.h' file not found". We don't need profile/sanitizer
+#      runtime on the device — drop compiler-rt from the nvptx target.
+#   2. libcxxabi (current LLVM trunk) requires libunwind in the runtime list
+#      (LIBCXXABI_USE_LLVM_UNWINDER=ON check). We don't need C++ stdlib on
+#      the device for OMP-offload kernels — drop libcxx;libcxxabi too.
+#
+# The host runtime list (LLVM_ENABLE_RUNTIMES) keeps the full set —
+# libunwind/libcxx/libcxxabi are still useful host-side. Only the nvptx
+# device target is trimmed to "openmp".
+#
+# Other deltas:
+#   - --offload-arch=sm_100 instead of sm_90.
+#   - LD_LIBRARY_PATH points to lib/aarch64-unknown-linux-gnu/ (not x86_64).
+#   - Skip step 1's `dnf install glibc-devel.i686` — that's RHEL/x86 only.
+#     On Ubuntu/aarch64 there's no 32-bit sanitizer build to worry about.
+#   - cmake/ninja installable via `pip install --user cmake ninja` since
+#     no system cmake is available; binaries land in ~/.local/bin.
+#
+# Build duration (full clean build, 64-thread ninja, 128-CPU GB200 node):
+# ~5 min host + 2 min nvptx runtime, well under the H100 box's 45-60 min
+# (much more parallelism on the Grace).
