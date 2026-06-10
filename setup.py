@@ -295,6 +295,8 @@ if build_gpu:
         print("Error: GPU backend requested but nvc++ not found")
         sys.exit(1)
     print(f"Using compiler: {gpu_compiler}")
+    gpu_arch = os.environ.get('SBD_GPU_ARCH_NVIDIA', 'sm_90')
+    print(f"NVHPC GPU arch: {gpu_arch} (set SBD_GPU_ARCH_NVIDIA to override)")
 
     gpu_ext = Extension(
         'sbd._core_gpu',
@@ -313,7 +315,7 @@ if build_gpu:
             '--diag_suppress=declared_but_not_referenced,set_but_not_used',
             '-fmax-errors=0',
             '-fPIC',
-            '-gpu=sm_90',
+            f'-gpu={gpu_arch}',
             '-DSBD_MODULE_NAME=_core_gpu',
         ],
         extra_link_args=extra_link_args + ['-mp', '-cuda', '-cudalib'],
