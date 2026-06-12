@@ -36,7 +36,7 @@ Three things to note:
 
 1. **Fulqrum cuda_mpi and SBD Thrust both gain from doubling GPUs**, sublinearly. Allgatherv volume per matvec scales with per-rank tile size (halves) but collective fan-out grows; net 1.7×–2.1× speedup is normal.
 2. **Fulqrum NCCL on 2 nodes is the fastest Fulqrum configuration tested**, 10% faster than cuda_mpi at the same node count — but the per-matvec story (§2) shows the underlying improvement is much bigger.
-3. **SBD OMP-offload regresses on 2 nodes.** Single-node ratio OMP/Thrust ≈ 1.0×; 2-node ratio is 3.2×. This is investigated further in §3.
+3. **SBD OMP-offload runs slower than Thrust at the same rank count**, by ~1.0× at 1 node and ~3.2× at 2 nodes. This was originally read as a "2-node regression" but the per-rank rate is actually flat across 1-/2-node configs (§3.1); the wider gap at 2 nodes simply reflects different per-rank workloads in the prior runs. The OMP-offload host loop (`qcham.h::makeQChamDiagTerms`) is just slow per item on fe4s4 because of the big I2 cache footprint.
 
 ## 2. Per-matvec breakdown — Fulqrum
 
@@ -87,10 +87,53 @@ Same 4×GB200 vs 8×GB200 layout. Phases as reported by `run_sbd_diag.py`.
 | Davidson 10 sub-iters      | 481 s  | 454 s  | **264 s** | **853 s** |
 | Final mult                 | 46.8 s | 34.6 s | 25.7 s  | 19.3 s |
 
-Two regressions worth flagging:
+### 3.1. On the apparent OMP-offload "regression" — there isn't one
 
-1. **OMP-offload's `makeQChamDiagTerms` is 9× slower at 2 nodes than at 1** (538 s vs 57 s) — the host-only build path appears to scale very poorly. Likely an LLVM-offload runtime issue on aarch64, or the way SBD's host build distributes work across MPI ranks.
-2. **OMP-offload davidson is 1.9× slower at 2 nodes than at 1** (853 s vs 454 s) — going to 2 nodes makes it slower. This is the same pattern as `makeQChamDiagTerms`. Thrust does not have this problem (264 s vs 481 s = 1.82× speedup, the expected direction).
+The `makeQChamDiagTerms` row above looks like a 9× slowdown going from
+1-node to 2-nodes (57 s → 538 s). It isn't.
+
+`makeQChamDiagTerms` on the OMP-offload build is **a CPU host loop**
+(qcham.h:290), not an offload kernel. The `SBD_THRUST` build calls
+`device_mult.makeQChamDiagTerms(hii)` on GPU; the OMP-offload build
+falls into the `#else` branch and runs the host OpenMP loop.
+
+Adding per-rank instrumentation
+(`qcham.h::makeQChamDiagTerms` printf with items_done and loop time)
+shows:
+
+| run                            | per-rank items | loop time | rate          |
+|---|---:|---:|---:|
+| h2o-1em5,    1-node 4r (2×2)   | 7.6 M          | 7.7 s     | 1.0 M items/s |
+| h2o-1em5,    2-node 8r (4×2)   | 3.8 M          | 4.1 s     | 0.93 M/s      |
+| fe4s4-5000,  1-node 4r (2×2)   | 6.25 M         | 35 s      | 0.18 M/s      |
+| fe4s4-5000,  2-node 8r (4×2)   | 3.1 M          | 17.7 s    | 0.18 M/s      |
+| fe4s4-27901, 1-node 4r (2×2)   | 195 M          | 1076 s    | 0.18 M/s      |
+| fe4s4-27901, 2-node 8r (4×2)   | 97 M           | 530 s     | 0.18 M/s      |
+
+The per-item rate is **flat across 1-node and 2-node configs**. fe4s4
+is just ~5–6× slower per item than h2o because its `ZeroExcite`
+kernel reads a much larger I2 (≈ 13 MB for 36 orbitals vs ≈ 160 KB
+for 12 orbitals), and the bit_length is 2× wider.
+
+So the original "57 s vs 538 s" line was apples-vs-oranges on
+per-rank work: the prior 1-node 27,901 run did far less per-rank
+work than a 2×2 grid would imply (probably a different
+`--adet_comm_size`/`--bdet_comm_size` shape, or a different
+binary). The instrumented 1-node 4r 27,901 run on a 2×2 grid took
+1076 s — exactly matching the 0.18 M items/s rate × 195 M items per
+rank — confirming the rate is identical at 1 and 2 nodes.
+
+Davidson scales as expected on OMP-offload too: with the same
+instrumented binary at consistent grid, 1-node 4r → 2-node 8r is
+1607 s → 854 s (**1.88× speedup**), near-perfect. The "853 vs 454"
+gap reported earlier was the same per-rank-workload artifact.
+
+**Bottom line**: there is no 2-node OMP-offload regression. The
+OMP-offload host path is just slow per item on fe4s4 because of the
+big I2; the same code is invoked at 1 node and at 2 nodes and runs
+at the same rate. To speed up OMP-offload on fe4s4-class problems,
+the lever is the `ZeroExcite` kernel (cache locality / vectorization
+of the I2 lookups), not the MPI/OMP runtime.
 
 ## 4. Why NCCL wins on 2-node GB200: MNNVL
 
@@ -194,13 +237,13 @@ Plus a focused 4-rank `(2,2)` reproducer (`fulqrum/test/test_collective.py`-styl
 
 - **NCCL backend is correct on real hardware** at the source level on arbitrary 2D process grids (subgroup-aware refactor + ringshift caveat).
 - **GB200 + NCCL + MNNVL gives a 4.8× exch speedup over cuda_mpi**, but ~10% wallclock speedup since compute now dominates.
-- **OMP-offload regresses on 2-node GB200** for both Davidson and `makeQChamDiagTerms`. Probably an LLVM offload runtime / collective layer issue on aarch64.
+- **OMP-offload's per-item rate is flat across 1-node and 2-node configs**, but it runs ~5–6× slower per item than h2o on fe4s4 because the host loop (`qcham.h::makeQChamDiagTerms`) does not exploit the GPU and the 36-orbital I2 (≈ 13 MB) doesn't sit in fast cache. The original "2-node OMP regression" claim was an artifact of mismatched per-rank workloads in the prior runs (§3.1); there is no actual scaling regression.
 
 ### 7.2. Where to invest next, in priority order
 
 1. **Land the NCCL refactor upstream**, with the env-var caveat addressed (auto-set `FQ_TILE_RESIDENT_RINGSHIFT=1` in `_NcclBackend.init()`, or implement the missing `neighbor_alltoallv_device`). Add subgroup bit-equal tests so future regressions surface in CI.
 2. **Optimize the SpMV kernel itself.** With comm out of the way, per-matvec is now ~11.3 s of compute on 8 GB200s. Profile the tile kernel; likely candidates include better register reuse on the group-hashmap chemistry kernel and tighter aabb-cross-spin loops.
-3. **Investigate the SBD OMP-offload regressions** on GB200 (`makeQChamDiagTerms` 9× slower at 2 nodes, davidson 1.9× slower at 2 nodes). Probably one or two fixes in the offload runtime / collective layer.
+3. **Speed up the SBD OMP-offload host loop on fe4s4-class problems.** The cost is in `qcham.h::makeQChamDiagTerms` — a CPU OpenMP loop that runs `ZeroExcite` per (alpha, beta) pair and reads from the 13 MB I2 array. Two cheap improvements: (a) make `SBD_THRUST` the default device path so the diagonal build runs on GPU regardless of which Davidson variant is requested, and (b) profile cache misses on `ZeroExcite` to see whether tiling I2 access or precomputing diagonal contributions buys anything.
 4. **Upgrade GB200 cluster to OpenMPI 5.x.** Still worth doing for non-NCCL paths (cuda_mpi users, MPI-based workloads other than Fulqrum). Lower priority now that NCCL works on this cluster.
 
 ### 7.3. Practical guidance
