@@ -16,81 +16,119 @@ GPUs and NVLink + NVSwitch intra-node — fundamentally different fabric.
 ## 1. Scaling: 4×GB200 (1 node) → 8×GB200 (2 nodes)
 
 End-to-end eigensolve / davidson wall time for each backend, with
-energy as a correctness check. Backends with no 1-node run are marked
-"—".
+energy as a correctness check. Refreshed 2026-06-16 after Fulqrum's
+GPU-resident PRIMME path (`cublas_dprimme`) merged via PR #7
+(`aabb-csr-gpu-eig`).
 
-| Solver | 4×GB200 (1 node) | 8×GB200 (2 nodes) | speedup | Energy (Ha) |
+**Fulqrum** (30 matvecs to PRIMME residual 1e-3):
+
+| Backend | Eigsolver | 4×GB200 (1 node) | 8×GB200 (2 nodes) | 1n→2n | Energy (Ha) |
+|---|---|---:|---:|---:|---|
+| cuda_mpi | `cublas_dprimme`           | INT32 ¹           | **264 s** | — | −326.824718459210 |
+| cuda_mpi | host PRIMME (`--gpu-eigsh 0`) | 479 s          | 360 s     | 1.33× | −326.824718460… |
+| nccl     | `cublas_dprimme`           | INT32 ¹           | **188 s** | — | −326.824718459210 |
+| nccl     | host PRIMME (`--gpu-eigsh 0`) | 465 s          | 280 s     | 1.66× | −326.824718460… |
+
+**SBD** (`--iteration 1 --block 10`, 10 matvecs):
+
+| Backend | 4×GB200 (1 node) | 8×GB200 (2 nodes) | 1n→2n | Energy (Ha) |
 |---|---:|---:|---:|---|
-| Fulqrum cuda_mpi (PRIMME, 30 matvecs)  | 992 s | 577 s | **1.72×** | −326.824718460995 |
-| Fulqrum nccl (PRIMME, 30 matvecs)      | —     | **520 s** | —      | −326.824718460994 |
-| SBD Thrust (`--iteration 1`, 10 matvecs) | ~565 s | **264 s** | **2.14×** | −326.821832430028 |
-| SBD OMP-offload (`--iteration 1`, 10 matvecs) | ~570 s | 853 s | **0.67× (regression)** | −326.821832430028 |
+| Thrust       | **577 s** | **329 s** | **1.75×** | −326.821832430028 |
+| OMP-offload  | **491 s** | **304 s** | **1.62×** | −326.821832430028 |
 
-Energies all match within their respective solvers (Fulqrum to 11
-digits across boxes; SBD bit-equal across backends). The 0.003 Ha gap
-between Fulqrum (full Cartesian product) and SBD (selected basis) on
-the same 27,901 list reflects SBD's truncation of off-diagonal
-configurations.
+¹ At 4 ranks, `cublas_dprimme` rejects with `n_local × ncv = 2.34B >
+INT32_MAX (2.15B)` (32-bit indexing in cuBLAS calls over the flattened
+basis). 1-node Fulqrum runs use `--gpu-eigsh 0` (host PRIMME) as the
+workaround. The 2-node 8-rank case halves `n_local` and fits.
 
-Three things to note:
+Energies all match within their respective solvers (Fulqrum to 12
+digits across nccl/cuda_mpi and 9 digits across `cublas_dprimme` /
+host PRIMME — the latter difference is PRIMME's residual tolerance,
+not a correctness issue; SBD bit-equal across cpu/gpu/gpu-omp and
+1-/2-node). The **0.0029 Ha gap** between Fulqrum (full 27,901² ≈
+778 M Cartesian product) and SBD (selected basis on the same 27,901
+list) reflects SBD's truncation of off-diagonal configurations.
 
-1. **Fulqrum cuda_mpi and SBD Thrust both gain from doubling GPUs**, sublinearly. Allgatherv volume per matvec scales with per-rank tile size (halves) but collective fan-out grows; net 1.7×–2.1× speedup is normal.
-2. **Fulqrum NCCL on 2 nodes is the fastest Fulqrum configuration tested**, 10% faster than cuda_mpi at the same node count — but the per-matvec story (§2) shows the underlying improvement is much bigger.
-3. **SBD OMP-offload runs slower than Thrust at the same rank count**, by ~1.0× at 1 node and ~3.2× at 2 nodes. This was originally read as a "2-node regression" but the per-rank rate is actually flat across 1-/2-node configs (§3.1); the wider gap at 2 nodes simply reflects different per-rank workloads in the prior runs. The OMP-offload host loop (`qcham.h::makeQChamDiagTerms`) is just slow per item on fe4s4 because of the big I2 cache footprint.
+Things to note:
+
+1. **`cublas_dprimme` is a 1.4–1.5× win over host PRIMME on 2-node** (nccl: 188 s vs 280 s, 1.49×; cuda_mpi: 264 s vs 360 s, 1.36×). Same matvec, same comm — the win is collapsing host↔device round-trips around the eigenvalue update. The 1-node `cublas_dprimme` cells aren't measurable because of the INT32 footnote, but the ratio at 2-node is the apples-to-apples comparison.
+2. **NCCL beats cuda_mpi at every (eigsolver, node count) cell** (188 vs 264, 280 vs 360, 465 vs 479). The 4.8×-larger exch advantage from MNNVL P2P (§4) translates to wallclock gains between 1.03× (host PRIMME on 1-node, where comm is dwarfed by the host eigsolver) and 1.4× (`cublas_dprimme` on 2-node, where comm is back in the critical path).
+3. **SBD gpu-omp on 2-node is now *faster* than Thrust** (304 s vs 329 s) and scales 1.62× from 1n→2n. The earlier "0.67× OMP regression" reading was an artifact of mismatched per-rank workloads in the prior runs (§3.1) — the per-rank rate is flat across 1- and 2-node configs.
 
 ## 2. Per-matvec breakdown — Fulqrum
 
-Same 4-row format. Median steady-state matvec; `exch` is tile-exchange
-collectives (allgatherv + ring shift + grouped sendrecv); `compute`
-is the kernel body. `total` is the GPU-max across ranks.
+Median steady-state matvec; `exch` is tile-exchange collectives
+(allgatherv + ring shift + grouped sendrecv); `compute` is the kernel
+body. `total` is the GPU-max across ranks. Updated 2026-06-16 with
+`cublas_dprimme`-path measurements; the prior "host PRIMME" rows from
+the original sweep are kept below for reference.
+
+### 2.1. With `cublas_dprimme` (today's measurements)
+
+| Backend | 4×GB200 (1 node) ² | | | | 8×GB200 (2 nodes) | | | |
+|---|---:|---:|---:|---|---:|---:|---:|---|
+|        | total | exch | compute | overlap? | total | exch | compute | overlap? |
+| cuda_mpi | host PRIMME ¹ | — | — | — | 6.4 s | 3.20 s | 6.30 s | partial |
+| nccl     | host PRIMME ¹ | — | — | — | **4.04 s** | **0.95 s** | 4.01 s | yes |
+
+¹ Per the INT32 footnote in §1 — at 4 ranks the GPU PRIMME path
+rejects, so 1-node measurements are host-PRIMME-only and not
+comparable to 2-node steady-state matvec timing.
+² 1-node steady-state matvec on host PRIMME is ~7.7 s (cuda_mpi)
+and ~7.7 s (nccl); both are bottlenecked by host eigsolver overhead
+between matvec calls, not communication.
+
+### 2.2. With host PRIMME (original sweep, retained for reference)
 
 | Backend | 4×GB200 (1 node) | | | | 8×GB200 (2 nodes) | | | |
 |---|---:|---:|---:|---|---:|---:|---:|---|
 |        | total | exch | compute | overlap? | total | exch | compute | overlap? |
 | host_mpi | 21.6 s | 21.3 s | 21.5 s | **no** | (not run) | — | — | — |
 | cuda_mpi | 20.5 s | 20.2 s | 20.4 s | **no** | 13.4 s | 13.1 s | 13.4 s | **no** |
-| nccl     | (not run) | — | — | — | **11.4 s** | **2.74 s** | 11.3 s | yes |
+| nccl     | (not run) | — | — | — | 11.4 s | 2.74 s | 11.3 s | yes |
 
 Reading this table:
 
-- **At 1 node, exch ≈ total ≈ compute** for both host_mpi and cuda_mpi.
-  The host-staged Allgatherv serializes with compute (no overlap) — the
-  exposed exchange dominates the critical path. cuda_mpi only saves ~1 s
-  vs host_mpi here because HPCX OpenMPI 4.1.x stages Allgatherv through
-  pinned host buffers even with `opal_cuda_support=true`.
-- **At 2 nodes, cuda_mpi exch grows back** to 13.1 s (Allgatherv now
-  crosses IB), and the matvec stays exch-bound. Compute scales down
-  from 20.4 s → 13.4 s with the per-rank tile shrinking, but the win is
-  almost entirely in compute, not communication.
-- **NCCL at 2 nodes finally breaks the exch dominance**: 2.74 s vs
-  13.1 s for cuda_mpi (**4.8× faster exch**), and exch now fits
-  comfortably inside compute. The matvec is back to compute-bound.
+Reading the updated §2.1 table:
 
-Why the NCCL exch is so much smaller than IB+GDR alone would predict:
-the GB200 cluster has **MNNVL across the two nodes** (§4). NCCL detects
-this and routes cross-node traffic over NVLink, not IB.
+- **`cublas_dprimme` collapses the matvec from ~11 s → ~4 s** on the
+  best 2-node config. The change is mostly in `compute`: with the
+  eigenvalue update now staying on device, the compute-side kernel
+  body shrinks from 11.3 s → 4.01 s while exch drops slightly
+  (2.74 s → 0.95 s, also helped by tighter overlap).
+- **NCCL still wins on exch** (0.95 s vs 3.20 s for cuda_mpi on
+  2-node) — the MNNVL P2P story (§4) is unchanged. cuda_mpi cross-node
+  Allgatherv goes through IB-staging because HPCX 4.1.x cannot init
+  pml=ucx in this cluster's SLURM cgroup, and the fallback (ob1 +
+  smcuda + tcp) is not CUDA-aware cross-node.
+- **NCCL exch fits inside compute on 2-node** (0.95 s exch behind
+  4.01 s compute, "yes" overlap). The matvec is now genuinely
+  compute-bound; further wins need kernel work.
 
-The 4.8× exch improvement only translates to ~10% wallclock gain
-(577 s → 520 s) because compute now dominates. To go faster, the
-SpMV kernel itself needs work.
+The 4.8×-larger exch improvement vs the 1.4× wallclock improvement
+(264 s vs 188 s for cuda_mpi vs nccl on 2-node) tracks Amdahl: with
+the GPU eigsolver path, comm is no longer the dominant share.
 
 ## 3. Per-phase breakdown — SBD
 
-Same 4×GB200 vs 8×GB200 layout. Phases as reported by `run_sbd_diag.py`.
+Updated 2026-06-16 with the post-rebuild SBD (sm_100 native for both
+Thrust and OMP-offload; same `--iteration 1 --block 10`). Phases as
+reported by `run_sbd_diag.py`.
 
 |  | 4×GB200 (1 node) Thrust | 4×GB200 (1 node) OMP | 8×GB200 (2 nodes) Thrust | 8×GB200 (2 nodes) OMP |
 |---|---:|---:|---:|---:|
-| Helper construction        | 5 s    | 64 s   | 1.9 s   | 55 s |
-| `mult.Init`                | 14 s   | —      | 4.9 s   | — |
-| `makeQChamDiagTerms` GPU   | 14 s   | —      | 5.3 s   | — |
-| `makeQChamDiagTerms` host  | —      | 57 s   | —       | 538 s |
-| Davidson 10 sub-iters      | 481 s  | 454 s  | **264 s** | **853 s** |
-| Final mult                 | 46.8 s | 34.6 s | 25.7 s  | 19.3 s |
+| Helper construction        | 5.0 s | 5.4 s | 4.9 s | 4.8 s |
+| `mult.Init`                | 14 s  | —     | 17 s  | — |
+| `makeQChamDiagTerms` GPU   | 15 s  | —     | 12 s  | 13 s |
+| Davidson 10 sub-iters      | 547 s | 462 s | **320 s** | **268 s** |
+| Final mult                 | 47 s  | 30 s  | 30 s  | 21 s |
+| Total wall                 | **577 s** | **491 s** | **329 s** | **304 s** |
 
 ### 3.1. On the apparent OMP-offload "regression" — there isn't one
 
-The `makeQChamDiagTerms` row above looks like a 9× slowdown going from
-1-node to 2-nodes (57 s → 538 s). It isn't.
+The original sweep reported a 9× slowdown on `makeQChamDiagTerms`
+going from 1-node to 2-nodes (57 s → 538 s) and an end-to-end
+"regression" reading of 0.67×. It isn't a regression.
 
 `makeQChamDiagTerms` on the OMP-offload build is **a CPU host loop**
 (qcham.h:290), not an offload kernel. The `SBD_THRUST` build calls
@@ -246,13 +284,28 @@ Plus a focused 4-rank `(2,2)` reproducer (`fulqrum/test/test_collective.py`-styl
 3. **Speed up the SBD OMP-offload host loop on fe4s4-class problems.** The cost is in `qcham.h::makeQChamDiagTerms` — a CPU OpenMP loop that runs `ZeroExcite` per (alpha, beta) pair and reads from the 13 MB I2 array. Two cheap improvements: (a) make `SBD_THRUST` the default device path so the diagonal build runs on GPU regardless of which Davidson variant is requested, and (b) profile cache misses on `ZeroExcite` to see whether tiling I2 access or precomputing diagonal contributions buys anything.
 4. **Upgrade GB200 cluster to OpenMPI 5.x.** Still worth doing for non-NCCL paths (cuda_mpi users, MPI-based workloads other than Fulqrum). Lower priority now that NCCL works on this cluster.
 
-### 7.3. Practical guidance
+### 7.3. Practical guidance (refreshed 2026-06-16)
 
 For Fulqrum-class workloads on this GB200 cluster today, the fastest
 configuration is `FULQRUM_DIST_BACKEND=nccl` with
-`FQ_TILE_RESIDENT_RINGSHIFT=1`, which drops eigensolve from 577 s
-(cuda_mpi) to 520 s. SBD Thrust still wins end-to-end on this
-particular benchmark (264 s davidson) due to convergence count, not
-per-matvec speed. Beyond ~10⁹ subspace dimensions (where curating an
-SBD selection becomes expensive), Fulqrum's tile-resident +
-NVLink-aware-collective approach is the path that scales.
+`FQ_TILE_RESIDENT_RINGSHIFT=1` and the default
+`gpu_eigsh=auto` (`cublas_dprimme`), which gives **188 s eigensolve
+on 2-node** — a **2.8× win** over the 520 s reported in the original
+sweep. The win is in `compute` (host eigsolver round-trips removed),
+not exch.
+
+At 1 node, Fulqrum's `cublas_dprimme` rejects with INT32 overflow
+(4 ranks × n_local 195 M × ncv 12 = 2.34 B > 2.15 B INT32_MAX);
+fall back to `--gpu-eigsh 0` (host PRIMME, ~465 s nccl) or use ≥8
+ranks. Real fix is int64 indexing in cuBLAS calls — engineering work
+that should land upstream.
+
+SBD on the same workload now lands at 329 s (Thrust) / 304 s
+(gpu-omp) on 2-node — both faster than they were in the original
+sweep, with gpu-omp slightly winning. The end-to-end wallclock gap
+from Fulqrum (188 s) to SBD (304 s) is **1.6×**, smaller than the
+original 2× — Fulqrum's 30 matvecs at lower per-matvec cost now beat
+SBD's 10 matvecs at lower per-matvec cost less convincingly. Beyond
+~10⁹ subspace dimensions (where curating an SBD selection becomes
+expensive), Fulqrum's tile-resident + NVLink-aware-collective approach
+is still the path that scales.
