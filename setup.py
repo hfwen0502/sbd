@@ -318,7 +318,14 @@ if build_gpu:
             f'-gpu={gpu_arch}',
             '-DSBD_MODULE_NAME=_core_gpu',
         ],
-        extra_link_args=extra_link_args + ['-mp', '-cuda', '-cudalib'],
+        # NOTE: -cudalib (no value) makes nvc++ blanket-link every CUDA
+        # library NVHPC ships, including math libs SBD never calls
+        # (cublasmp, cusolverMp, cutensor, nvblas). On NVHPC 26.3 some of
+        # those ship as dangling symlinks (.so name present but versioned
+        # target missing), causing the link to fail with "cannot find
+        # -lcublasmp" etc. SBD's GPU path only needs the CUDA runtime, so
+        # explicitly link -lcudart instead.
+        extra_link_args=extra_link_args + ['-mp', '-cuda', '-lcudart'],
     )
     ext_modules.append(gpu_ext)
 
