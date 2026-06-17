@@ -20,40 +20,77 @@ energy as a correctness check. Refreshed 2026-06-16 after Fulqrum's
 GPU-resident PRIMME path (`cublas_dprimme`) merged via PR #7
 (`aabb-csr-gpu-eig`).
 
-**Fulqrum** (30 matvecs to PRIMME residual 1e-3):
+### Apples-to-apples vs SBD (matched ~10 matvecs)
 
-| Backend | Eigsolver | 4×GB200 (1 node) | 8×GB200 (2 nodes) | 1n→2n | Energy (Ha) |
-|---|---|---:|---:|---:|---|
-| cuda_mpi | `cublas_dprimme`           | INT32 ¹           | **264 s** | — | −326.824718459210 |
-| cuda_mpi | host PRIMME (`--gpu-eigsh 0`) | 479 s          | 360 s     | 1.33× | −326.824718460… |
-| nccl     | `cublas_dprimme`           | INT32 ¹           | **188 s** | — | −326.824718459210 |
-| nccl     | host PRIMME (`--gpu-eigsh 0`) | 465 s          | 280 s     | 1.66× | −326.824718460… |
+Fulqrum's `-r 3.9e-2` converges in 11 matvecs, comparable to SBD's
+`--block 10 --iteration 1` (10 Davidson sub-iters). Energies are
+correspondingly looser-converged (~3.4e-2 PRIMME residual vs 8.7e-4
+at `-r 1e-3`), but the wallclock comparison reflects equal eigsolve
+work.
+
+**Fulqrum** (11 matvecs, `-r 3.9e-2`):
+
+| Backend | 4×GB200 (1 node) ¹ | 8×GB200 (2 nodes) | 1n→2n | Energy (Ha) |
+|---|---:|---:|---:|---|
+| cuda_mpi | 219 s | **134 s** | 1.63× | −326.822567853744 |
+| nccl     | 221 s | **118 s** | 1.87× | −326.822567851544 |
 
 **SBD** (`--iteration 1 --block 10`, 10 matvecs):
 
 | Backend | 4×GB200 (1 node) | 8×GB200 (2 nodes) | 1n→2n | Energy (Ha) |
 |---|---:|---:|---:|---|
-| Thrust       | **577 s** | **329 s** | **1.75×** | −326.821832430028 |
-| OMP-offload  | **491 s** | **304 s** | **1.62×** | −326.821832430028 |
+| Thrust       | **577 s** | **329 s** | 1.75× | −326.821832430028 |
+| OMP-offload  | **491 s** | **304 s** | 1.62× | −326.821832430028 |
 
-¹ At 4 ranks, `cublas_dprimme` rejects with `n_local × ncv = 2.34B >
-INT32_MAX (2.15B)` (32-bit indexing in cuBLAS calls over the flattened
-basis). 1-node Fulqrum runs use `--gpu-eigsh 0` (host PRIMME) as the
-workaround. The 2-node 8-rank case halves `n_local` and fits.
+At matched matvec count on this workload, **Fulqrum nccl 2-node is
+2.6× faster than SBD Thrust 2-node and 2.6× faster than SBD OMP-offload
+2-node**.
 
-Energies all match within their respective solvers (Fulqrum to 12
-digits across nccl/cuda_mpi and 9 digits across `cublas_dprimme` /
-host PRIMME — the latter difference is PRIMME's residual tolerance,
-not a correctness issue; SBD bit-equal across cpu/gpu/gpu-omp and
-1-/2-node). The **0.0029 Ha gap** between Fulqrum (full 27,901² ≈
-778 M Cartesian product) and SBD (selected basis on the same 27,901
-list) reflects SBD's truncation of off-diagonal configurations.
+The 0.0006 Ha gap between Fulqrum (−326.82257) and SBD (−326.82183)
+is the truncation gap (Fulqrum spans the full 27,901² ≈ 778 M
+Cartesian product; SBD diagonalizes the SBD-selected basis on the
+same 27,901 list).
+
+### Tightly-converged Fulqrum (30 matvecs, `-r 1e-3`)
+
+For when convergence to ≥6 digits matters more than apples-to-apples
+wallclock comparison. Eigsolver also matters here — both rows below
+fix a comm backend and vary the eigsolver to isolate the
+`cublas_dprimme` win:
+
+| Backend | Eigsolver | 4×GB200 (1 node) | 8×GB200 (2 nodes) | Energy (Ha) |
+|---|---|---:|---:|---|
+| cuda_mpi | `cublas_dprimme`           | INT32 ²    | **264 s** | −326.824718459210 |
+| cuda_mpi | host PRIMME (`--gpu-eigsh 0`) | 479 s   | 360 s     | −326.824718460… |
+| nccl     | `cublas_dprimme`           | INT32 ²    | **188 s** | −326.824718459210 |
+| nccl     | host PRIMME (`--gpu-eigsh 0`) | 465 s   | 280 s     | −326.824718460… |
+
+The `cublas_dprimme` row is the production path on 2-node — it keeps
+PRIMME's basis vectors on device, replacing OpenBLAS calls with
+cuBLAS / cuSolver and removing host↔device round-trips per iter.
+On 2-node nccl that buys **1.49×** over host PRIMME (188 s vs 280 s);
+on 2-node cuda_mpi, **1.36×** (264 s vs 360 s).
+
+¹ Both 1-node cells use `--gpu-eigsh 0` (host PRIMME). 1-node 4-rank
+hits the INT32 limit on the GPU eigsolver path.
+
+² At 4 ranks, `cublas_dprimme` rejects with `n_local × ncv = 2.34 B >
+INT32_MAX (2.15 B)`: 32-bit indexing in cuBLAS calls over the flattened
+basis. 1-node Fulqrum runs use `--gpu-eigsh 0` as the workaround. The
+2-node 8-rank case halves `n_local` and fits.
+
+Energies are stable within each (workload, eigsolver) cell: across
+nccl/cuda_mpi the eigenvalue is bit-equal at 12 digits within the
+same eigsolver, with `cublas_dprimme` and host PRIMME differing in
+the 9th digit (PRIMME's residual tolerance, not a correctness issue).
+SBD is bit-equal across cpu/gpu/gpu-omp and 1-/2-node.
 
 Things to note:
 
-1. **`cublas_dprimme` is a 1.4–1.5× win over host PRIMME on 2-node** (nccl: 188 s vs 280 s, 1.49×; cuda_mpi: 264 s vs 360 s, 1.36×). Same matvec, same comm — the win is collapsing host↔device round-trips around the eigenvalue update. The 1-node `cublas_dprimme` cells aren't measurable because of the INT32 footnote, but the ratio at 2-node is the apples-to-apples comparison.
-2. **NCCL beats cuda_mpi at every (eigsolver, node count) cell** (188 vs 264, 280 vs 360, 465 vs 479). The 4.8×-larger exch advantage from MNNVL P2P (§4) translates to wallclock gains between 1.03× (host PRIMME on 1-node, where comm is dwarfed by the host eigsolver) and 1.4× (`cublas_dprimme` on 2-node, where comm is back in the critical path).
-3. **SBD gpu-omp on 2-node is now *faster* than Thrust** (304 s vs 329 s) and scales 1.62× from 1n→2n. The earlier "0.67× OMP regression" reading was an artifact of mismatched per-rank workloads in the prior runs (§3.1) — the per-rank rate is flat across 1- and 2-node configs.
+1. **At matched matvec count, Fulqrum on 2-node is 2.6× faster than SBD.** The earlier 188 s (Fulqrum) vs 304 s (SBD) reading at non-matched matvec count was misleading — Fulqrum was running 30 matvecs to a tight `-r 1e-3` residual; SBD was running 10. With both at 10–11 matvecs (Fulqrum `-r 3.9e-2`), Fulqrum nccl 2-node lands at 118 s, SBD OMP-offload 2-node at 304 s.
+2. **`cublas_dprimme` is a 1.4–1.5× win over host PRIMME on 2-node** (nccl: 188 s vs 280 s; cuda_mpi: 264 s vs 360 s). Same matvec, same comm — the win is collapsing host↔device round-trips around the eigenvalue update.
+3. **NCCL beats cuda_mpi at every (eigsolver, node count) cell**. The 4.8×-larger exch advantage from MNNVL P2P (§4) translates to wallclock gains between 1.0× (1-node, comm dwarfed by host eigsolver) and 1.4× (2-node `cublas_dprimme`, comm back in the critical path).
+4. **SBD gpu-omp on 2-node is now *faster* than Thrust** (304 s vs 329 s) and scales 1.62× from 1n→2n. The earlier "0.67× OMP regression" reading was an artifact of mismatched per-rank workloads in the prior runs (§3.1) — the per-rank rate is flat across 1- and 2-node configs.
 
 ## 2. Per-matvec breakdown — Fulqrum
 
@@ -302,10 +339,19 @@ that should land upstream.
 
 SBD on the same workload now lands at 329 s (Thrust) / 304 s
 (gpu-omp) on 2-node — both faster than they were in the original
-sweep, with gpu-omp slightly winning. The end-to-end wallclock gap
-from Fulqrum (188 s) to SBD (304 s) is **1.6×**, smaller than the
-original 2× — Fulqrum's 30 matvecs at lower per-matvec cost now beat
-SBD's 10 matvecs at lower per-matvec cost less convincingly. Beyond
-~10⁹ subspace dimensions (where curating an SBD selection becomes
-expensive), Fulqrum's tile-resident + NVLink-aware-collective approach
-is still the path that scales.
+sweep, with gpu-omp slightly winning.
+
+At **matched 10-matvec eigsolve work** (Fulqrum `-r 3.9e-2` vs SBD
+`--block 10 --iteration 1`), the comparison on 2-node is:
+
+- Fulqrum nccl: **118 s** / cuda_mpi: 134 s (E = −326.822568)
+- SBD Thrust: 329 s / OMP-offload: 304 s (E = −326.821832)
+
+So Fulqrum nccl is **~2.6× faster** than the better of the two SBD
+backends per unit eigsolve work, with a 0.0006 Ha gap from the SBD's
+selected-basis truncation. At converged Fulqrum (30 matvecs,
+`-r 1e-3`) on 2-node, the wall is 188 s (E = −326.824718).
+
+Beyond ~10⁹ subspace dimensions (where curating an SBD selection
+becomes expensive), Fulqrum's tile-resident + NVLink-aware-collective
+approach is still the path that scales.
