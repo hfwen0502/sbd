@@ -198,20 +198,27 @@ slide = prs.slides.add_slide(BLANK)
 add_title(slide, "SBD vs Dice — same role, different envelope",
           "Both diagonalize the projected Hamiltonian inside qiskit-addon-sqd's iteration loop")
 
-add_table(slide, Inches(0.5), Inches(1.7), Inches(12.3), Inches(3.5), [
+add_table(slide, Inches(0.5), Inches(1.7), Inches(12.3), Inches(2.6), [
     ("",                          "Dice (SHCI)",                      "SBD"),
     ("Hardware",                  "CPU + MPI",                        "CPU + MPI + GPU (Thrust / OMP-offload)"),
     ("Process model",             "subprocess + CLI + binary file I/O", "in-process pybind11 module"),
     ("Determinant selection",     "internal heat-bath (eps knob)",    "external (caller-provided list)"),
     ("Practical subspace ceiling","~30 orbitals",                     "~10⁹-dim subspace"),
-    ("1-/2-RDM, save/load wf",    "✓",                                 "✓"),
     ("Integration with sqd-addon","stock package",                    "MPI-aware fork (@patch-ferminon-sbd)"),
 ])
 
-add_text_box(slide, Inches(0.5), Inches(5.5), Inches(12.3), Inches(1.5),
-             ["What stays the same: FCIDUMP input, RDM outputs, role inside the SQD loop, carryover concept.",
-              "What changes: in-process call instead of subprocess, GPU-aware, designed for much larger subspaces."],
-             size=Pt(15))
+add_text_box(slide, Inches(0.5), Inches(4.5), Inches(12.3), Inches(0.4),
+             ["Where it lives"], size=Pt(16), color=PRIMARY, bold_first=True)
+add_table(slide, Inches(0.5), Inches(4.95), Inches(12.3), Inches(1.5), [
+    ("Layer",                                            "Repo"),
+    ("Upstream SBD (C++ core, RIKEN CCS)",               "github.com/r-ccs-cms/sbd"),
+    ("Python wrapper (fork with python/ bindings)",      "github.com/hfwen0502/sbd"),
+    ("Patched qiskit-addon-sqd (MPI-aware solver hook)", "github.com/hfwen0502/qiskit-addon-sqd  (branch: patch-ferminon-sbd)"),
+])
+
+add_text_box(slide, Inches(0.5), Inches(6.55), Inches(12.3), Inches(0.4),
+             ["Same FCIDUMP input, same RDM outputs, same role in the SQD loop. Process model and hardware envelope are what change."],
+             size=Pt(13), color=DIM)
 
 add_footer(slide, "Slide 2 — positioning")
 

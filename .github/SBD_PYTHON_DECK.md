@@ -73,6 +73,14 @@ qiskit-addon-dice-solver                       │
 | Wavefunction save/load | ✓ | ✓ |
 | Iteration with `qiskit-addon-sqd` | Stock package | MPI-aware fork (`@patch-ferminon-sbd`) |
 
+### Where it lives
+
+| Layer | Repo |
+|---|---|
+| Upstream SBD (C++ core, RIKEN CCS) | https://github.com/r-ccs-cms/sbd |
+| Python wrapper (fork with `python/` bindings + tooling) | https://github.com/hfwen0502/sbd |
+| Patched `qiskit-addon-sqd` (MPI-aware solver hook) | https://github.com/hfwen0502/qiskit-addon-sqd (branch: `patch-ferminon-sbd`) |
+
 ### Speaker notes
 
 - Open by recognizing the audience knows Dice. "If you already do SQD with Dice, this slide is the one-glance answer to 'what changes if I switch'."
