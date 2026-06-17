@@ -195,29 +195,62 @@ python run_sbd_diag.py --device gpu-omp   # LLVM offload path
 [`python/device_config.py`](../python/device_config.py) (`DeviceConfig`,
 `get_device_info`).
 
-### Code: the 5-line solver swap (Dice → SBD)
+### Code: same call shape, very different invocation
+
+The user-facing API looks the same:
 
 ```python
-# Before — Dice
+# Dice
 from qiskit_addon_dice_solver import solve_fermion
-energy, sci_state = solve_fermion(
-    bitstring_matrix, hcore, eri,
-    spin_sq=0.0, max_davidson=100,
-)
+energy, sci_state = solve_fermion(bitstring_matrix, hcore, eri, spin_sq=0.0)
 
-# After — SBD
+# SBD
 from sbd.sbd_solver import solve_sci
 from sbd.device_config import DeviceConfig
-from mpi4py import MPI
-
-energy, sci_state = solve_sci(
-    ci_strings, one_body_tensor, two_body_tensor,
-    norb=norb, nelec=nelec,
-    spin_sq=0.0,
-    device_config=DeviceConfig.gpu(),   # gpu | gpu-omp | cpu
-    mpi_comm=MPI.COMM_WORLD,             # SBD is MPI-native
-)
+energy, sci_state = solve_sci(ci_strings, one_body_tensor, two_body_tensor,
+                              norb=norb, nelec=nelec,
+                              device_config=DeviceConfig.gpu(),
+                              mpi_comm=MPI.COMM_WORLD)
 ```
+
+…but what the wrappers do internally is the real story.
+
+**Inside Dice's wrapper** ([`qiskit_addon_dice_solver/dice_solver.py:_call_dice`](https://github.com/Qiskit/qiskit-addon-dice-solver/blob/main/qiskit_addon_dice_solver/dice_solver.py)):
+
+```python
+# Per call: make a temp dir, write FCIDUMP + input.dat to disk,
+# fork mpirun + Dice CLI, parse binary output files back from disk.
+dice_dir   = Path(tempfile.mkdtemp(prefix="dice_cli_files_", ...))
+tools.fcidump.from_integrals(dice_dir / "fcidump.txt", hcore, eri, norb, nelec)
+_write_input_files(ci_strs=ci_strs, ..., dice_dir=dice_dir)
+
+dice_call  = ["mpirun", *mpirun_options, "<…>/qiskit_addon_dice_solver/bin/Dice"]
+with open(dice_log_path, "w") as logfile:
+    subprocess.run(dice_call, cwd=dice_dir, stdout=logfile, stderr=logfile)
+
+e_dice, sci_state, occupancies = _read_dice_outputs(dice_dir, norb, nelec, ...)
+shutil.rmtree(dice_dir)   # clean up the temp dir
+```
+
+**Inside SBD's wrapper** ([`python/__init__.py`](../python/__init__.py),
+[`python/sbd_solver.py`](../python/sbd_solver.py)):
+
+```python
+# In-process: route to the per-device pybind11 module and call C++ directly.
+def tpb_diag(fcidump, adet, bdet, sbd_data, ..., device=None):
+    backend = get_backend(device)              # _core_cpu / _core_gpu / _core_gpu_omp_nvidia
+    return backend.tpb_diag(fcidump, adet, bdet, sbd_data, ...)
+```
+
+What this means at the SQD scale: **5 SQD iterations × N MPI ranks** =
+5×N fork/exec cycles + 5 FCIDUMP-write + 5 binary-file-parse round-trips
+on the Dice path, all of which collapse to a single `import sbd` and N
+in-process function calls on the SBD path.
+
+It's also what makes the runtime backend switch above (`device='cpu'`
+→ `device='gpu'` → `device='gpu-omp'`) free on SBD. Dice has no
+analogous lightweight switch — every call is its own subprocess
+regardless of what you change.
 
 ### Code: full SQD loop with SBD, taking bitstrings as input
 
