@@ -576,8 +576,8 @@ Between expansion rounds, **trim** the determinant set: rediagonalize
 in the expanded space, then keep only dets with marginal amplitude
 above `TRIM_THRESHOLD`.
 
-Concrete demo from `VARIANCE.md` — 29-orbital system, 5e per spin,
-seeded from 995 sampled determinants:
+Concrete demo from `VARIANCE.md` — `NORB=29, nelec=(5α, 5β)`
+(10 electrons total, MS2=0), seeded from 995 sampled determinants:
 
 | Step | dets (no trim) | dets (TrimSQD) | Energy (Ha) | Variance (Ha²) |
 |------|---------------:|---------------:|------------:|---------------:|

@@ -491,7 +491,7 @@ add_text_box(slide, Inches(0.5), Inches(3.4), Inches(12.3), Inches(1.9),
 
 # Concrete demo table from VARIANCE.md
 add_text_box(slide, Inches(0.5), Inches(5.25), Inches(12.3), Inches(0.4),
-             ["Demo: 29-orbital, 5e per spin, seeded from 995 sampled dets"],
+             ["Demo: NORB=29, nelec=(5α,5β),  seeded from 995 sampled dets"],
              size=Pt(13), color=PRIMARY, bold_first=True)
 add_table(slide, Inches(0.5), Inches(5.65), Inches(12.3), Inches(1.2), [
     ("Step",  "dets (no trim)", "dets (TrimSQD)", "Energy (Ha)",      "Variance (Ha²)"),
