@@ -136,39 +136,149 @@ SBD path (per iteration):
   `SCIResult` — same shape Dice's wrapper returns. Requires the
   MPI-aware fork: `pip install git+https://github.com/hfwen0502/qiskit-addon-sqd@patch-ferminon-sbd`.
 
-### Code: the 5-line switch
+### Code: see what your install has
 
-Existing Dice path:
+`import sbd` eagerly loads every backend that was compiled, so
+runtime introspection is a one-liner:
 
 ```python
-from qiskit_addon_dice_solver import solve_fermion
+import sbd
+print(list(sbd._backends.keys()))
+# e.g. ['cpu', 'gpu', 'gpu-nvidia-omp']
 
-energy, sci_state = solve_fermion(
-    bitstring_matrix, hcore, eri,
-    spin_sq=0.0,
-    max_davidson=100,
-)
+from sbd.device_config import print_device_info
+print_device_info()
+# === SBD Device Information ===
+# CUDA available: True   GPU count: 4
+# Compiled backends: cpu, gpu, gpu-nvidia-omp
 ```
 
-SBD path (same call shape, drop in the SBD wrapper):
+### Code: switching backends — three equivalent paths
+
+Same call, three places to pick the device:
 
 ```python
+# 1. Set a process-wide default at startup
+import sbd
+sbd.init(device='gpu')                   # all subsequent calls use gpu
+
+# 2. Override per-call without re-initializing
+result_cpu = sbd.tpb_diag(..., device='cpu')      # debugging
+result_gpu = sbd.tpb_diag(..., device='gpu')      # production
+result_omp = sbd.tpb_diag(..., device='gpu-omp')  # alternative kernel
+# All three return bit-equal energies.
+
+# 3. Or pass it through DeviceConfig (the qiskit-addon-sqd path)
+from sbd.device_config import DeviceConfig
+energy, sci_state = solve_sci(..., device_config=DeviceConfig.gpu())
+```
+
+And from the command line — every shipped example script accepts
+`--device`:
+
+```bash
+python run_sbd_diag.py --device cpu       # OpenMP-on-CPU path
+python run_sbd_diag.py --device gpu       # NVHPC Thrust path
+python run_sbd_diag.py --device gpu-omp   # LLVM offload path
+```
+
+→ Source: [`python/__init__.py`](../python/__init__.py)
+(`get_backend`, `init`, `_backends` registry),
+[`python/device_config.py`](../python/device_config.py) (`DeviceConfig`,
+`get_device_info`, `print_device_info`).
+
+### Code: the 5-line solver swap (Dice → SBD)
+
+```python
+# Before — Dice
+from qiskit_addon_dice_solver import solve_fermion
+energy, sci_state = solve_fermion(
+    bitstring_matrix, hcore, eri,
+    spin_sq=0.0, max_davidson=100,
+)
+
+# After — SBD
 from sbd.sbd_solver import solve_sci
+from sbd.device_config import DeviceConfig
+from mpi4py import MPI
 
 energy, sci_state = solve_sci(
     ci_strings, one_body_tensor, two_body_tensor,
     norb=norb, nelec=nelec,
     spin_sq=0.0,
-    device_config=DeviceConfig(device='gpu'),   # gpu | gpu-omp | cpu
-    mpi_comm=MPI.COMM_WORLD,                    # SBD is MPI-native
+    device_config=DeviceConfig.gpu(),   # gpu | gpu-omp | cpu
+    mpi_comm=MPI.COMM_WORLD,             # SBD is MPI-native
 )
 ```
 
-For the standalone (non-SQD) use case — handy for debugging or one-off
-runs — see [`python/examples/run_sbd_diag.py`](../python/examples/run_sbd_diag.py)
-which takes FCIDUMP + α-dets file paths directly. The full
-SQD-with-SBD workflow is in
-[`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py).
+### Code: full SQD loop with SBD, taking bitstrings as input
+
+This is the real ~30-line spine of
+[`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py),
+distilled. **The user's quantum-measurement bitstrings come in as a
+`BitArray`; SBD comes in as the `sci_solver=` callable. Everything
+in between is `qiskit-addon-sqd`'s own machinery (sample → configuration
+recovery → subsample into batches → diagonalize → carryover → repeat).**
+
+```python
+import json, numpy as np
+from functools import partial
+from mpi4py import MPI
+from pyscf import ao2mo, tools
+from qiskit.primitives import BitArray
+from qiskit_addon_sqd.fermion import diagonalize_fermionic_hamiltonian
+
+import sbd
+from sbd.sbd_solver import solve_sci_batch
+from sbd.device_config import DeviceConfig
+
+# 1. Load Hamiltonian from FCIDUMP
+mf    = tools.fcidump.to_scf("data/h2o/fcidump.txt")
+hcore = mf.get_hcore()
+eri   = ao2mo.restore(1, mf._eri, norb)
+
+# 2. Bitstrings — from quantum-measurement counts. count_dict_*.json
+#    files are bundled in python/examples/ for h2o, n2, fe4s4.
+counts  = json.load(open("python/examples/count_dict_h2o.json"))
+joined  = "".join(counts.keys())
+matrix  = (np.frombuffer(joined.encode(), dtype=np.uint8) == ord("1")).reshape(
+              len(counts), -1)
+matrix  = np.repeat(matrix, list(counts.values()), axis=0)
+bit_array = BitArray.from_bool_array(matrix)
+
+# 3. Wire SBD into qiskit-addon-sqd's `sci_solver=` slot
+sbd.init(device='gpu')
+sbd_solver = partial(
+    solve_sci_batch,
+    mpi_comm    = MPI.COMM_WORLD,
+    sbd_config  = {"method": 0, "max_it": 100, "max_nb": 50,
+                   "carryover_type": 1, "ratio": 0.1, "threshold": 1e-4},
+    device_config = DeviceConfig.gpu(),
+    fcidump_path  = "data/h2o/fcidump.txt",
+)
+
+# 4. Run the self-consistent SQD loop
+result = diagonalize_fermionic_hamiltonian(
+    hcore, eri, bit_array,
+    norb              = norb,
+    nelec             = (num_elec_a, num_elec_b),
+    samples_per_batch = 300,
+    num_batches       = 3,
+    max_iterations    = 5,
+    sci_solver        = sbd_solver,    # ← SBD plugs in here
+)
+```
+
+Same shape as plugging in `qiskit_addon_dice_solver.solve_fermion` —
+only the `sci_solver=` callable changes. The SQD outer loop, the
+configuration-recovery step, and the bitstring-to-determinant
+conversion all stay in `qiskit-addon-sqd`.
+
+→ Full driver: [`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py)
+→ Bundled bitstring inputs:
+  [`count_dict_h2o.json`](../python/examples/count_dict_h2o.json) (24 orbitals),
+  [`count_dict_n2.json`](../python/examples/count_dict_n2.json) (60 orbitals),
+  [`count_dict_fe4s4.json`](../python/examples/count_dict_fe4s4.json) (36 orbitals)
 
 ### Install
 
@@ -179,11 +289,30 @@ pip commands are in the **Backup** slide.
 
 ### Speaker notes
 
-- Lead with the diagram: subprocess+CLI vs in-process pybind11. That's the architectural difference; everything else is consequence.
-- The MPI-awareness point is worth pausing on: with Dice, each iteration forks a fresh CLI process; at 8-rank+ that fork/exec storm becomes meaningful overhead. With SBD, ranks stay alive across the full SQD loop.
-- Mention the debugging benefit briefly — Python users notice this when they hit a bug. Stack traces from inside Davidson land in the user's Python session, not in a `dice.out.X` file.
-- The "drop-in" framing is API-level: same call shape, same return type. The user still has to install the MPI-aware fork of `qiskit-addon-sqd` and pick a backend at call time.
-- The two-pass build line in "Install" is a real footgun if anyone asks "how do I build it" — call out that the agent (slide 5) handles this for them.
+- This slide is intentionally code-heavy and will likely **split into
+  two PowerPoint slides**: (a) the diagram + bullets + "what's
+  available" + "switching backends" snippets; (b) the Dice→SBD swap +
+  the full SQD-loop snippet. Pacing: 60 sec on the architecture
+  framing, 30 sec on the introspection/switching block, 90 sec on
+  the SQD-with-bitstrings walkthrough.
+- For the SQD-with-bitstrings code: read it as 4 numbered steps, not
+  line-by-line. The audience needs to recognize their workflow in it,
+  not memorize the API. The point is **"your quantum-measurement
+  bitstrings go in here, the energy comes out, SBD is just the
+  `sci_solver=` callable in the middle."**
+- The MPI-awareness point is worth pausing on: with Dice, each
+  iteration forks a fresh CLI process; at 8-rank+ that fork/exec
+  storm becomes meaningful overhead. With SBD, ranks stay alive
+  across the full SQD loop.
+- Mention the debugging benefit briefly — Python users notice this
+  when they hit a bug. Stack traces from inside Davidson land in the
+  user's Python session, not in a `dice.out.X` file.
+- The "drop-in" framing is API-level: same call shape, same return
+  type. The user still has to install the MPI-aware fork of
+  `qiskit-addon-sqd` and pick a backend at call time.
+- The two-pass build line (deferred to backup) is a real footgun if
+  anyone asks "how do I build it" — call out that the agent (slide 6)
+  handles this for them.
 
 ### See also (in this repo)
 
