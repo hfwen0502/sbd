@@ -24,7 +24,7 @@ Three carryover types extend the existing singles-only expansion (types 1–3) b
 
 ### ERI-Screened Singles+Doubles (Types 7–8)
 
-Types 7 and 8 add **Hamiltonian-integral-based screening** to the S+D extension, inspired by the extended SQD method (Cleveland Clinic / SONIC project). Instead of generating all combinatorially possible excitations, only excitations with significant Hamiltonian coupling are kept:
+Types 7 and 8 add **Hamiltonian-integral-based screening** to the S+D extension. Instead of generating all combinatorially possible excitations, only excitations with significant Hamiltonian coupling are kept:
 
 - **Singles** i→a: kept if `|h_{ia}| + Σ_m |v_{ia,mm} - v_{im,ma}| + Σ_m |v_{ia,m'm'}| > eri_threshold`, where the sum runs over same-spin and opposite-spin occupied orbitals. This is effectively the Fock matrix element magnitude.
 - **Doubles** i,j→a,b: kept if `|v_{ia,jb} - v_{ib,ja}| > eri_threshold`, i.e., the antisymmetrized two-electron integral exceeds the threshold.
@@ -150,7 +150,7 @@ Starting from 995 sampled determinants (29 orbitals, 5 electrons per spin) with 
 
 ### TrimSQD: Trimming Between Expansion Steps
 
-The iterative expansion can produce large subspaces where many determinants have negligible wavefunction weight. TrimSQD (inspired by the [SONIC/Cleveland Clinic workflow](https://arxiv.org/abs/2501.09442)) adds a **trim step** between expansion rounds: after diagonalizing in the expanded space, select only the determinants with significant amplitude, then re-expand from that trimmed set. This keeps the subspace compact while still allowing the expansion to explore new directions at each iteration.
+The iterative expansion can produce large subspaces where many determinants have negligible wavefunction weight. TrimSQD adds a **trim step** between expansion rounds: after diagonalizing in the expanded space, select only the determinants with significant amplitude, then re-expand from that trimmed set. This keeps the subspace compact while still allowing the expansion to explore new directions at each iteration.
 
 The workflow per step becomes:
 
