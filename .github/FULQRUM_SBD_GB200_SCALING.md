@@ -122,7 +122,6 @@ Things to note:
 1. **At matched matvec count, Fulqrum on 2-node is 2.6× faster than SBD.** The earlier 188 s (Fulqrum) vs 304 s (SBD) reading at non-matched matvec count was misleading — Fulqrum was running 30 matvecs to a tight `-r 1e-3` residual; SBD was running 10. With both at 10–11 matvecs (Fulqrum `-r 3.9e-2`), Fulqrum nccl 2-node lands at 118 s, SBD OMP-offload 2-node at 304 s.
 2. **`cublas_dprimme` is a 1.4–1.5× win over host PRIMME on 2-node** (nccl: 188 s vs 280 s; cuda_mpi: 264 s vs 360 s). Same matvec, same comm — the win is collapsing host↔device round-trips around the eigenvalue update.
 3. **NCCL beats cuda_mpi at every (eigsolver, node count) cell**. The 4.8×-larger exch advantage from MNNVL P2P (§4) translates to wallclock gains between 1.0× (1-node, comm dwarfed by host eigsolver) and 1.4× (2-node `cublas_dprimme`, comm back in the critical path).
-4. **SBD gpu-omp on 2-node is now *faster* than Thrust** (304 s vs 329 s) and scales 1.62× from 1n→2n. The earlier "0.67× OMP regression" reading was an artifact of mismatched per-rank workloads in the prior runs (§3.1) — the per-rank rate is flat across 1- and 2-node configs.
 
 ## 2. Per-matvec breakdown — Fulqrum
 
@@ -288,72 +287,21 @@ exch advantage (3.7 s vs 4.6 s) is small. This is because:
 The GB200 NCCL win is fabric-specific (MNNVL), not a generic property
 of the refactored backend.
 
-## 6. NCCL backend bug — RESOLVED
+## 6. Recommendation
 
-### 6.1. The bug
+### 6.1. What we now know
 
-The original `_NcclBackend` in
-`fulqrum/gpu/distributed/backends/nccl.py` built a single global
-`NcclCommunicator(world_size)` at init, ignored the per-call `comm`
-argument, validated against `world_size`, and indexed counts/displs
-with the global rank. Tile-resident matvec calls collective
-primitives along axis subcommunicators (alpha-row peers, beta-col
-peers) — every NCCL call on a non-world subcomm rejected with
-`counts/displs len must equal world_size`. `host_mpi` and `cuda_mpi`
-worked because mpi4py is intrinsically subgroup-aware; NCCL was the
-odd one out.
+- **GB200 + NCCL + MNNVL gives a 4.8× exch speedup over cuda_mpi**, but with `cublas_dprimme` on 2-node only ~1.4× wallclock gain since compute now dominates.
+- **`cublas_dprimme` collapses the per-iter host PRIMME glue from ~36 % of eigensolve to <1 %** by keeping basis vectors on device and routing OpenBLAS calls through cuBLAS / cuSolver.
+- **OMP-offload's per-item rate is flat across 1-node and 2-node configs**, but it runs ~5–6× slower per item than h2o on fe4s4 because the host loop (`qcham.h::makeQChamDiagTerms`) does not exploit the GPU and the 36-orbital I2 (≈ 13 MB) doesn't sit in fast cache.
 
-### 6.2. The fix
+### 6.2. Where to invest next, in priority order
 
-Refactored `_NcclBackend` to be subgroup-aware:
-- Cache: `_world_nccl` for COMM_WORLD plus `_sub_cache: {comm.py2f() → NcclCommunicator}` for axis subcomms, lazily bootstrapped via comm-internal `bcast` of a `ncclUniqueId`.
-- `allgatherv_device` switched to padded uniform `ncclAllGather` (pad each rank's send to `max(counts)`, gather, unpack at requested displs); size-1 subgroups handled as a local identity copy.
-- `ring_shift_device` / `grouped_sendrecv_device` / `allreduce_device` route through the matching subgroup's NCCL comm.
+1. **Optimize the SpMV kernel itself.** With comm out of the way on 2-node nccl, per-matvec is now ~4.0 s of compute. Profile the tile kernel; likely candidates include better register reuse on the group-hashmap chemistry kernel and tighter aabb-cross-spin loops.
+2. **Speed up the SBD OMP-offload host loop on fe4s4-class problems.** The cost is in `qcham.h::makeQChamDiagTerms` — a CPU OpenMP loop that runs `ZeroExcite` per (alpha, beta) pair and reads from the 13 MB I2 array. Two cheap improvements: (a) make `SBD_THRUST` the default device path so the diagonal build runs on GPU regardless of which Davidson variant is requested, and (b) profile cache misses on `ZeroExcite` to see whether tiling I2 access or precomputing diagonal contributions buys anything.
+3. **Upgrade GB200 cluster to OpenMPI 5.x.** Still worth doing for non-NCCL paths (cuda_mpi users, MPI-based workloads other than Fulqrum). Lower priority now that NCCL works on this cluster.
 
-### 6.3. Path-coverage caveat
-
-Tile-resident matvec has two code paths gated by
-`FQ_TILE_RESIDENT_RINGSHIFT`:
-
-- **default (=0)**: uses `Allgatherv` + `neighbor_alltoallv_device`.
-- **ringshift (=1)**: uses `ring_shift_device` + `grouped_sendrecv_device`.
-
-The NCCL backend implements only the ringshift-path primitives;
-`neighbor_alltoallv_device` raises `NotImplementedError`. So
-`FULQRUM_DIST_BACKEND=nccl` requires `FQ_TILE_RESIDENT_RINGSHIFT=1` —
-otherwise the matvec falls into the unimplemented primitive
-mid-eigensolve. The launcher and SLURM scripts now set this env var.
-Cleaner follow-up: have `_NcclBackend.init()` set the env var itself
-or fail with an actionable error.
-
-### 6.4. Validation
-
-Bit-equal correctness verified at three scales:
-
-| scenario | reference energy | nccl energy | match |
-|---|---|---|---|
-| H100, fe4s4 4000, 2×4 grid (bundled half_dets, host_mpi vs nccl)        | −326.634044413726 | −326.634044413726 | 12 digits |
-| H100, fe4s4 27,901, 2×4 grid (bundled half_dets, host_mpi vs nccl)      | −326.662853130561 | −326.662853130561 | 12 digits |
-| GB200 2-node, fe4s4 27,901, 2×4 grid (SBD alpha_dets, cuda_mpi vs nccl) | −326.824718460995 | −326.824718460994 | 11 digits |
-
-Plus a focused 4-rank `(2,2)` reproducer (`fulqrum/test/test_collective.py`-style) confirming `host_mpi` vs `nccl` matvec is bit-equal on a non-world subcomm. The pre-refactor backend rejected the same input.
-
-## 7. Recommendation
-
-### 7.1. What we now know
-
-- **NCCL backend is correct on real hardware** at the source level on arbitrary 2D process grids (subgroup-aware refactor + ringshift caveat).
-- **GB200 + NCCL + MNNVL gives a 4.8× exch speedup over cuda_mpi**, but ~10% wallclock speedup since compute now dominates.
-- **OMP-offload's per-item rate is flat across 1-node and 2-node configs**, but it runs ~5–6× slower per item than h2o on fe4s4 because the host loop (`qcham.h::makeQChamDiagTerms`) does not exploit the GPU and the 36-orbital I2 (≈ 13 MB) doesn't sit in fast cache. The original "2-node OMP regression" claim was an artifact of mismatched per-rank workloads in the prior runs (§3.1); there is no actual scaling regression.
-
-### 7.2. Where to invest next, in priority order
-
-1. **Land the NCCL refactor upstream**, with the env-var caveat addressed (auto-set `FQ_TILE_RESIDENT_RINGSHIFT=1` in `_NcclBackend.init()`, or implement the missing `neighbor_alltoallv_device`). Add subgroup bit-equal tests so future regressions surface in CI.
-2. **Optimize the SpMV kernel itself.** With comm out of the way, per-matvec is now ~11.3 s of compute on 8 GB200s. Profile the tile kernel; likely candidates include better register reuse on the group-hashmap chemistry kernel and tighter aabb-cross-spin loops.
-3. **Speed up the SBD OMP-offload host loop on fe4s4-class problems.** The cost is in `qcham.h::makeQChamDiagTerms` — a CPU OpenMP loop that runs `ZeroExcite` per (alpha, beta) pair and reads from the 13 MB I2 array. Two cheap improvements: (a) make `SBD_THRUST` the default device path so the diagonal build runs on GPU regardless of which Davidson variant is requested, and (b) profile cache misses on `ZeroExcite` to see whether tiling I2 access or precomputing diagonal contributions buys anything.
-4. **Upgrade GB200 cluster to OpenMPI 5.x.** Still worth doing for non-NCCL paths (cuda_mpi users, MPI-based workloads other than Fulqrum). Lower priority now that NCCL works on this cluster.
-
-### 7.3. Practical guidance (refreshed 2026-06-16)
+### 6.3. Practical guidance (refreshed 2026-06-16)
 
 For Fulqrum-class workloads on this GB200 cluster today, the fastest
 configuration is `FULQRUM_DIST_BACKEND=nccl` with
