@@ -541,10 +541,9 @@ antisymmetrized 2e-integral (doubles) exceeds `--eri_threshold`.
 | 7    | Amplitude | Screened S + D  |
 | 8    | None      | Screened S + D  |
 
-Inspired by the **extended SQD method** (Cleveland Clinic / SONIC,
-[arXiv:2501.09442](https://arxiv.org/abs/2501.09442)). Typically
-keeps 20–50% of brute-force S+D excitations while retaining the
-physically important ones.
+Typically keeps 20–50% of brute-force S+D excitations while retaining
+the physically important ones (those with non-negligible Hamiltonian
+coupling).
 
 #### 3. Variance-only mode (`--iteration 0`) and the extrapolation workflow
 
@@ -569,7 +568,7 @@ and (optionally) a Richardson-style energy extrapolation.
 
 Between expansion rounds, **trim** the determinant set: rediagonalize
 in the expanded space, then keep only dets with marginal amplitude
-above `TRIM_THRESHOLD`. Inspired by the same SONIC workflow.
+above `TRIM_THRESHOLD`.
 
 Concrete demo from `VARIANCE.md` — 29-orbital system, 5e per spin,
 seeded from 995 sampled determinants:
@@ -592,10 +591,6 @@ size.
   CLI knobs, the workflow diagram, the demo table. Co-presenter takes
   the *"what does variance mean physically; how does ERI screening
   preserve correlation; how does TrimSQD compare to SONIC"* questions.
-- The arXiv:2501.09442 reference (SONIC) is worth flagging — chemists
-  in this audience may already know that paper, and connecting SBD's
-  variance/trim workflow to a published method gives the experimental
-  features more credibility.
 - The 29-orbital convergence example is the punchline of the slide.
   If pressed for time, drop everything else and keep the 4-row demo
   table — it lands the *"this works"* claim without needing
@@ -605,7 +600,7 @@ size.
 
 - [ASK] Co-presenter to redline the chemistry-impact framing —
   particularly the "variance → exact eigenvalue extrapolation"
-  characterization and the SONIC connection.
+  characterization.
 - [ASK] Is the `qiskit-addon-sqd` outer loop already wired to use
   `--carryover_type 4-8` from Python? If yes, link the example
   driver. If no, this is a CLI-only feature for now and worth being
