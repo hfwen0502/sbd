@@ -461,18 +461,21 @@ slide = prs.slides.add_slide(BLANK)
 add_title(slide, "Roadmap — main vs singles-doubles-extend",
           "Co-presenter slide: chemistry interpretation by [domain expert]")
 
-# Branch ribbon
+# Branch ribbon — note SBD C++ is a submodule on main, embedded on the experimental branch
 add_table(slide, Inches(0.5), Inches(1.45), Inches(12.3), Inches(1.1), [
-    ("Branch",                  "What it has",                                                "Where"),
-    ("main (stable)",           "Python wrapper, three backends, SQD integration",            "github.com/hfwen0502/sbd"),
-    ("singles-doubles-extend",  "+ variance, S+D expansion, ERI screening, TrimSQD",          "…/tree/singles-doubles-extend  ·  see VARIANCE.md"),
+    ("Branch",                  "SBD C++ source",                                        "What it has"),
+    ("main (stable)",           "submodule → upstream r-ccs-cms/sbd (unmodified)",        "Python wrapper, three backends, SQD integration"),
+    ("singles-doubles-extend",  "embedded in fork (C++ modified for new features)",       "+ variance, S+D, ERI screening, TrimSQD"),
 ])
+add_text_box(slide, Inches(0.5), Inches(2.6), Inches(12.3), Inches(0.35),
+             ["github.com/hfwen0502/sbd  ·  experimental: tree/singles-doubles-extend  ·  see VARIANCE.md"],
+             size=Pt(11), color=DIM)
 
-add_text_box(slide, Inches(0.5), Inches(2.7), Inches(12.3), Inches(0.4),
+add_text_box(slide, Inches(0.5), Inches(3.0), Inches(12.3), Inches(0.4),
              ["Experimental features"],
              size=Pt(16), color=PRIMARY, bold_first=True)
 
-add_text_box(slide, Inches(0.5), Inches(3.1), Inches(12.3), Inches(2.0),
+add_text_box(slide, Inches(0.5), Inches(3.4), Inches(12.3), Inches(1.9),
              ["1.  Singles + Doubles subspace expansion  (--carryover_type 4–6)",
               "      Brute-force: extend selected dets with same-spin double excitations.",
               "",
@@ -484,7 +487,7 @@ add_text_box(slide, Inches(0.5), Inches(3.1), Inches(12.3), Inches(2.0),
               "      Compute σ² = ⟨Hψ|Hψ⟩/‖ψ‖² − E² without diagonalizing.",
               "      Two-step workflow: expand → diagonalize → variance-in-expanded → repeat → σ² → 0",
              ],
-             size=Pt(13))
+             size=Pt(12))
 
 # Concrete demo table from VARIANCE.md
 add_text_box(slide, Inches(0.5), Inches(5.25), Inches(12.3), Inches(0.4),

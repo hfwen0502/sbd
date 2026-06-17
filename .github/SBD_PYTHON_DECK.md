@@ -501,14 +501,20 @@ chemistry decision. Pick whichever your cluster ships with cleanly.
 
 ### Where stable vs experimental code lives
 
-| Branch | What it has | Where |
+| Branch | SBD C++ source | What it has |
 |---|---|---|
-| `main` (stable)               | Python wrapper, three backends, SQD integration             | https://github.com/hfwen0502/sbd |
-| `singles-doubles-extend`      | + variance, S+D expansion, ERI screening, TrimSQD           | https://github.com/hfwen0502/sbd/tree/singles-doubles-extend |
+| `main` (stable)          | **submodule** → upstream `r-ccs-cms/sbd` (unmodified)  | Python wrapper, three backends, SQD integration |
+| `singles-doubles-extend` | **embedded in fork** (C++ modified for new features)   | + variance, S+D expansion, ERI screening, TrimSQD |
 
-Reference doc:
-[`apps/chemistry_tpb_selected_basis_diagonalization/VARIANCE.md`](https://github.com/hfwen0502/sbd/blob/singles-doubles-extend/apps/chemistry_tpb_selected_basis_diagonalization/VARIANCE.md)
-on the experimental branch.
+Both at https://github.com/hfwen0502/sbd · `main` vs `tree/singles-doubles-extend`.
+Experimental features documented in
+[`apps/chemistry_tpb_selected_basis_diagonalization/VARIANCE.md`](https://github.com/hfwen0502/sbd/blob/singles-doubles-extend/apps/chemistry_tpb_selected_basis_diagonalization/VARIANCE.md).
+
+Why the structural difference matters for adoption: on `main` the
+upstream SBD pin is a submodule, so SBD bug fixes flow in cleanly via
+`git submodule update`. On `singles-doubles-extend` the C++ is
+fork-owned because the new carryover types and `--iteration 0` mode
+need direct edits to SBD's C++ source.
 
 ### Body
 
