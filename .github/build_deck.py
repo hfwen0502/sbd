@@ -199,12 +199,12 @@ add_title(slide, "SBD vs Dice — same role, different envelope",
           "Both diagonalize the projected Hamiltonian inside qiskit-addon-sqd's iteration loop")
 
 add_table(slide, Inches(0.5), Inches(1.7), Inches(12.3), Inches(2.6), [
-    ("",                          "Dice (SHCI)",                      "SBD"),
-    ("Hardware",                  "CPU + MPI",                        "CPU + MPI + GPU (Thrust / OMP-offload)"),
-    ("Process model",             "subprocess + CLI + binary file I/O", "in-process pybind11 module"),
-    ("Determinant selection",     "internal heat-bath (eps knob)",    "external (caller-provided list)"),
-    ("Practical subspace ceiling","~30 orbitals",                     "~10⁹-dim subspace"),
-    ("Integration with sqd-addon","stock package",                    "MPI-aware fork (@patch-ferminon-sbd)"),
+    ("",                          "Dice (SHCI)",                       "SBD"),
+    ("Hardware",                  "CPU + MPI",                         "CPU + MPI + GPU (Thrust / OMP-offload)"),
+    ("Process model",             "subprocess + CLI + binary file I/O","in-process pybind11 module"),
+    ("Determinant selection",     "internal heat-bath (eps knob)",     "external (caller-provided list)"),
+    ("Orbital ceiling (data-type)","128  (16-byte determinant addr)",  "160 (default) · 512 (bit_length=64) · configurable"),
+    ("Integration with sqd-addon","stock package",                     "MPI-aware fork (@patch-ferminon-sbd)"),
 ])
 
 add_text_box(slide, Inches(0.5), Inches(4.5), Inches(12.3), Inches(0.4),

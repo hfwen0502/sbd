@@ -57,7 +57,7 @@ qiskit-addon-dice-solver                       │
 - **What changes when you switch to SBD:**
   - **In-process Python call** instead of subprocess + binary-file I/O per iteration.
   - **GPU+MPI accelerated** (CPU, NVIDIA Thrust, LLVM OMP-offload) — Dice is CPU+MPI only.
-  - **Designed for ~10⁹-dim subspaces** — hardware-bound rather than algorithmically bound.
+  - **Demonstrated to ~10⁹-dim subspaces** in production runs (Fe4S4 27,901² ≈ 778 M Cartesian basis on 8 GB200; orbital ceiling itself is the data-type bound in the comparison table).
   - **External selection model** — SBD takes the α-dets list as input and trusts it. Dice does its own internal SHCI heat-bath selection (the `eps` knob).
 - **What stays the same:** FCIDUMP input format, 1-/2-RDM outputs, wavefunction save/load, carryover-determinant concept, role inside the SQD iteration loop.
 
@@ -68,10 +68,21 @@ qiskit-addon-dice-solver                       │
 | Hardware | CPU + MPI | CPU + MPI + GPU (Thrust / OMP-offload) |
 | Process model | Subprocess + CLI + binary file I/O | In-process pybind11 module |
 | Determinant selection | Internal (SHCI heat-bath, `eps` knob) | External (caller-provided list) |
-| Practical subspace ceiling | ~30 orbitals | ~10⁹-dim subspace [VERIFY] |
+| Orbital ceiling (data-type) | **128** (16-byte determinant address, hard-coded) ¹ | **160** at default `bit_length=20`; **512** at `bit_length=64` ² |
 | 1-/2-RDM | ✓ | ✓ |
 | Wavefunction save/load | ✓ | ✓ |
 | Iteration with `qiskit-addon-sqd` | Stock package | MPI-aware fork (`@patch-ferminon-sbd`) |
+
+¹ Per `qiskit-addon-dice-solver` README: *"determinant addresses are
+interpreted by the Dice command line application to be 16-byte
+unsigned integers; therefore, only systems of 128 or fewer orbitals
+are supported."*
+
+² SBD's ceiling is `SBD_MAX_DETSIZE × bit_length / 2`. The compile-
+time `SBD_MAX_DETSIZE = 16` (in
+[`vendor/sbd-upstream/include/sbd/chemistry/basic/omp_offload.h`](../vendor/sbd-upstream/include/sbd/chemistry/basic/omp_offload.h))
+is the chunk-count cap; `bit_length` (default 20, runtime-configurable)
+is bits-per-chunk. Raise `bit_length` for larger systems.
 
 ### Where it lives
 
@@ -103,7 +114,7 @@ qiskit-addon-dice-solver                       │
 
 ### Open questions
 
-- [ASK] What's the right "practical subspace ceiling" claim for Dice? "~30 orbitals" comes from the qiskit-addon-dice-solver README ("30+ orbital chemistry systems"). Want a more authoritative number from the co-presenter.
+- *(resolved)* Orbital-ceiling claim corrected: Dice = 128 (16-byte determinant address, per `qiskit-addon-dice-solver` README's *Limitations* section); SBD = `SBD_MAX_DETSIZE × bit_length / 2` (160 at default, 512 at `bit_length=64`).
 
 ---
 
