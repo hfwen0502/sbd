@@ -128,6 +128,15 @@ SBD path (per iteration):
    returns Python objects directly
 ```
 
+### How you launch the job
+
+The launch command itself reflects the architectural difference:
+
+| Solver | Launch command | Why |
+|---|---|---|
+| Dice | `python my_script.py`                | The Python script runs serially. Each `solve_fermion(...)` call internally forks `mpirun + bin/Dice` for that one diagonalization. |
+| SBD  | `mpirun -np N python my_script.py`   | SBD is MPI-native — you launch N Python ranks once, each `import sbd` loads the C++ kernel into that rank, and the SQD outer loop stays in-process across iterations. |
+
 ### Bullets
 
 - **One Python module, three backends.** `import sbd` loads `_core_cpu.so`, `_core_gpu.so`, and/or `_core_gpu_omp_nvidia.so` — whichever wheels match what's installed. Backend chosen at call time via `device='cpu' | 'gpu' | 'gpu-omp'`. See [`python/__init__.py`](../python/__init__.py) and [`python/device_config.py`](../python/device_config.py).
@@ -474,18 +483,23 @@ chemistry decision. Pick whichever your cluster ships with cleanly.
 
 ---
 
-## Slide 4 — Roadmap (experimental branch)
+## Slide 4 — Roadmap (main vs experimental branch)
 
-**Title:** What's coming next — the `singles-doubles-extend` branch
+**Title:** Roadmap — `main` vs `singles-doubles-extend`
 **Subtitle:** *Co-presenter slide* — chemistry interpretation by [domain expert]
+
+### Where stable vs experimental code lives
+
+| Branch | What it has | Where |
+|---|---|---|
+| `main` (stable)               | Python wrapper, three backends, SQD integration             | https://github.com/hfwen0502/sbd |
+| `singles-doubles-extend`      | + variance, carryover variants, S+D expansion (in flight)   | https://github.com/hfwen0502/sbd/tree/singles-doubles-extend |
 
 ### Body
 
-Three features under active development on the
-[`singles-doubles-extend`](https://github.com/hfwen0502/sbd/tree/singles-doubles-extend)
-branch (already layered over `main` in the fork). Listed with
-**API-level** descriptions only — chemistry-impact framing is the
-co-presenter's territory.
+Three experimental features on the `singles-doubles-extend` branch.
+Listed with **API-level** descriptions only — chemistry-impact framing
+is the co-presenter's territory.
 
 #### 1. Energy variance estimation
 

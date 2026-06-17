@@ -272,9 +272,13 @@ add_code_box(slide, RIGHT, Inches(2.2), RWIDTH, Inches(4.5), [
     "",
 ], highlight_idx=[2, 4], size=Pt(15))
 
-add_text_box(slide, Inches(0.5), Inches(6.7), Inches(12.3), Inches(0.5),
-             ["At 5 SQD iterations × N MPI ranks, that's 5N fork/exec + 5 file-write + 5 file-parse cycles you don't pay with SBD."],
-             size=Pt(13), color=DIM)
+# Launch command contrast at the bottom
+add_text_box(slide, Inches(0.5), Inches(6.55), Inches(12.3), Inches(0.4),
+             ["How you launch the job"], size=Pt(15), color=PRIMARY, bold_first=True)
+add_code_box(slide, Inches(0.5), Inches(6.95), Inches(12.3), Inches(0.5), [
+    "Dice:  python my_script.py                              # serial; Dice forks mpirun per call internally",
+    "SBD:   mpirun -np N python my_script.py                 # MPI-native; you launch all ranks once",
+], highlight_idx=[0, 1], size=Pt(12))
 
 add_footer(slide, "Slide 3 — architecture contrast")
 
@@ -454,10 +458,21 @@ add_footer(slide, "Slide 7 — hardware story + perf")
 # Slide 8 — Roadmap (co-presenter slide)
 # =============================================================================
 slide = prs.slides.add_slide(BLANK)
-add_title(slide, "Roadmap — singles-doubles-extend branch",
+add_title(slide, "Roadmap — main vs singles-doubles-extend",
           "Co-presenter slide: chemistry interpretation by [domain expert]")
 
-add_text_box(slide, Inches(0.5), Inches(1.7), Inches(12.3), Inches(5.3),
+# Branch ribbon — where stable vs experimental code lives
+add_table(slide, Inches(0.5), Inches(1.55), Inches(12.3), Inches(1.3), [
+    ("Branch",                  "What it has",                                                "Where"),
+    ("main (stable)",           "Python wrapper, three backends, SQD integration",            "github.com/hfwen0502/sbd"),
+    ("singles-doubles-extend",  "+ variance, carryover variants, S+D expansion (in flight)",  "github.com/hfwen0502/sbd/tree/singles-doubles-extend"),
+])
+
+add_text_box(slide, Inches(0.5), Inches(3.05), Inches(12.3), Inches(0.4),
+             ["Experimental features (on singles-doubles-extend)"],
+             size=Pt(16), color=PRIMARY, bold_first=True)
+
+add_text_box(slide, Inches(0.5), Inches(3.5), Inches(12.3), Inches(3.5),
              ["1.  Energy variance estimation",
               "      Per-iteration variance alongside the energy.",
               "      → uncertainty bars · adaptive sampling · convergence diagnostics  [VERIFY]",
@@ -472,7 +487,7 @@ add_text_box(slide, Inches(0.5), Inches(1.7), Inches(12.3), Inches(5.3),
               "      Expand the SBD basis on the fly with single + double excitations.",
               "      → analogous to PySCF CASCI → CASCI+S+D, or PT-style correction  [VERIFY]",
              ],
-             size=Pt(16))
+             size=Pt(14))
 
 add_footer(slide, "Slide 8 — roadmap (co-presenter handles chemistry interpretation)")
 
