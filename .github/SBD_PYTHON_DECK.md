@@ -56,7 +56,7 @@ qiskit-addon-dice-solver                       │
 - **SBD is the eigensolver.** Just like Dice. It diagonalizes the projected fermionic Hamiltonian on a user-provided list of α-determinants — it does NOT do the SQD outer loop (sample → recover → subsample → carryover). That outer loop is `qiskit-addon-sqd`'s job, same as today with Dice.
 - **What changes when you switch to SBD:**
   - **In-process Python call** instead of subprocess + binary-file I/O per iteration.
-  - **GPU+MPI accelerated** (CPU, NVIDIA Thrust, LLVM OMP-offload) — Dice is CPU+MPI only.
+  - **NVIDIA GPU + MPI accelerated** (CPU; NVIDIA Thrust via NVHPC `nvc++`; NVIDIA LLVM OMP-offload via `clang++`) — Dice is CPU+MPI only. AMD / Intel GPU not supported.
   - **Demonstrated to ~10⁹-dim subspaces** in production runs (Fe4S4 27,901² ≈ 778 M Cartesian basis on 8 GB200; orbital ceiling itself is the data-type bound in the comparison table).
   - **External selection model** — SBD takes the α-dets list as input and trusts it. Dice does its own internal SHCI heat-bath selection (the `eps` knob).
 - **What stays the same:** FCIDUMP input format, 1-/2-RDM outputs, wavefunction save/load, carryover-determinant concept, role inside the SQD iteration loop.
@@ -65,7 +65,7 @@ qiskit-addon-dice-solver                       │
 
 | | Dice (SHCI) | SBD |
 |---|---|---|
-| Hardware | CPU + MPI | CPU + MPI + GPU (Thrust / OMP-offload) |
+| Hardware | CPU + MPI | CPU + MPI + **NVIDIA GPU** (Thrust / LLVM OMP-offload) |
 | Process model | Subprocess + CLI + binary file I/O | In-process pybind11 module |
 | Determinant selection | Internal (SHCI heat-bath, `eps` knob) | External (caller-provided list) |
 | Orbital ceiling (data-type) | **128** (16-byte determinant address, hard-coded) ¹ | **160** at default `bit_length=20`; **512** at `bit_length=64` ² |
@@ -504,83 +504,112 @@ chemistry decision. Pick whichever your cluster ships with cleanly.
 | Branch | What it has | Where |
 |---|---|---|
 | `main` (stable)               | Python wrapper, three backends, SQD integration             | https://github.com/hfwen0502/sbd |
-| `singles-doubles-extend`      | + variance, carryover variants, S+D expansion (in flight)   | https://github.com/hfwen0502/sbd/tree/singles-doubles-extend |
+| `singles-doubles-extend`      | + variance, S+D expansion, ERI screening, TrimSQD           | https://github.com/hfwen0502/sbd/tree/singles-doubles-extend |
+
+Reference doc:
+[`apps/chemistry_tpb_selected_basis_diagonalization/VARIANCE.md`](https://github.com/hfwen0502/sbd/blob/singles-doubles-extend/apps/chemistry_tpb_selected_basis_diagonalization/VARIANCE.md)
+on the experimental branch.
 
 ### Body
 
-Three experimental features on the `singles-doubles-extend` branch.
-Listed with **API-level** descriptions only — chemistry-impact framing
-is the co-presenter's territory.
+Three new capabilities on the experimental branch, exposed via new
+`--carryover_type` values and an `--iteration 0` mode.
 
-#### 1. Energy variance estimation
+#### 1. Singles + Doubles subspace expansion (`--carryover_type 4-8`)
 
-The Davidson eigensolver already computes a residual norm at
-convergence. The experimental code exposes a per-iteration energy
-**variance** alongside the energy itself, computed via a Hutchinson-
-or fixed-vector estimator on the SBD-projected Hamiltonian. [VERIFY
-details with co-presenter — exact estimator and its statistical
-properties.]
+Expand the SBD-selected basis with single + double excitations from
+selected determinants. Existing types 1–3 already extend with
+**singles only**; new types 4–6 add **same-spin doubles** on top.
 
-What this gives the user, mechanically: a second number per
-iteration, same shape as the energy. **What it buys in practice
-(adaptive sampling, error bars, convergence diagnostics) is the
-co-presenter's framing.** [VERIFY]
+| Type | Selection           | Extension            |
+|------|---------------------|----------------------|
+| 4    | Amplitude           | Singles + Doubles    |
+| 5    | Marginal+amplitude  | Singles + Doubles    |
+| 6    | None (all dets)     | Singles + Doubles    |
 
-→ Reference example: [`python/examples/test_variance.py`](../python/examples/test_variance.py)
-  exercises the variance code path on the bundled h2o data across the
-  CPU and GPU backends.
+For an n-occupied / m-virtual half-determinant, brute-force S+D adds
+n·m + C(n,2)·C(m,2) excitations — quickly explosive.
 
-#### 2. Carryover-determinant variants
+#### 2. ERI-screened S+D (`--carryover_type 7-8`)
 
-Today, between SQD iterations, the top-K determinants by amplitude
-are propagated forward as the "carryover" set that seeds the next
-subspace. The experimental code exposes alternative selection
-policies — selection by **variance contribution**, by
-**residual-weighted amplitude**, or by **explicit cap** (`max_carryover_dets`).
+Same S+D expansion, but **filter by Hamiltonian integral magnitude**:
+keep an excitation only if its Fock-element (singles) or
+antisymmetrized 2e-integral (doubles) exceeds `--eri_threshold`.
 
-The chemistry framing — *which policy you'd want under which sampling
-regime* — is squarely the co-presenter's. [VERIFY]
+| Type | Selection | Extension       |
+|------|-----------|-----------------|
+| 7    | Amplitude | Screened S + D  |
+| 8    | None      | Screened S + D  |
 
-#### 3. Subspace expansion (S+D extension)
+Inspired by the **extended SQD method** (Cleveland Clinic / SONIC,
+[arXiv:2501.09442](https://arxiv.org/abs/2501.09442)). Typically
+keeps 20–50% of brute-force S+D excitations while retaining the
+physically important ones.
 
-The branch name `singles-doubles-extend` refers to expanding the
-SBD-selected basis on the fly with single + double excitations from
-the leading determinants — analogous to PySCF's CASCI →
-CASCI+singles-doubles workflow, or to a perturbative correction on
-top of the selected-basis solution. The intent is to recover dynamic
-correlation that the SQD-derived selection alone may miss.
+#### 3. Variance-only mode (`--iteration 0`) and the extrapolation workflow
 
-[VERIFY: this framing — what S+D expansion is meant to recover, how
-it relates to NEVPT2/CASPT2-style corrections in PySCF, and whether
-"perturbative" or "variational" is the right characterization — needs
-the co-presenter's voice.]
+Skip diagonalization; load a pre-computed wavefunction (`--loadname`),
+compute one matvec `H|ψ⟩`, and report:
+- **Energy** ⟨ψ|H|ψ⟩ / ‖ψ‖²
+- **Variance** σ² = ⟨Hψ|Hψ⟩ / ‖ψ‖² − E²
+
+Pair this with S+D expansion in a two-step protocol:
+
+```
+[diag in S]  →  save wf       →  [variance in S']  →  repeat with S' as new S
+   ↑                                    ↓
+expanded to S' via --carryover_type 4/7
+```
+
+Iterating until σ² → 0 extrapolates to the exact eigenvalue. The
+zero-variance-limit pair (E, σ²) drives the convergence diagnostic
+and (optionally) a Richardson-style energy extrapolation.
+
+#### 4. TrimSQD — adaptive subspace pruning
+
+Between expansion rounds, **trim** the determinant set: rediagonalize
+in the expanded space, then keep only dets with marginal amplitude
+above `TRIM_THRESHOLD`. Inspired by the same SONIC workflow.
+
+Concrete demo from `VARIANCE.md` — 29-orbital system, 5e per spin,
+seeded from 995 sampled determinants:
+
+| Step | dets (no trim) | dets (TrimSQD) | Energy (Ha) | Variance (Ha²) |
+|------|---------------:|---------------:|------------:|---------------:|
+| 0    | 995            | 995            | −101.9406   | 1.649          |
+| 1    | 879            | 656            | −103.18     | 0.530          |
+| 2    | 11,289         | 4,442          | −103.59     | 0.007          |
+| 3    | 11,042         | **5,794**      | **−103.5938** | 0.001        |
+
+Both reach the same energy (0.16 mHa from FCI). TrimSQD does it with
+**47% fewer dets** in the final subspace — payoff scales with system
+size.
 
 ### Speaker notes
 
-- Defer chemistry-impact questions explicitly: *"For the chemistry
-  framing, I'll hand off to [co-presenter]"*. The audience will
-  respect that.
-- For the API-level walkthrough — what the new functions return, what
-  parameters they accept, what example exercises them — that's the
-  primary presenter's territory and the
-  [`test_variance.py`](../python/examples/test_variance.py) link is
-  the concrete anchor.
-- Don't over-promise timeline. *"Active development on the
-  singles-doubles-extend branch"* is honest; *"shipping in v1.6"* is
-  not unless you actually know.
+- Defer chemistry-impact questions to the co-presenter. The
+  primary-presenter's territory: the `--carryover_type` matrix, the
+  CLI knobs, the workflow diagram, the demo table. Co-presenter takes
+  the *"what does variance mean physically; how does ERI screening
+  preserve correlation; how does TrimSQD compare to SONIC"* questions.
+- The arXiv:2501.09442 reference (SONIC) is worth flagging — chemists
+  in this audience may already know that paper, and connecting SBD's
+  variance/trim workflow to a published method gives the experimental
+  features more credibility.
+- The 29-orbital convergence example is the punchline of the slide.
+  If pressed for time, drop everything else and keep the 4-row demo
+  table — it lands the *"this works"* claim without needing
+  interpretation.
 
 ### Open questions
 
-- [ASK] **Variance estimator type**: Hutchinson (stochastic trace
-  estimator) or a fixed-vector residual-based estimator? The
-  framing on the slide depends on this.
-- [ASK] **S+D expansion mechanism**: is the basis expansion done
-  *between* SBD calls (in `qiskit-addon-sqd`'s outer loop), or
-  *inside* a single SBD call (the basis grows during eigensolve)?
-  The distinction matters for the audience's mental model — first
-  case is "smarter outer loop", second is "smarter eigensolver".
-- [ASK] Co-presenter to redline the chemistry-impact bullets and
-  fill in the [VERIFY] gaps before delivery.
+- [ASK] Co-presenter to redline the chemistry-impact framing —
+  particularly the "variance → exact eigenvalue extrapolation"
+  characterization and the SONIC connection.
+- [ASK] Is the `qiskit-addon-sqd` outer loop already wired to use
+  `--carryover_type 4-8` from Python? If yes, link the example
+  driver. If no, this is a CLI-only feature for now and worth being
+  explicit about.
 
 ### See also
 

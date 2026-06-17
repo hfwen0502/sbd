@@ -427,11 +427,11 @@ add_footer(slide, "Slide 6 — SQD-with-SBD example (full driver: python/example
 # =============================================================================
 slide = prs.slides.add_slide(BLANK)
 add_title(slide, "Three backends, one runtime decision",
-          "Same source, same energies (bit-equal), different compilers")
+          "Same source, same energies (bit-equal), different compilers — NVIDIA GPU only")
 
 add_table(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(1.6), [
-    ("device=",       "Compiler",                       "When to use"),
-    ("'cpu'",         "system c++",                     "small problems · debugging · no GPU"),
+    ("device=",            "Compiler",                  "When to use"),
+    ("'cpu'",              "system c++",                "small problems · debugging · no GPU"),
     ("'gpu' (Thrust)",     "NVHPC nvc++",               "NVIDIA GPU · production default"),
     ("'gpu-omp' (LLVM)",   "clang++ w/ NVPTX target",   "NVIDIA GPU · alternative kernel path"),
 ])
@@ -461,33 +461,40 @@ slide = prs.slides.add_slide(BLANK)
 add_title(slide, "Roadmap — main vs singles-doubles-extend",
           "Co-presenter slide: chemistry interpretation by [domain expert]")
 
-# Branch ribbon — where stable vs experimental code lives
-add_table(slide, Inches(0.5), Inches(1.55), Inches(12.3), Inches(1.3), [
+# Branch ribbon
+add_table(slide, Inches(0.5), Inches(1.45), Inches(12.3), Inches(1.1), [
     ("Branch",                  "What it has",                                                "Where"),
     ("main (stable)",           "Python wrapper, three backends, SQD integration",            "github.com/hfwen0502/sbd"),
-    ("singles-doubles-extend",  "+ variance, carryover variants, S+D expansion (in flight)",  "github.com/hfwen0502/sbd/tree/singles-doubles-extend"),
+    ("singles-doubles-extend",  "+ variance, S+D expansion, ERI screening, TrimSQD",          "…/tree/singles-doubles-extend  ·  see VARIANCE.md"),
 ])
 
-add_text_box(slide, Inches(0.5), Inches(3.05), Inches(12.3), Inches(0.4),
-             ["Experimental features (on singles-doubles-extend)"],
+add_text_box(slide, Inches(0.5), Inches(2.7), Inches(12.3), Inches(0.4),
+             ["Experimental features"],
              size=Pt(16), color=PRIMARY, bold_first=True)
 
-add_text_box(slide, Inches(0.5), Inches(3.5), Inches(12.3), Inches(3.5),
-             ["1.  Energy variance estimation",
-              "      Per-iteration variance alongside the energy.",
-              "      → uncertainty bars · adaptive sampling · convergence diagnostics  [VERIFY]",
-              "      Reference example: python/examples/test_variance.py",
+add_text_box(slide, Inches(0.5), Inches(3.1), Inches(12.3), Inches(2.0),
+             ["1.  Singles + Doubles subspace expansion  (--carryover_type 4–6)",
+              "      Brute-force: extend selected dets with same-spin double excitations.",
               "",
-              "2.  Carryover-determinant variants",
-              "      Today: top-K by amplitude.",
-              "      Experimental: variance-weighted, residual-weighted, explicit cap (max_carryover_dets).",
-              "      → policy choice depends on sampling regime  [VERIFY]",
+              "2.  ERI-screened S+D  (--carryover_type 7–8, --eri_threshold)",
+              "      Keep only excitations with significant Hamiltonian coupling.",
+              "      Inspired by extended SQD / SONIC (arXiv:2501.09442).  Typically 20–50% of brute-force.",
               "",
-              "3.  Subspace expansion (S+D)",
-              "      Expand the SBD basis on the fly with single + double excitations.",
-              "      → analogous to PySCF CASCI → CASCI+S+D, or PT-style correction  [VERIFY]",
+              "3.  Variance-only mode  (--iteration 0)  +  TrimSQD (adaptive pruning)",
+              "      Compute σ² = ⟨Hψ|Hψ⟩/‖ψ‖² − E² without diagonalizing.",
+              "      Two-step workflow: expand → diagonalize → variance-in-expanded → repeat → σ² → 0",
              ],
-             size=Pt(14))
+             size=Pt(13))
+
+# Concrete demo table from VARIANCE.md
+add_text_box(slide, Inches(0.5), Inches(5.25), Inches(12.3), Inches(0.4),
+             ["Demo: 29-orbital, 5e per spin, seeded from 995 sampled dets"],
+             size=Pt(13), color=PRIMARY, bold_first=True)
+add_table(slide, Inches(0.5), Inches(5.65), Inches(12.3), Inches(1.2), [
+    ("Step",  "dets (no trim)", "dets (TrimSQD)", "Energy (Ha)",      "Variance (Ha²)"),
+    ("0",     "995",            "995",            "−101.9406",        "1.649"),
+    ("3",     "11,042",         "5,794  (−47%)",  "−103.5938 (0.16 mHa from FCI)", "≤ 0.001"),
+])
 
 add_footer(slide, "Slide 8 — roadmap (co-presenter handles chemistry interpretation)")
 
