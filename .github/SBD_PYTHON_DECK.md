@@ -143,14 +143,22 @@ runtime introspection is a one-liner:
 
 ```python
 import sbd
-print(list(sbd._backends.keys()))
-# e.g. ['cpu', 'gpu', 'gpu-nvidia-omp']
+sbd.available_backends()
+# ['cpu', 'gpu', 'gpu-nvidia-omp']    ← whichever .so files are built
 
-from sbd.device_config import print_device_info
-print_device_info()
-# === SBD Device Information ===
-# CUDA available: True   GPU count: 4
+sbd.print_info()
+# ============================================================
+# SBD (Selected Basis Diagonalization) Python Bindings
+# ============================================================
+# Version: 1.5.0
 # Compiled backends: cpu, gpu, gpu-nvidia-omp
+# ...
+```
+
+Same idea from the shell:
+
+```bash
+python -c "import sbd; print(sbd.available_backends())"
 ```
 
 ### Code: switching backends — three equivalent paths
@@ -183,9 +191,9 @@ python run_sbd_diag.py --device gpu-omp   # LLVM offload path
 ```
 
 → Source: [`python/__init__.py`](../python/__init__.py)
-(`get_backend`, `init`, `_backends` registry),
+(`available_backends`, `get_backend`, `init`, `print_info`),
 [`python/device_config.py`](../python/device_config.py) (`DeviceConfig`,
-`get_device_info`, `print_device_info`).
+`get_device_info`).
 
 ### Code: the 5-line solver swap (Dice → SBD)
 
