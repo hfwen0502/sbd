@@ -1,0 +1,570 @@
+# SBD Python Walkthrough — slide deck draft
+
+Audience: chemistry application experts who already use Dice as the
+eigensolver inside `qiskit-addon-sqd`, evaluating whether to adopt SBD.
+Co-presenter: domain expert handles chemistry interpretation; primary
+presenter handles architecture / systems / perf / deployment.
+
+Deck structure (6 slides + backup):
+
+1. **What is SBD, and why** — positioned against Dice
+2. **Tight integration via pybind11** — the architectural shift
+3. **Hardware story** — backends and how to choose
+4. **Roadmap (experimental)** — variance, subspace expansion, carryover variants *(co-presenter slide)*
+5. **The HPC pain** — build-matrix and network-fabric differences across clusters
+6. **The sqd-onboard agent** — the deployment helper
+7. **Backup** — install commands, perf numbers, FAQ
+
+Narrative arc: slides 1-4 establish that SBD is a faster, GPU-aware
+alternative to Dice. Slide 5 names the cost of that speedup honestly
+(every new cluster needs custom toolchain + MPI + fabric tuning).
+Slide 6 is the answer: the agent does that work for you. Backup holds
+the gritty install commands so the main flow stays clean.
+
+Markers used in this draft:
+- `[VERIFY]` — chemistry-interpretation claim that should be redlined by the co-presenter before delivery
+- `[DIAGRAM]` — placeholder for a figure; description in speaker notes
+- `[ASK]` — open question for the user / co-presenter
+
+---
+
+## Slide 1 — What is SBD, and why?
+
+**Title:** SBD — GPU-accelerated alternative to Dice in SQD workflows
+**Subtitle:** Same role inside `qiskit-addon-sqd`'s iteration loop; different process model and hardware envelope
+
+### Body
+
+[DIAGRAM] Two architecture diagrams, side by side:
+
+```
+qiskit-addon-sqd                      qiskit-addon-sqd  (MPI-aware fork)
+       │                                       │
+qiskit-addon-dice-solver                       │
+       │                                       │
+   subprocess(Dice CLI)              import sbd  ← in-process
+       │                                       │
+   *.bin output files                pybind11 → C++
+       │                                       │
+   _accelerate (Rust) parser         MPI + OpenMP + GPU
+       │                                       │
+   back to Python                    Davidson on the selected basis
+```
+
+### Bullets
+
+- **SBD is the eigensolver.** Just like Dice. It diagonalizes the projected fermionic Hamiltonian on a user-provided list of α-determinants — it does NOT do the SQD outer loop (sample → recover → subsample → carryover). That outer loop is `qiskit-addon-sqd`'s job, same as today with Dice.
+- **What changes when you switch to SBD:**
+  - **In-process Python call** instead of subprocess + binary-file I/O per iteration.
+  - **GPU+MPI accelerated** (CPU, NVIDIA Thrust, LLVM OMP-offload) — Dice is CPU+MPI only.
+  - **Designed for ~10⁹-dim subspaces** — hardware-bound rather than algorithmically bound.
+  - **External selection model** — SBD takes the α-dets list as input and trusts it. Dice does its own internal SHCI heat-bath selection (the `eps` knob).
+- **What stays the same:** FCIDUMP input format, 1-/2-RDM outputs, wavefunction save/load, carryover-determinant concept, role inside the SQD iteration loop.
+
+### Comparison table
+
+| | Dice (SHCI) | SBD |
+|---|---|---|
+| Hardware | CPU + MPI | CPU + MPI + GPU (Thrust / OMP-offload) |
+| Process model | Subprocess + CLI + binary file I/O | In-process pybind11 module |
+| Determinant selection | Internal (SHCI heat-bath, `eps` knob) | External (caller-provided list) |
+| Practical subspace ceiling | ~30 orbitals | ~10⁹-dim subspace [VERIFY] |
+| 1-/2-RDM | ✓ | ✓ |
+| Wavefunction save/load | ✓ | ✓ |
+| Iteration with `qiskit-addon-sqd` | Stock package | MPI-aware fork (`@patch-ferminon-sbd`) |
+
+### Speaker notes
+
+- Open by recognizing the audience knows Dice. "If you already do SQD with Dice, this slide is the one-glance answer to 'what changes if I switch'."
+- The architecture diagram does most of the work. Spend ~30 seconds on the in-process vs subprocess shift before moving to the table.
+- The "external selection" point is worth pausing on: with Dice, the eigensolver decides which determinants to keep. With SBD, the caller (i.e., `qiskit-addon-sqd`'s recovery + subsample machinery) hands the list over. This means the noise-handling / configuration-recovery logic stays in Python where it's easy to inspect and tune. [VERIFY this framing with co-presenter — it's true mechanically but the chemistry-implications need their voice.]
+- Have the perf numbers ready as a follow-up if anyone asks: 8×GB200 SBD Thrust 329 s vs Dice (their workload-specific number) — but don't volunteer perf on slide 1; that's slide 3.
+
+### See also (in this repo)
+
+- Example: standalone SBD diagonalization →
+  [`python/examples/run_sbd_diag.py`](../python/examples/run_sbd_diag.py)
+- Example: full SQD loop with SBD →
+  [`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py)
+- Examples README (h2o, n2, fe4s4 walkthroughs) →
+  [`python/examples/README.md`](../python/examples/README.md)
+- Bundled inputs: H2O ([fcidump](../data/h2o/fcidump.txt) +
+  [α-dets 1e-3](../data/h2o/h2o-1em3-alpha.txt)), Fe4S4
+  ([fcidump](../data/fe4s4/fcidump.txt) +
+  [α-dets 27,901](../data/fe4s4/alpha_dets_27901.txt))
+
+### Open questions
+
+- [ASK] What's the right "practical subspace ceiling" claim for Dice? "~30 orbitals" comes from the qiskit-addon-dice-solver README ("30+ orbital chemistry systems"). Want a more authoritative number from the co-presenter.
+
+---
+
+## Slide 2 — Tight integration via pybind11
+
+**Title:** Tight integration via pybind11 — SBD is a Python function, not a subprocess
+**Subtitle:** What changes for `qiskit-addon-sqd` users
+
+### Body
+
+[DIAGRAM] Two stacked timelines, one per SQD iteration:
+
+```
+Dice path (per iteration):
+   Python → write FCIDUMP to disk → fork(Dice CLI) →
+   wait → parse *.bin output (Rust _accelerate) →
+   back to Python with energy/RDMs
+
+SBD path (per iteration):
+   Python → run_sbd_diag(...) → C++ Davidson runs in same
+   process, on this MPI rank, on this GPU →
+   returns Python objects directly
+```
+
+### Bullets
+
+- **One Python module, three backends.** `import sbd` loads `_core_cpu.so`, `_core_gpu.so`, and/or `_core_gpu_omp_nvidia.so` — whichever wheels match what's installed. Backend chosen at call time via `device='cpu' | 'gpu' | 'gpu-omp'`. See [`python/__init__.py`](../python/__init__.py) and [`python/device_config.py`](../python/device_config.py).
+- **The pybind11 surface** ([`python/bindings.cpp`](../python/bindings.cpp), ~400 LOC) directly exposes the C++ Davidson + the FCIDUMP loader + the α-dets loader as Python callables. No CLI. No file-format parser layer.
+- **What this enables, concretely:**
+  - **No FCIDUMP-to-disk + bin-file-parse round-trip per SQD iteration.** Inputs are ndarrays; outputs are ndarrays.
+  - **MPI-aware:** each rank does `import sbd` once at startup and stays in-process across iterations. No fork/exec storm at high node counts.
+  - **Python-debuggable:** stack traces cross the C++/Python boundary. Set a `breakpoint()` before the SBD call, inspect intermediate state, return to Python with the SCIResult.
+  - **Composable:** drop SBD inside any Python loop — custom convergence checks, custom carryover policies, on-the-fly RDM post-processing — without writing more C++.
+- **`qiskit-addon-sqd` integration:** `solve_fermion`-shaped wrapper at
+  [`python/sbd_solver.py`](../python/sbd_solver.py) is a near-drop-in
+  for `qiskit_addon_dice_solver.solve_fermion`. It takes ci_strings +
+  `one_body_tensor` + `two_body_tensor` + nelec / norb and returns an
+  `SCIResult` — same shape Dice's wrapper returns. Requires the
+  MPI-aware fork: `pip install git+https://github.com/hfwen0502/qiskit-addon-sqd@patch-ferminon-sbd`.
+
+### Code: the 5-line switch
+
+Existing Dice path:
+
+```python
+from qiskit_addon_dice_solver import solve_fermion
+
+energy, sci_state = solve_fermion(
+    bitstring_matrix, hcore, eri,
+    spin_sq=0.0,
+    max_davidson=100,
+)
+```
+
+SBD path (same call shape, drop in the SBD wrapper):
+
+```python
+from sbd.sbd_solver import solve_sci
+
+energy, sci_state = solve_sci(
+    ci_strings, one_body_tensor, two_body_tensor,
+    norb=norb, nelec=nelec,
+    spin_sq=0.0,
+    device_config=DeviceConfig(device='gpu'),   # gpu | gpu-omp | cpu
+    mpi_comm=MPI.COMM_WORLD,                    # SBD is MPI-native
+)
+```
+
+For the standalone (non-SQD) use case — handy for debugging or one-off
+runs — see [`python/examples/run_sbd_diag.py`](../python/examples/run_sbd_diag.py)
+which takes FCIDUMP + α-dets file paths directly. The full
+SQD-with-SBD workflow is in
+[`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py).
+
+### Install
+
+Build is non-trivial across clusters (different toolchain per backend,
+different MPI vendor per box, different network fabric flags). Slides
+5–6 cover that pain and how the sqd-onboard agent handles it. Exact
+pip commands are in the **Backup** slide.
+
+### Speaker notes
+
+- Lead with the diagram: subprocess+CLI vs in-process pybind11. That's the architectural difference; everything else is consequence.
+- The MPI-awareness point is worth pausing on: with Dice, each iteration forks a fresh CLI process; at 8-rank+ that fork/exec storm becomes meaningful overhead. With SBD, ranks stay alive across the full SQD loop.
+- Mention the debugging benefit briefly — Python users notice this when they hit a bug. Stack traces from inside Davidson land in the user's Python session, not in a `dice.out.X` file.
+- The "drop-in" framing is API-level: same call shape, same return type. The user still has to install the MPI-aware fork of `qiskit-addon-sqd` and pick a backend at call time.
+- The two-pass build line in "Install" is a real footgun if anyone asks "how do I build it" — call out that the agent (slide 5) handles this for them.
+
+### See also (in this repo)
+
+- pybind11 surface → [`python/bindings.cpp`](../python/bindings.cpp)
+- qiskit-addon-sqd-compatible wrapper → [`python/sbd_solver.py`](../python/sbd_solver.py)
+- Backend dispatch + device config → [`python/__init__.py`](../python/__init__.py),
+  [`python/device_config.py`](../python/device_config.py)
+- Standalone example → [`python/examples/run_sbd_diag.py`](../python/examples/run_sbd_diag.py)
+- SQD-with-SBD end-to-end example →
+  [`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py)
+- Sample bitstring inputs (count_dict format) →
+  [`python/examples/count_dict_h2o.json`](../python/examples/count_dict_h2o.json),
+  [`count_dict_n2.json`](../python/examples/count_dict_n2.json),
+  [`count_dict_fe4s4.json`](../python/examples/count_dict_fe4s4.json)
+- MPI-aware `qiskit-addon-sqd` fork →
+  https://github.com/hfwen0502/qiskit-addon-sqd/tree/patch-ferminon-sbd
+
+### Open questions
+
+- [ASK] Do you want me to verify the exact `solve_sci` signature against the current `python/sbd_solver.py` source before delivery? The snippet above is paraphrased — minor parameter names may have drifted. (I can pull the real signature for the slide.)
+
+---
+
+## Slide 3 — Hardware story: three backends, one decision
+
+**Title:** Three backends, one runtime decision: where does this run?
+**Subtitle:** Same source, same energies, different compilers — pick by what's installed
+
+### Body — backend characteristics
+
+| Backend (`device=`) | Compiler | When to use it |
+|---|---|---|
+| `cpu`                       | system `c++` (gcc/clang) | small problems; debugging; no GPU available |
+| `gpu` (Thrust)              | NVHPC `nvc++`            | NVIDIA GPU; production default |
+| `gpu-omp` (LLVM offload)    | LLVM `clang++` w/ NVPTX  | NVIDIA GPU; alternative kernel path |
+
+All three are loaded at `import sbd` if their `.so` was built. Switch
+at call time:
+
+```python
+energy, sci_state = solve_sci(..., device_config=DeviceConfig(device='gpu'))
+# or 'gpu-omp', or 'cpu' — same call shape, no rebuild
+```
+
+### Body — what each backend earns you
+
+For `--iteration 1 --block 10` (10 Davidson sub-iters) on Fe4S4 27,901
+α-determinants on coreweave GB200, post-rebuild with native sm_100:
+
+| Backend | 4×GB200 (1 node) | 8×GB200 (2 nodes) | 1n→2n |
+|---|---:|---:|---:|
+| Thrust       | **577 s** (Davidson 555 s · setup 33 s · final 55 s)  | **329 s** (Davidson 320 s) | 1.75× |
+| OMP-offload  | **491 s** (Davidson 437 s · setup 38 s · final 35 s)  | **304 s** (Davidson 267 s) | 1.62× |
+
+Energies are **bit-equal across cpu, gpu (Thrust), gpu-omp, and 1n/2n
+configurations** at −326.821832430028. Backend choice doesn't move
+the eigenvalue — it moves the wallclock.
+
+**Reference for the audience**: this is the same workload Dice runs
+on CPU + MPI inside `qiskit-addon-sqd` today. Going from CPU+Dice to
+2-node GB200 SBD is a **5–10× wallclock reduction** (depending on
+your CPU baseline) — and the chemistry result is unchanged.
+
+### How to choose
+
+Most sites will land on one default and stick. A pragmatic rule:
+
+- **Has a recent NVHPC SDK** (most NVIDIA-shop clusters) → start with
+  `gpu` (Thrust). The build is the simplest; perf is competitive.
+- **Doesn't have NVHPC, has LLVM with NVPTX target** → `gpu-omp`.
+  Same hardware, different kernel implementation. On Blackwell
+  today, `gpu-omp` is *slightly* faster than Thrust at 2-node (304 s
+  vs 329 s); on Hopper it tracks Thrust closely.
+- **CPU only or debugging** → `cpu`. Fast for h2o-class problems;
+  not for production fe4s4-scale.
+
+The `gpu`/`gpu-omp` choice is hardware-and-toolchain dependent, not a
+chemistry decision. Pick whichever your cluster ships with cleanly.
+
+### Speaker notes
+
+- This slide is the headline perf moment. Lead with the table, not
+  the decision tree.
+- The "5–10× vs Dice on CPU" line is the audience hook. Don't
+  over-claim — qualify with "depending on your CPU baseline" because
+  we don't have a measured Dice number on this exact workload.
+- The bit-equal-across-backends point is important: it's a
+  correctness claim that earns the audience's trust before slide 4
+  (where we ask them to consider new experimental features).
+- If anyone asks "why does gpu-omp edge out Thrust on 2-node?" — the
+  per-Davidson-sub-iter timing (27 s vs 32 s) is a real but small
+  effect; on a different workload it could flip. Don't sell either
+  as the universal winner.
+
+### See also (in this repo)
+
+- Backend dispatch + DeviceConfig →
+  [`python/__init__.py`](../python/__init__.py),
+  [`python/device_config.py`](../python/device_config.py)
+- Runtime device selection in the standalone example →
+  [`python/examples/run_sbd_diag.py`](../python/examples/run_sbd_diag.py) (the `--device` flag)
+- Full perf breakdown including per-matvec exch/compute split for
+  Fulqrum (which DOES expose communication primitives directly) →
+  [`FULQRUM_SBD_GB200_SCALING.md`](./FULQRUM_SBD_GB200_SCALING.md) §1
+  *"Combined view"*
+
+### Open questions
+
+- [ASK] Do we have any measured Dice CPU wallclock on a comparable workload (Fe4S4 27,901 α-dets, 10 Davidson sub-iters or equivalent) we could quote in place of *"5–10×"*? Even a rough number from a known box (e.g., a 96-core Xeon node) would tighten the pitch.
+
+---
+
+## Slide 4 — Roadmap (experimental branch)
+
+**Title:** What's coming next — the `singles-doubles-extend` branch
+**Subtitle:** *Co-presenter slide* — chemistry interpretation by [domain expert]
+
+### Body
+
+Three features under active development on the
+[`singles-doubles-extend`](https://github.com/hfwen0502/sbd/tree/singles-doubles-extend)
+branch (already layered over `main` in the fork). Listed with
+**API-level** descriptions only — chemistry-impact framing is the
+co-presenter's territory.
+
+#### 1. Energy variance estimation
+
+The Davidson eigensolver already computes a residual norm at
+convergence. The experimental code exposes a per-iteration energy
+**variance** alongside the energy itself, computed via a Hutchinson-
+or fixed-vector estimator on the SBD-projected Hamiltonian. [VERIFY
+details with co-presenter — exact estimator and its statistical
+properties.]
+
+What this gives the user, mechanically: a second number per
+iteration, same shape as the energy. **What it buys in practice
+(adaptive sampling, error bars, convergence diagnostics) is the
+co-presenter's framing.** [VERIFY]
+
+→ Reference example: [`python/examples/test_variance.py`](../python/examples/test_variance.py)
+  exercises the variance code path on the bundled h2o data across the
+  CPU and GPU backends.
+
+#### 2. Carryover-determinant variants
+
+Today, between SQD iterations, the top-K determinants by amplitude
+are propagated forward as the "carryover" set that seeds the next
+subspace. The experimental code exposes alternative selection
+policies — selection by **variance contribution**, by
+**residual-weighted amplitude**, or by **explicit cap** (`max_carryover_dets`).
+
+The chemistry framing — *which policy you'd want under which sampling
+regime* — is squarely the co-presenter's. [VERIFY]
+
+#### 3. Subspace expansion (S+D extension)
+
+The branch name `singles-doubles-extend` refers to expanding the
+SBD-selected basis on the fly with single + double excitations from
+the leading determinants — analogous to PySCF's CASCI →
+CASCI+singles-doubles workflow, or to a perturbative correction on
+top of the selected-basis solution. The intent is to recover dynamic
+correlation that the SQD-derived selection alone may miss.
+
+[VERIFY: this framing — what S+D expansion is meant to recover, how
+it relates to NEVPT2/CASPT2-style corrections in PySCF, and whether
+"perturbative" or "variational" is the right characterization — needs
+the co-presenter's voice.]
+
+### Speaker notes
+
+- Defer chemistry-impact questions explicitly: *"For the chemistry
+  framing, I'll hand off to [co-presenter]"*. The audience will
+  respect that.
+- For the API-level walkthrough — what the new functions return, what
+  parameters they accept, what example exercises them — that's the
+  primary presenter's territory and the
+  [`test_variance.py`](../python/examples/test_variance.py) link is
+  the concrete anchor.
+- Don't over-promise timeline. *"Active development on the
+  singles-doubles-extend branch"* is honest; *"shipping in v1.6"* is
+  not unless you actually know.
+
+### Open questions
+
+- [ASK] **Variance estimator type**: Hutchinson (stochastic trace
+  estimator) or a fixed-vector residual-based estimator? The
+  framing on the slide depends on this.
+- [ASK] **S+D expansion mechanism**: is the basis expansion done
+  *between* SBD calls (in `qiskit-addon-sqd`'s outer loop), or
+  *inside* a single SBD call (the basis grows during eigensolve)?
+  The distinction matters for the audience's mental model — first
+  case is "smarter outer loop", second is "smarter eigensolver".
+- [ASK] Co-presenter to redline the chemistry-impact bullets and
+  fill in the [VERIFY] gaps before delivery.
+
+### See also
+
+- Branch: [`singles-doubles-extend`](https://github.com/hfwen0502/sbd/tree/singles-doubles-extend)
+- Variance test driver: [`python/examples/test_variance.py`](../python/examples/test_variance.py)
+- Per-iteration variance use in the SQD loop (if available) — the
+  [`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py)
+  driver is the natural place to demonstrate it. [VERIFY whether
+  current driver wires up the variance call.]
+
+---
+
+## Slide 5 — The HPC pain: build matrix and network fabrics
+
+**Title:** Why standing this up on a new cluster is harder than `pip install`
+**Subtitle:** Toolchain × MPI vendor × network fabric — every box is different
+
+### Body — the build matrix
+
+SBD has three backends. Each needs a different compiler.
+distutils only supports ONE `CXX` per `setup()` call, so the install
+takes **two pip invocations** to get everything:
+
+| Backend | Compiler | Use case |
+|---|---|---|
+| `_core_cpu`            | system `c++` (gcc / clang) | debugging, small problems, no GPU |
+| `_core_gpu` (Thrust)   | NVHPC `nvc++` (CUDA + Thrust) | production GPU on NVIDIA |
+| `_core_gpu_omp_nvidia` | LLVM `clang++` w/ NVPTX target | alternative GPU path |
+
+Plus a long tail of environment plumbing per box:
+
+- **GPU compute capability** must match hardware exactly. Default is
+  `sm_90` (Hopper); on Blackwell you need `sm_100`. Get this wrong and
+  the LLVM offload path silently host-falls-back with uninitialized
+  memory — your eigenvalue is wrong, your wallclock is meaningless,
+  and nothing errors. (We hit this. Cost: half a day.)
+- **MPI vendor** dictates launch flags. HPCX 4.1.x cannot init
+  `pml=ucx` inside a SLURM cgroup; you fall back to
+  `ob1 + smcuda + tcp`. Stock OpenMPI 5.x is fine. Spectrum MPI on LSF
+  needs `jsrun` and different binding semantics.
+- **mpi4py ABI** must match the runtime MPI. Pip-installed wheels
+  built against OpenMPI 5 segfault on HPCX 4. Source rebuild required.
+- **`LD_LIBRARY_PATH` ordering** for `libomp.so` — LLVM's lib must
+  precede NVHPC's, otherwise the wrong OpenMP runtime loads and
+  offload misbehaves.
+
+### Body — the network-fabric matrix
+
+Same SBD source code. Four representative clusters:
+
+| Cluster | Hardware | Fabric | Best comm backend | Why |
+|---|---|---|---|---|
+| coreweave GB200 (2 nodes) | 8× GB200, NVL4 + IB | **MNNVL** across nodes | `nccl` via P2P/MNNVL | NCCL routes cross-node over NVLink, not IB → 4.8× exch speedup over `cuda_mpi` |
+| 8× H100 (1 node)          | NVLink + NVSwitch + PCIe Gen5 | intra-node only | `nccl` or `cuda_mpi` (similar) | No MNNVL, no GPUDirect peermem on some boxes; comm dwarfed by compute |
+| IBM LSF / jsrun cluster   | Spectrum MPI + IB | IB + GDR | `cuda_mpi` (Spectrum is CUDA-aware) | jsrun launcher, IBM's MPI ABI; different launch / binding from SLURM |
+| Plain VM (no IB)          | single node, TCP only | none cross-node | `host_mpi` or `nccl` intra-node | No high-speed fabric; cross-node not viable |
+
+The same Fulqrum + SBD code reaches **188 s on 2-node GB200 with NCCL+MNNVL** but **264 s with cuda_mpi over TCP-staged IB** — the *fabric* choice, not the kernel, dominates.
+
+### What goes wrong if any of this is mis-set
+
+| Symptom | Root cause | Cost to find |
+|---|---|---|
+| Davidson reports `tol=0` at iter 0; energy looks like HF | gpu-omp built `sm_90`, hardware is `sm_100` → silent host fallback | hours |
+| `mpirun` prints `Executable: \` and dies | MPIRUN_OPTS heredoc preserves `\<NL>` literally inside `"..."` | half an hour |
+| All ranks pile onto GPU 0; other GPUs idle | wrapper used `SLURM_LOCALID` (alloc-wide) instead of `OMPI_MCA_orte_ess_node_rank` (per-task) | an hour |
+| `Requested node configuration is not available` | SLURM `DefMemPerCPU × cpus-per-task > RealMemory`; need explicit `--mem` | confusing, opaque |
+| `PML ucx cannot be selected` | HPCX 4.1.x can't init UCX inside SLURM cgroup | obvious once you know |
+
+These are real findings from one cluster's onboarding. A new cluster
+will surface a fresh set.
+
+### Speaker notes
+
+- This slide is the bridge. Don't dwell on individual rows. Spend
+  ~30 sec on the build-matrix table, ~30 sec on the fabric table, ~30
+  sec on the failure-mode table. The audience reaction you want is
+  *"so I'd have to figure all of that out per cluster"* — yes,
+  exactly, and the next slide is the answer.
+- The MNNVL → 4.8× exch number is a strong hook because it's a
+  cluster-architecture decision the chemist doesn't control, and it
+  changes which comm backend they should run.
+- The "fresh set per cluster" line is honest and important — the
+  agent doesn't know everything; it discovers per-cluster signatures
+  and grows the playbook. That sets up slide 6's framing of
+  "knowledge captured in `playbook/signatures.yaml`."
+
+### See also
+
+- Today's per-cell perf numbers, including the matvec breakdown that
+  shows the fabric impact directly →
+  [`FULQRUM_SBD_GB200_SCALING.md`](./FULQRUM_SBD_GB200_SCALING.md)
+
+---
+
+## Slide 6 — The sqd-onboard agent
+
+**Title:** Letting an agent absorb the HPC stack
+**Subtitle:** UCX, NCCL, MPI, fabric, launcher — discovered per cluster, not encoded in your head
+
+### Body — the framing
+
+Single-node SBD is mostly tractable: install NVHPC or LLVM, `pip install`,
+run `mpirun -np 4`. Cluster-vendor HPC stacks bite at **2+ nodes**, where
+choices compound:
+
+- **UCX** transport selection (`cuda_copy` / `cuda_ipc` / `rc` / `ud`)
+  and which transports the cluster actually exposes inside its cgroup.
+- **NCCL** version (≥ 2.23 needed for MNNVL) and which fabric it
+  picks (P2P over MNNVL vs IB+GDR vs sockets).
+- **MPI vendor** (HPCX vs OpenMPI 5 vs Spectrum) and the launcher
+  (`mpirun` vs `srun --mpi=pmix` vs `jsrun`), each with different
+  CUDA-aware semantics and binding behavior.
+- **GPU-pinning convention** (which env var the wrapper reads to pick
+  per-rank `CUDA_VISIBLE_DEVICES`) — different MPI implementations
+  expose different vars before MPI_Init.
+- **Fabric peculiarities** (MNNVL on GB200, GPUDirect peermem
+  loaded/missing on H100, no high-speed fabric on a VM) — pick the
+  wrong comm backend and you leave 1.4–4.8× on the table.
+
+A chemistry user shouldn't have to know any of this to run an SQD job.
+
+### What the agent does
+
+The `sqd-onboard` agent (separate repo) is a deployment helper. It
+walks the user's cluster, picks the right backend / launcher / fabric
+flags, builds the stack, validates correctness against a small
+reference (h2o), and emits ready-to-submit run scripts under
+`run/<solver>/<n>node/`. No HPC tuning needed from the chemist.
+
+When the agent encounters a failure mode it hasn't seen, the fix is
+captured as a **signature** in a shared playbook so the next user on
+that cluster — or a similar one — doesn't repeat the discovery.
+
+### Speaker notes
+
+- This slide is intentionally abstract. Don't tour features; just
+  land the message: the inherited HPC stack is real and complex, and
+  the agent absorbs it.
+- The 2+ node framing is the punchline. Most chemists run single-node
+  and don't feel this pain. The moment they want to scale to multi-
+  node — which is where SBD's perf headroom lives (188 s vs 304 s
+  going 1n→2n is the kind of number this slide implicitly justifies) —
+  the stack complexity hits.
+- If anyone asks "show me the agent," that's a backup-slide demo or a
+  follow-up conversation — not a 30-second slide answer.
+
+### See also
+
+- The `sqd-onboard` repository (separate) → contains the agent prompt,
+  the signature playbook capturing per-cluster failure modes, the
+  build/run script templates referenced above.
+
+---
+
+## Slide 7 — Backup
+
+### Install commands (full)
+
+```bash
+# CPU + Thrust GPU (NVHPC nvc++ on PATH)
+SBD_BUILD_BACKEND=both CC=nvc CXX=nvc++ \
+    pip install --no-build-isolation -e .
+
+# OMP-offload GPU (LLVM clang++ with NVPTX target on PATH; built separately
+# because it's incompatible with NVHPC's CXX in a single setup() call)
+SBD_BUILD_BACKEND=gpu_omp_nvidia \
+    pip install --no-build-isolation -e .
+
+# qiskit-addon-sqd MPI-aware fork (required for SBD inside the SQD loop)
+pip install git+https://github.com/hfwen0502/qiskit-addon-sqd@patch-ferminon-sbd
+```
+
+### Reference perf numbers
+
+→ [`FULQRUM_SBD_GB200_SCALING.md`](./FULQRUM_SBD_GB200_SCALING.md) §1
+"Combined view" has the wall-time + per-matvec breakdown for SBD
+(Thrust, OMP-offload) and Fulqrum (nccl, cuda_mpi, host_mpi) at 1n
+and 2n on coreweave GB200.
+
+### FAQ
+
+*(To be drafted closer to delivery — typical questions: how does
+SBD handle different (na, nb) electron counts; what symmetry sectors
+are supported; how is convergence reported; what's the carryover
+mechanism's effect on iteration count, etc.)*
+
+---
+
+*All slides drafted. Iterate / verify / refine before PowerPoint export.*
