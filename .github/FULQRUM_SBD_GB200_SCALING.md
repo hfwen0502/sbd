@@ -20,6 +20,35 @@ energy as a correctness check. Refreshed 2026-06-16 after Fulqrum's
 GPU-resident PRIMME path (`cublas_dprimme`) merged via PR #7
 (`aabb-csr-gpu-eig`).
 
+### Combined view — wall + per-iter breakdown (matched ~10 matvecs)
+
+Each Fulqrum cell shows the steady-state per-matvec breakdown
+(compute / exch / sync) below the wall; each SBD cell shows the
+Davidson sub-iter cost and the setup / final-mult split.
+
+| Backend | 4×GB200 (1 node) | 8×GB200 (2 nodes) | 1n→2n |
+|---|---|---|---|
+| **Fulqrum nccl**     | **221 s** — host PRIMME (INT32 forces it) <br> per-matvec: compute **7.66 s** · exch **1.34 s** · sync 34 ms | **118 s** — `cublas_dprimme` <br> per-matvec: compute **4.15 s** · exch **1.07 s** · sync 40 ms | 1.87× |
+| **Fulqrum cuda_mpi** | **219 s** — host PRIMME <br> per-matvec: compute **7.62 s** · exch **1.33 s** · sync 34 ms | **134 s** — `cublas_dprimme` <br> per-matvec: compute **6.40 s** · exch **3.30 s** · sync 40 ms | 1.63× |
+| **SBD Thrust**       | **577 s** <br> Davidson 555 s (≈ 55 s/sub-iter, 10 iters) · setup 33 s · final mult 55 s | **329 s** <br> Davidson 320 s (≈ 32 s/sub-iter) · setup 39 s · final mult 31 s | 1.75× |
+| **SBD OMP-offload**  | **491 s** <br> Davidson 437 s (≈ 44 s/sub-iter) · setup 38 s · final mult 35 s | **304 s** <br> Davidson 267 s (≈ 27 s/sub-iter) · setup 18 s · final mult 21 s | 1.62× |
+
+Energies:
+- Fulqrum 1n nccl/cuda_mpi → **−326.822567853744** (12-digit match across comm backends)
+- Fulqrum 2n nccl/cuda_mpi → **−326.822567851544** (12-digit match)
+- SBD all backends, 1n + 2n → **−326.821832430028** (bit-equal)
+
+The 0.0006 Ha gap is SBD's truncation of off-diagonal configurations
+on the same 27,901 half-strs.
+
+What the breakdown surfaces:
+
+- **2n nccl Fulqrum is the only cell that's actually compute-bound** — exch (1.07 s) fits inside compute (4.15 s), MNNVL P2P over NVLink rather than IB.
+- **2n cuda_mpi Fulqrum is exch-heavy** (3.30 s exch / 6.40 s compute) — cross-node Allgatherv host-stages through TCP because UCX cannot init in this cluster's SLURM cgroup. About half the matvec is communication.
+- **1n Fulqrum cells are equal across nccl/cuda_mpi** (~1.34 s exch either way) because there's no cross-node hop. The wallclock is dominated by ~36 % host PRIMME glue between matvecs, not the matvec itself.
+- **SBD's per-Davidson-sub-iter cost is ~5× larger than Fulqrum's per-matvec cost** at 2-node (32 s vs 4.15 s). SBD doesn't natively expose a per-iter compute/exch split — Davidson is one black-box sub-iter from `run_sbd_diag.py`'s perspective.
+- **SBD OMP-offload edges out Thrust at 2-node** (27 s/sub-iter vs 32 s/sub-iter); the historical "0.67× OMP regression" claim was an artifact of a silently-broken `sm_90`-on-`sm_100` build, not the path itself.
+
 ### Apples-to-apples vs SBD (matched ~10 matvecs)
 
 Fulqrum's `-r 3.9e-2` converges in 11 matvecs, comparable to SBD's
