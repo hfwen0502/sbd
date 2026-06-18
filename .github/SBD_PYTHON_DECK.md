@@ -441,9 +441,11 @@ configurations** at −326.821832430028. Backend choice doesn't move
 the eigenvalue — it moves the wallclock.
 
 **Reference for the audience**: this is the same workload Dice runs
-on CPU + MPI inside `qiskit-addon-sqd` today. Going from CPU+Dice to
-2-node GB200 SBD is a **5–10× wallclock reduction** (depending on
-your CPU baseline) — and the chemistry result is unchanged.
+on CPU + MPI inside `qiskit-addon-sqd` today. We haven't measured Dice
+on this exact configuration, so leave the speedup framing to the
+audience's own CPU baseline — what's solid is that the chemistry
+result (energy, RDMs) is unchanged, and the absolute wallclocks above
+are measured.
 
 ### How to choose
 
@@ -465,9 +467,11 @@ chemistry decision. Pick whichever your cluster ships with cleanly.
 
 - This slide is the headline perf moment. Lead with the table, not
   the decision tree.
-- The "5–10× vs Dice on CPU" line is the audience hook. Don't
-  over-claim — qualify with "depending on your CPU baseline" because
-  we don't have a measured Dice number on this exact workload.
+- We do NOT have a measured Dice number on this workload. Resist the
+  urge to quote a speedup-vs-Dice multiple from memory — the audience
+  knows their own CPU baseline and will fill that in. Stick to:
+  *"the absolute wallclocks above are measured; energies are
+  bit-equal across backends."* If asked, say so honestly.
 - The bit-equal-across-backends point is important: it's a
   correctness claim that earns the audience's trust before slide 4
   (where we ask them to consider new experimental features).
@@ -490,7 +494,7 @@ chemistry decision. Pick whichever your cluster ships with cleanly.
 
 ### Open questions
 
-- [ASK] Do we have any measured Dice CPU wallclock on a comparable workload (Fe4S4 27,901 α-dets, 10 Davidson sub-iters or equivalent) we could quote in place of *"5–10×"*? Even a rough number from a known box (e.g., a 96-core Xeon node) would tighten the pitch.
+- [ASK] If a measured Dice wallclock on Fe4S4 27,901 (10 Davidson sub-iters or equivalent) becomes available — even a single CPU number from a known box — we can add a Dice row to the perf table and have a real comparison. Until then, no speedup multiples are quoted; the slide stays at "energies bit-equal, absolute SBD wallclocks measured."
 
 ---
 

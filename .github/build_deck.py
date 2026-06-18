@@ -448,7 +448,7 @@ add_table(slide, Inches(0.5), Inches(4.05), Inches(12.3), Inches(1.7), [
 
 add_text_box(slide, Inches(0.5), Inches(5.95), Inches(12.3), Inches(1.0),
              ["All energies = −326.821832430028 (bit-equal across cpu / gpu / gpu-omp and 1n / 2n).",
-              "vs Dice on CPU + MPI on the same workload: ~5–10× wallclock reduction."],
+              "Backend choice doesn't move the eigenvalue — it moves the wallclock."],
              size=Pt(14), color=DIM)
 
 add_footer(slide, "Slide 7 — hardware story + perf")
