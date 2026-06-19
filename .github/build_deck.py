@@ -337,11 +337,16 @@ add_title(slide, "Same call shape, very different invocation",
 # Top: user-facing API
 add_text_box(slide, Inches(0.5), Inches(1.55), Inches(12.3), Inches(0.4),
              ["What the user calls"], size=Pt(16), color=DARK, bold_first=True)
-add_code_box(slide, Inches(0.5), Inches(1.95), Inches(12.3), Inches(1.2), [
-    "energy, sci_state = solve_fermion(bitstring_matrix, hcore, eri, spin_sq=0.0)        # Dice",
-    "energy, sci_state = solve_sci(ci_strings, h1e, h2e, norb=norb, nelec=nelec,         # SBD",
-    "                              device_config=DeviceConfig.gpu(), mpi_comm=MPI.COMM_WORLD)",
-], highlight_idx=[0, 1])
+add_code_box(slide, Inches(0.5), Inches(1.95), Inches(12.3), Inches(1.4), [
+    "# Dice  →  qiskit_addon_dice_solver.solve_fermion",
+    "energy, sci_state, occ = solve_fermion(bitstring_matrix, hcore, eri)",
+    "",
+    "# SBD   →  sbd.sbd_solver.solve_sci  (returns SCIResult)",
+    "result = solve_sci(ci_strings, one_body_tensor, two_body_tensor,",
+    "                   norb=norb, nelec=nelec,",
+    "                   mpi_comm=MPI.COMM_WORLD, device_config=DeviceConfig.gpu())",
+    "energy, sci_state = result.energy, result.sci_state",
+], highlight_idx=[1, 4, 7])
 
 # Bottom: side-by-side internals
 LEFT = Inches(0.5);  WIDTH = Inches(6.0)

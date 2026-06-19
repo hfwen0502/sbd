@@ -206,7 +206,7 @@ result_omp = sbd.tpb_diag(..., device='gpu-omp')  # alternative kernel
 
 # 3. Or pass it through DeviceConfig (the qiskit-addon-sqd path)
 from sbd.device_config import DeviceConfig
-energy, sci_state = solve_sci(..., device_config=DeviceConfig.gpu())
+result = solve_sci(..., device_config=DeviceConfig.gpu())   # returns SCIResult
 ```
 
 And from the command line — every shipped example script accepts
@@ -228,17 +228,18 @@ python run_sbd_diag.py --device gpu-omp   # LLVM offload path
 The user-facing API looks the same:
 
 ```python
-# Dice
+# Dice  →  qiskit_addon_dice_solver.solve_fermion  (returns 3-tuple)
 from qiskit_addon_dice_solver import solve_fermion
-energy, sci_state = solve_fermion(bitstring_matrix, hcore, eri, spin_sq=0.0)
+energy, sci_state, occ = solve_fermion(bitstring_matrix, hcore, eri)
 
-# SBD
+# SBD   →  sbd.sbd_solver.solve_sci  (returns SCIResult)
 from sbd.sbd_solver import solve_sci
 from sbd.device_config import DeviceConfig
-energy, sci_state = solve_sci(ci_strings, one_body_tensor, two_body_tensor,
-                              norb=norb, nelec=nelec,
-                              device_config=DeviceConfig.gpu(),
-                              mpi_comm=MPI.COMM_WORLD)
+result = solve_sci(ci_strings, one_body_tensor, two_body_tensor,
+                   norb=norb, nelec=nelec,
+                   mpi_comm=MPI.COMM_WORLD,
+                   device_config=DeviceConfig.gpu())
+energy, sci_state = result.energy, result.sci_state
 ```
 
 …but what the wrappers do internally is the real story.
@@ -422,7 +423,7 @@ All three are loaded at `import sbd` if their `.so` was built. Switch
 at call time:
 
 ```python
-energy, sci_state = solve_sci(..., device_config=DeviceConfig(device='gpu'))
+result = solve_sci(..., device_config=DeviceConfig(device='gpu'))   # returns SCIResult
 # or 'gpu-omp', or 'cpu' — same call shape, no rebuild
 ```
 
