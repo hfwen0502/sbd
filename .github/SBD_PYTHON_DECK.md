@@ -227,21 +227,30 @@ python run_sbd_diag.py --device gpu-omp   # LLVM offload path
 
 The user-facing API looks the same:
 
-```python
-# Dice  →  qiskit_addon_dice_solver.solve_fermion  (returns 3-tuple)
-from qiskit_addon_dice_solver import solve_fermion
-energy, sci_state, occ = solve_fermion(bitstring_matrix, hcore, eri)
+Both `qiskit_addon_dice_solver` and `sbd.sbd_solver` expose
+`solve_sci(...) -> SCIResult` with the same call shape. Same return
+type, same field unpack. The only difference is SBD's optional
+`device_config=` (Dice is CPU-only):
 
-# SBD   →  sbd.sbd_solver.solve_sci  (returns SCIResult)
-from sbd.sbd_solver import solve_sci
-from sbd.device_config import DeviceConfig
+```python
+# Dice  →  qiskit_addon_dice_solver.solve_sci   (returns SCIResult)
+from qiskit_addon_dice_solver import solve_sci   # (Dice's solve_sci)
 result = solve_sci(ci_strings, one_body_tensor, two_body_tensor,
-                   norb=norb, nelec=nelec,
-                   device_config=DeviceConfig.gpu())
+                   norb=norb, nelec=nelec)
+energy, sci_state, occ = result.energy, result.sci_state, result.orbital_occupancies
+
+# SBD   →  sbd.sbd_solver.solve_sci             (also returns SCIResult — same API shape)
+from sbd.sbd_solver import solve_sci as sbd_solve_sci   # alias to avoid name clash
+from sbd.device_config import DeviceConfig
+result = sbd_solve_sci(ci_strings, one_body_tensor, two_body_tensor,
+                       norb=norb, nelec=nelec,
+                       device_config=DeviceConfig.gpu())   # cpu | gpu | gpu-omp
 energy, sci_state, occ = result.energy, result.sci_state, result.orbital_occupancies
 #                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
-#                                                         (avg α-occ, avg β-occ) — same shape as Dice's occ
+#                                                         (avg α-occ, avg β-occ)
 ```
+
+Aside: Dice also has an older `solve_fermion(bitstring_matrix, hcore, eri)` that returns a plain 3-tuple — it predates the `SCIResult` dataclass. SBD only ships the `SCIResult` API; the slide above shows the apples-to-apples pairing.
 
 …but what the wrappers do internally is the real story.
 
