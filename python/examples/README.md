@@ -54,7 +54,7 @@ mpirun -np 4 python run_sqd_sbd.py \
 # H2O with example hardware bitstrings (FCIDUMP from ../../data/h2o/)
 mpirun -np 4 python run_sqd_sbd.py \
     --fcidump ../../data/h2o/fcidump.txt \
-    --counts count_dict_h2o.json \
+    --counts ../../data/h2o/count_dict.json \
     --device cpu \
     --adet_comm_size 2 --bdet_comm_size 2
 
@@ -80,8 +80,8 @@ the first `NORB` bits are alpha (spin-up) orbitals and the last `NORB` are beta
 }
 ```
 
-An example is provided at `count_dict_h2o.json` (matches `../../data/h2o/fcidump.txt`,
-NORB=24, 5α+5β electrons).
+An example is provided at [`../../data/h2o/count_dict.json`](../../data/h2o/count_dict.json)
+(matches [`../../data/h2o/fcidump.txt`](../../data/h2o/fcidump.txt), NORB=24, 5α+5β electrons).
 
 **Key options:** `--fcidump` (required), `--counts`, `--samples`,
 `--samples_per_batch`, `--num_batches`, `--max_iterations`, `--device`,
@@ -115,35 +115,18 @@ to the next batch sequentially. Within each diagonalization, ranks form a 3D gri
 `adet_comm_size × bdet_comm_size × task_comm_size = total ranks`. More batches
 increases wall time linearly but does not require more ranks.
 
-### 3. run_sqd_fulqrum.py — SQD Loop with Fulqrum Eigensolver
+### 3. run_sqd_sbd.ipynb — Jupyter walkthrough (serial)
 
-Alternative to `run_sqd_sbd.py` using [Fulqrum](https://github.com/qiskit-community/fulqrum)
-as the eigensolver instead of SBD. Single-process (no MPI), useful for comparison
-and smaller systems.
-
-```bash
-# H2O with example bitstrings
-python run_sqd_fulqrum.py \
-    --fcidump ../../data/h2o/fcidump.txt \
-    --counts count_dict_h2o.json
-
-# N2 with hardware bitstrings
-python run_sqd_fulqrum.py \
-    --fcidump /path/to/fcidump.txt \
-    --counts /path/to/count_dict.json
-```
-
-**Requirements:** `fulqrum`, `numpy`, `scipy`
-
-**RHEL 9 / Fedora note:** Fulqrum's C++ extensions crash on distros with
-`_GLIBCXX_ASSERTIONS` enabled by default. Rebuild with:
+Interactive single-rank companion to `run_sqd_sbd.py`. Same SQD self-
+consistent loop on h2o, but runs inside a Jupyter kernel
+(`MPI.COMM_WORLD` size 1). Uses uniform-random bitstrings + HF
+`initial_occupancies` as a self-contained demo. Converges to ~−76.19 Ha
+in a few seconds on CPU.
 
 ```bash
-CXXFLAGS='-O3 -std=c++17 -ffast-math -fopenmp -U_GLIBCXX_ASSERTIONS -DNDEBUG' \
-pip install -e . --no-build-isolation --force-reinstall --no-deps
+jupyter nbconvert --to notebook --execute --inplace run_sqd_sbd.ipynb
+# or open it in JupyterLab and step through the cells
 ```
-
-macOS and Ubuntu/Debian are not affected.
 
 ## MPI Decomposition
 

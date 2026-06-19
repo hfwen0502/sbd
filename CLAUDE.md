@@ -54,4 +54,4 @@ pip install -e . --no-build-isolation --force-reinstall --no-deps
 
 - **H2O:** `data/h2o/fcidump.txt` (NORB=24, NELEC=10, MS2=0), expected energy ≈ -76.236 Ha
 - **N2:** `data/n2/fcidump.txt` (NORB=60, NELEC=14), expected energy ≈ -109.042 Ha
-- **Example bitstrings:** `python/examples/count_dict_h2o.json`
+- **Example bitstrings:** `data/h2o/count_dict.json`

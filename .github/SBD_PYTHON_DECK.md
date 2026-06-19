@@ -330,7 +330,7 @@ eri   = ao2mo.restore(1, mf._eri, norb)
 
 # 2. Bitstrings — from quantum-measurement counts. count_dict_*.json
 #    files are bundled in python/examples/ for h2o, n2, fe4s4.
-counts  = json.load(open("python/examples/count_dict_h2o.json"))
+counts  = json.load(open("data/h2o/count_dict.json"))
 joined  = "".join(counts.keys())
 matrix  = (np.frombuffer(joined.encode(), dtype=np.uint8) == ord("1")).reshape(
               len(counts), -1)
@@ -372,10 +372,8 @@ conversion all stay in `qiskit-addon-sqd`.
   ~−76.19 Ha in ~10 s on CPU.
 → Full multi-rank driver: [`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py)
   (`mpirun -np N python …`)
-→ Bundled bitstring inputs:
-  [`count_dict_h2o.json`](../python/examples/count_dict_h2o.json) (24 orbitals),
-  [`count_dict_n2.json`](../python/examples/count_dict_n2.json) (60 orbitals),
-  [`count_dict_fe4s4.json`](../python/examples/count_dict_fe4s4.json) (36 orbitals)
+→ Bundled bitstring input: [`data/h2o/count_dict.json`](../data/h2o/count_dict.json)
+  (24 orbitals, hardware-style sample)
 
 ### Install
 
@@ -420,10 +418,8 @@ pip commands are in the **Backup** slide.
 - Standalone example → [`python/examples/run_sbd_diag.py`](../python/examples/run_sbd_diag.py)
 - SQD-with-SBD end-to-end example →
   [`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py)
-- Sample bitstring inputs (count_dict format) →
-  [`python/examples/count_dict_h2o.json`](../python/examples/count_dict_h2o.json),
-  [`count_dict_n2.json`](../python/examples/count_dict_n2.json),
-  [`count_dict_fe4s4.json`](../python/examples/count_dict_fe4s4.json)
+- Sample bitstring input (count_dict format) →
+  [`data/h2o/count_dict.json`](../data/h2o/count_dict.json)
 - MPI-aware `qiskit-addon-sqd` fork →
   https://github.com/hfwen0502/qiskit-addon-sqd/tree/patch-ferminon-sbd
 

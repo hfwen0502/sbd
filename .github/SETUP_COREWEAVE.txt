@@ -158,7 +158,7 @@ mpirun -np ${SLURM_NTASKS} \
     -x OMP_NUM_THREADS -x OPAL_PREFIX -x LD_LIBRARY_PATH -x PATH \
     python run_sqd_sbd.py \
         --fcidump ../../vendor/sbd-upstream/data/h2o/fcidump.txt \
-        --counts count_dict_h2o.json \
+        --counts ../../data/h2o/count_dict.json \
         --device gpu \
         --samples_per_batch 300 --num_batches 3 --max_iterations 3 \
         --adet_comm_size 4 --bdet_comm_size 2 \

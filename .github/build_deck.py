@@ -407,7 +407,7 @@ add_code_box(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(5.3), [
     "hcore, eri = mf.get_hcore(), ao2mo.restore(1, mf._eri, norb)",
     "",
     "# 2. Bitstrings — quantum-measurement counts → BitArray",
-    "counts = json.load(open('python/examples/count_dict_h2o.json'))",
+    "counts = json.load(open('data/h2o/count_dict.json'))",
     "bit_array = BitArray.from_bool_array(_decode_counts(counts))",
     "",
     "# 3. Wire SBD into qiskit-addon-sqd's sci_solver= slot",
