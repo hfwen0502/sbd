@@ -266,9 +266,15 @@ shutil.rmtree(dice_dir)   # clean up the temp dir
 
 ```python
 # In-process: route to the per-device pybind11 module and call C++ directly.
-def tpb_diag(fcidump, adet, bdet, sbd_data, ..., device=None):
-    backend = get_backend(device)              # _core_cpu / _core_gpu / _core_gpu_omp_nvidia
-    return backend.tpb_diag(fcidump, adet, bdet, sbd_data, ...)
+def tpb_diag(fcidump, adet, bdet, sbd_data,
+             loadname="", savename="", device=None):
+    _ensure_initialized()                       # MPI comm cached at module load
+    backend = get_backend(device)               # _core_cpu / _core_gpu / _core_gpu_omp_nvidia
+    return backend.tpb_diag(
+        _global_comm,                           # MPI communicator (passed explicitly)
+        sbd_data, fcidump, adet, bdet,
+        loadname, savename,
+    )                                           # pybind11 → C++ Davidson on this rank
 ```
 
 What this means at the SQD scale: **5 SQD iterations × N MPI ranks** =

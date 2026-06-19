@@ -373,18 +373,16 @@ add_code_box(slide, LEFT, Inches(3.7), WIDTH, Inches(3.2), [
 add_text_box(slide, RIGHT, Inches(3.3), RWIDTH, Inches(0.4),
              ["Inside SBD's wrapper"], size=Pt(16), color=PRIMARY, bold_first=True)
 add_code_box(slide, RIGHT, Inches(3.7), RWIDTH, Inches(3.2), [
-    "def tpb_diag(fcidump, adet, bdet,",
-    "             sbd_data, ..., device=None):",
-    "    backend = get_backend(device)",
+    "def tpb_diag(fcidump, adet, bdet, sbd_data,",
+    "             loadname='', savename='', device=None):",
+    "    _ensure_initialized()              # MPI comm cached",
+    "    backend = get_backend(device)      # cpu | gpu | gpu-omp",
     "    return backend.tpb_diag(",
-    "        fcidump, adet, bdet, sbd_data, ...)",
-    "",
-    "# That's it.",
-    "# pybind11 dispatches into",
-    "# _core_cpu / _core_gpu / _core_gpu_omp_nvidia",
-    "# in this Python process,",
-    "# on this MPI rank, on this GPU.",
-], highlight_idx=[2, 3], size=Pt(13))
+    "        _global_comm,                  # MPI communicator",
+    "        sbd_data, fcidump, adet, bdet,",
+    "        loadname, savename,",
+    "    )                                  # pybind11 → C++",
+], highlight_idx=[3, 5], size=Pt(13))
 
 add_footer(slide, "Slide 5 — under-the-hood contrast")
 
