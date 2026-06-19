@@ -237,9 +237,10 @@ from sbd.sbd_solver import solve_sci
 from sbd.device_config import DeviceConfig
 result = solve_sci(ci_strings, one_body_tensor, two_body_tensor,
                    norb=norb, nelec=nelec,
-                   mpi_comm=MPI.COMM_WORLD,
                    device_config=DeviceConfig.gpu())
-energy, sci_state = result.energy, result.sci_state
+energy, sci_state, occ = result.energy, result.sci_state, result.orbital_occupancies
+#                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+#                                                         (avg α-occ, avg β-occ) — same shape as Dice's occ
 ```
 
 …but what the wrappers do internally is the real story.

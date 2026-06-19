@@ -337,16 +337,17 @@ add_title(slide, "Same call shape, very different invocation",
 # Top: user-facing API
 add_text_box(slide, Inches(0.5), Inches(1.55), Inches(12.3), Inches(0.4),
              ["What the user calls"], size=Pt(16), color=DARK, bold_first=True)
-add_code_box(slide, Inches(0.5), Inches(1.95), Inches(12.3), Inches(1.4), [
-    "# Dice  →  qiskit_addon_dice_solver.solve_fermion",
+add_code_box(slide, Inches(0.5), Inches(1.95), Inches(12.3), Inches(1.6), [
+    "# Dice  →  qiskit_addon_dice_solver.solve_fermion  (returns 3-tuple)",
     "energy, sci_state, occ = solve_fermion(bitstring_matrix, hcore, eri)",
     "",
     "# SBD   →  sbd.sbd_solver.solve_sci  (returns SCIResult; auto-init, mpi_comm defaults to COMM_WORLD)",
     "result = solve_sci(ci_strings, one_body_tensor, two_body_tensor,",
-    "                   norb=norb, nelec=nelec,",
-    "                   device_config=DeviceConfig.gpu())",
-    "energy, sci_state = result.energy, result.sci_state",
-], highlight_idx=[1, 4, 7])
+    "                   norb=norb, nelec=nelec, device_config=DeviceConfig.gpu())",
+    "energy, sci_state, occ = result.energy, result.sci_state, result.orbital_occupancies",
+    "#                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^",
+    "#                                                         (avg α-occ, avg β-occ) — same shape as Dice's `occ`",
+], highlight_idx=[1, 6])
 
 # Bottom: side-by-side internals
 LEFT = Inches(0.5);  WIDTH = Inches(6.0)
