@@ -341,10 +341,10 @@ add_code_box(slide, Inches(0.5), Inches(1.95), Inches(12.3), Inches(1.4), [
     "# Dice  →  qiskit_addon_dice_solver.solve_fermion",
     "energy, sci_state, occ = solve_fermion(bitstring_matrix, hcore, eri)",
     "",
-    "# SBD   →  sbd.sbd_solver.solve_sci  (returns SCIResult)",
+    "# SBD   →  sbd.sbd_solver.solve_sci  (returns SCIResult; auto-init, mpi_comm defaults to COMM_WORLD)",
     "result = solve_sci(ci_strings, one_body_tensor, two_body_tensor,",
     "                   norb=norb, nelec=nelec,",
-    "                   mpi_comm=MPI.COMM_WORLD, device_config=DeviceConfig.gpu())",
+    "                   device_config=DeviceConfig.gpu())",
     "energy, sci_state = result.energy, result.sci_state",
 ], highlight_idx=[1, 4, 7])
 
@@ -404,12 +404,12 @@ add_code_box(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(5.3), [
     "bit_array = BitArray.from_bool_array(_decode_counts(counts))",
     "",
     "# 3. Wire SBD into qiskit-addon-sqd's sci_solver= slot",
-    "sbd.init(device='gpu')",
+    "#    (no sbd.init() / mpi_comm needed: solve_sci_batch auto-inits",
+    "#     and falls back to MPI.COMM_WORLD when mpi_comm is omitted)",
     "sbd_solver = partial(",
     "    solve_sci_batch,",
-    "    mpi_comm = MPI.COMM_WORLD,",
     "    sbd_config = {'method': 0, 'max_it': 100, 'max_nb': 50, ...},",
-    "    device_config = DeviceConfig.gpu(),",
+    "    device_config = DeviceConfig.gpu(),       # or .cpu() / .gpu_omp()",
     "    fcidump_path = 'data/h2o/fcidump.txt',",
     ")",
     "",
@@ -420,7 +420,7 @@ add_code_box(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(5.3), [
     "    samples_per_batch=300, num_batches=3, max_iterations=5,",
     "    sci_solver=sbd_solver,    # ← SBD plugs in here",
     ")",
-], highlight_idx=[6, 9, 10, 23], size=Pt(13))
+], highlight_idx=[6, 12, 23], size=Pt(13))
 
 add_footer(slide, "Slide 6 — SQD-with-SBD example (full driver: python/examples/run_sqd_sbd.py)")
 

@@ -323,13 +323,14 @@ matrix  = np.repeat(matrix, list(counts.values()), axis=0)
 bit_array = BitArray.from_bool_array(matrix)
 
 # 3. Wire SBD into qiskit-addon-sqd's `sci_solver=` slot
-sbd.init(device='gpu')
+#    No sbd.init() and no mpi_comm needed — solve_sci_batch
+#    auto-initializes the SBD backend on first call and falls back
+#    to MPI.COMM_WORLD when mpi_comm is omitted.
 sbd_solver = partial(
     solve_sci_batch,
-    mpi_comm    = MPI.COMM_WORLD,
     sbd_config  = {"method": 0, "max_it": 100, "max_nb": 50,
                    "carryover_type": 1, "ratio": 0.1, "threshold": 1e-4},
-    device_config = DeviceConfig.gpu(),
+    device_config = DeviceConfig.gpu(),         # or .cpu() / .gpu_omp()
     fcidump_path  = "data/h2o/fcidump.txt",
 )
 
