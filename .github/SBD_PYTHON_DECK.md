@@ -92,6 +92,11 @@ is bits-per-chunk. Raise `bit_length` for larger systems.
 | Python wrapper (fork with `python/` bindings + tooling) | https://github.com/hfwen0502/sbd |
 | Patched `qiskit-addon-sqd` (MPI-aware solver hook) | https://github.com/hfwen0502/qiskit-addon-sqd (branch: `patch-ferminon-sbd`) |
 
+▶ **Quick start (chemist-friendly):**
+[`python/examples/run_sqd_sbd.ipynb`](../python/examples/run_sqd_sbd.ipynb) —
+self-contained Jupyter walkthrough on h2o (300 random samples, 1 batch, 2 SQD iters,
+converges to ~−76.19 Ha in ~10 s on CPU).
+
 ### Speaker notes
 
 - Open by recognizing the audience knows Dice. "If you already do SQD with Dice, this slide is the one-glance answer to 'what changes if I switch'."
@@ -361,7 +366,12 @@ only the `sci_solver=` callable changes. The SQD outer loop, the
 configuration-recovery step, and the bitstring-to-determinant
 conversion all stay in `qiskit-addon-sqd`.
 
-→ Full driver: [`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py)
+→ **Interactive notebook (chemist-friendly start):**
+  [`python/examples/run_sqd_sbd.ipynb`](../python/examples/run_sqd_sbd.ipynb)
+  — h2o, 300 random samples + HF init, 1 batch, 2 SQD iters,
+  ~−76.19 Ha in ~10 s on CPU.
+→ Full multi-rank driver: [`python/examples/run_sqd_sbd.py`](../python/examples/run_sqd_sbd.py)
+  (`mpirun -np N python …`)
 → Bundled bitstring inputs:
   [`count_dict_h2o.json`](../python/examples/count_dict_h2o.json) (24 orbitals),
   [`count_dict_n2.json`](../python/examples/count_dict_n2.json) (60 orbitals),
@@ -516,10 +526,15 @@ chemistry decision. Pick whichever your cluster ships with cleanly.
 
 ---
 
-## Slide 4 — Roadmap (main vs experimental branch)
+## Slide 4 — SBD as a GPU-accelerated SCI driver
 
-**Title:** Roadmap — `main` vs `singles-doubles-extend`
-**Subtitle:** *Co-presenter slide* — chemistry interpretation by [domain expert]
+**Title:** SBD as a GPU-accelerated SCI driver
+**Subtitle:** Adaptive SCI features on `singles-doubles-extend` · *co-presenter handles chemistry interpretation*
+
+The features below are the algorithmic ingredients that turn SBD
+from "the diagonalize step inside SQD" into a usable backend for
+**classical selected CI** workflows — same hardware envelope (NVIDIA
+GPU + MPI), without depending on a quantum-sampling outer loop.
 
 ### Where stable vs experimental code lives
 
@@ -543,11 +558,13 @@ need direct edits to SBD's C++ source.
 Three new capabilities on the experimental branch, exposed via new
 `--carryover_type` values and an `--iteration 0` mode.
 
-#### 1. Singles + Doubles subspace expansion (`--carryover_type 4-8`)
+#### 1. Singles + Doubles subspace expansion (`--carryover_type 4-6`)
 
-Expand the SBD-selected basis with single + double excitations from
-selected determinants. Existing types 1–3 already extend with
-**singles only**; new types 4–6 add **same-spin doubles** on top.
+Expand the SBD-selected basis with single + same-spin double
+excitations from selected determinants. **Equivalent to keeping all
+determinants within Hamming distance ≤ 2 of each seed.** Existing
+types 1–3 already extend with singles only; types 4–6 add the same-
+spin doubles.
 
 | Type | Selection           | Extension            |
 |------|---------------------|----------------------|
@@ -556,13 +573,16 @@ selected determinants. Existing types 1–3 already extend with
 | 6    | None (all dets)     | Singles + Doubles    |
 
 For an n-occupied / m-virtual half-determinant, brute-force S+D adds
-n·m + C(n,2)·C(m,2) excitations — quickly explosive.
+n·m + C(n,2)·C(m,2) excitations per seed — quickly explosive without
+filtering. Type 4 is the practical default (only seed from
+amplitude-significant dets).
 
-#### 2. ERI-screened S+D (`--carryover_type 7-8`)
+#### 2. ERI-screened S+D (`--carryover_type 7-8`) — HCI-flavor selection
 
-Same S+D expansion, but **filter by Hamiltonian integral magnitude**:
-keep an excitation only if its Fock-element (singles) or
-antisymmetrized 2e-integral (doubles) exceeds `--eri_threshold`.
+Same S+D expansion, but **filter by Hamiltonian integral magnitude**
+— the heat-bath-CI / SHCI selection idea. Keep an excitation only if
+its Fock-element (singles) or antisymmetrized 2e-integral (doubles)
+exceeds `--eri_threshold`.
 
 | Type | Selection | Extension       |
 |------|-----------|-----------------|

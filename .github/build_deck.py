@@ -216,9 +216,13 @@ add_table(slide, Inches(0.5), Inches(4.95), Inches(12.3), Inches(1.5), [
     ("Patched qiskit-addon-sqd (MPI-aware solver hook)", "github.com/hfwen0502/qiskit-addon-sqd  (branch: patch-ferminon-sbd)"),
 ])
 
-add_text_box(slide, Inches(0.5), Inches(6.55), Inches(12.3), Inches(0.4),
+add_text_box(slide, Inches(0.5), Inches(6.55), Inches(12.3), Inches(0.35),
+             ["▶  Quick start (chemist-friendly):  python/examples/run_sqd_sbd.ipynb"],
+             size=Pt(13), color=PRIMARY, bold_first=True)
+
+add_text_box(slide, Inches(0.5), Inches(6.95), Inches(12.3), Inches(0.35),
              ["Same FCIDUMP input, same RDM outputs, same role in the SQD loop. Process model and hardware envelope are what change."],
-             size=Pt(13), color=DIM)
+             size=Pt(12), color=DIM)
 
 add_footer(slide, "Slide 2 — positioning")
 
@@ -425,7 +429,13 @@ add_code_box(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(5.3), [
     ")",
 ], highlight_idx=[6, 12, 23], size=Pt(13))
 
-add_footer(slide, "Slide 6 — SQD-with-SBD example (full driver: python/examples/run_sqd_sbd.py)")
+# Quick-start callout — point readers at the runnable notebook
+add_text_box(slide, Inches(0.5), Inches(6.95), Inches(12.3), Inches(0.4),
+             ["▶  Try it interactively:  python/examples/run_sqd_sbd.ipynb     "
+              "(serial Jupyter — converges to ~−76.19 Ha on h2o in ~10 s on CPU)"],
+             size=Pt(13), color=PRIMARY, bold_first=True)
+
+add_footer(slide, "Slide 6 — SQD-with-SBD recipe  ·  driver: python/examples/run_sqd_sbd.py  ·  notebook: run_sqd_sbd.ipynb")
 
 
 # =============================================================================
@@ -464,8 +474,8 @@ add_footer(slide, "Slide 7 — hardware story + perf")
 # Slide 8 — Roadmap (co-presenter slide)
 # =============================================================================
 slide = prs.slides.add_slide(BLANK)
-add_title(slide, "Roadmap — main vs singles-doubles-extend",
-          "Co-presenter slide: chemistry interpretation by [domain expert]")
+add_title(slide, "SBD as a GPU-accelerated SCI driver",
+          "Adaptive SCI features on the singles-doubles-extend branch · co-presenter handles chemistry interpretation")
 
 # Branch ribbon — note SBD C++ is a submodule on main, embedded on the experimental branch
 add_table(slide, Inches(0.5), Inches(1.45), Inches(12.3), Inches(1.1), [
@@ -483,15 +493,15 @@ add_text_box(slide, Inches(0.5), Inches(3.0), Inches(12.3), Inches(0.4),
 
 add_text_box(slide, Inches(0.5), Inches(3.4), Inches(12.3), Inches(1.9),
              ["1.  Singles + Doubles subspace expansion  (--carryover_type 4–6)",
-              "      Brute-force: extend selected dets with same-spin double excitations.",
+              "      Brute-force: extend selected dets with single + same-spin double excitations.",
+              "      ≡ Hamming distance ≤ 2 from each seed determinant.",
               "",
-              "2.  ERI-screened S+D  (--carryover_type 7–8, --eri_threshold)",
-              "      Keep only excitations with significant Hamiltonian coupling.",
+              "2.  ERI-screened S+D  (--carryover_type 7–8, --eri_threshold)  — HCI-flavor selection",
+              "      Keep only excitations whose Hamiltonian coupling exceeds threshold.",
               "      Typically 20–50% of brute-force S+D, retaining the physically important excitations.",
               "",
               "3.  Variance-only mode  (--iteration 0)  +  TrimSQD (adaptive pruning)",
-              "      Compute σ² = ⟨Hψ|Hψ⟩/‖ψ‖² − E² without diagonalizing.",
-              "      Two-step workflow: expand → diagonalize → variance-in-expanded → repeat → σ² → 0",
+              "      σ² = ⟨Hψ|Hψ⟩/‖ψ‖² − E² without diagonalizing.  Two-step expand → diagonalize → variance → repeat → σ² → 0.",
              ],
              size=Pt(12))
 
