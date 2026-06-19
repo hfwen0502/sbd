@@ -156,15 +156,15 @@ def main():
         print()
 
     # --- Initialize SBD ---
-    import sbd
+    # solve_sci_batch auto-initializes the SBD backend on first call and
+    # falls back to MPI.COMM_WORLD when mpi_comm is not provided, so no
+    # explicit sbd.init() / mpi_comm threading is needed in user code.
     from sbd.sbd_solver import solve_sci_batch
     from sbd.device_config import DeviceConfig, print_device_info
 
     device_str = args.device
     if device_str == "auto":
         device_str = "gpu" if DeviceConfig._check_cuda() else "cpu"
-
-    sbd.init(device=device_str)
 
     if rank == 0:
         print_device_info()
@@ -221,7 +221,6 @@ def main():
 
     sbd_solver = partial(
         solve_sci_batch,
-        mpi_comm=comm,
         sbd_config=sbd_config,
         device_config=device_config,
         temp_dir=args.temp_dir,
@@ -305,6 +304,7 @@ def main():
                       f"avg={np.mean(energies):.10f}")
 
     try:
+        import sbd
         sbd.finalize()
     except Exception:
         pass
