@@ -36,8 +36,8 @@ class DeviceConfig:
 
         Args:
             device: Backend device key — 'cpu', 'gpu' (NVHPC Thrust),
-                'gpu-nvidia-omp' (clang OpenMP-offload, NVIDIA), or any
-                alias known to ``sbd._device_aliases``. Default 'cpu'.
+                'gpu-omp' (nvc++ OpenMP target offload), or any alias
+                known to ``sbd._device_aliases``. Default 'cpu'.
             use_precalculated_dets: Use precalculated determinants (GPU only)
             max_memory_gb: Maximum GPU memory in GB (-1 = auto)
             use_gpu: Deprecated boolean. If supplied without ``device``,
@@ -96,23 +96,33 @@ class DeviceConfig:
 
     @classmethod
     def gpu_omp(cls, max_memory_gb: int = -1) -> 'DeviceConfig':
-        """Force OpenMP-offload GPU execution (NVIDIA).
+        """Force OpenMP target-offload GPU execution.
 
         Requires SBD compiled with the OMP-offload backend (the
-        ``_core_gpu_omp_nvidia`` extension, i.e.
-        ``SBD_BUILD_BACKEND=gpu_omp_nvidia``). Alias for
-        :meth:`gpu_nvidia_omp`.
+        ``_core_gpu_omp_offload`` extension, i.e.
+        ``SBD_BUILD_BACKEND=gpu_omp_offload``). The backend uses
+        ``nvc++ -mp=gpu`` with NVHPC's ``libnvomp`` runtime; it cannot
+        coexist in a single Python process with the CPU or Thrust GPU
+        backends (different OpenMP runtimes — install separately).
         """
-        return cls.gpu_nvidia_omp(max_memory_gb=max_memory_gb)
+        return cls(device='gpu-omp', max_memory_gb=max_memory_gb)
 
     @classmethod
     def gpu_nvidia_omp(cls, max_memory_gb: int = -1) -> 'DeviceConfig':
-        """Force OpenMP-offload GPU execution on NVIDIA hardware.
+        """Deprecated alias for :meth:`gpu_omp`.
 
-        See :meth:`gpu_omp` for details. Use this name when you want to
-        be explicit (e.g. when AMD OMP-offload is also configured).
+        The old name dates from when SBD shipped a LLVM-with-NVPTX
+        offload backend distinct from the nvc++ path. The LLVM backend
+        was removed in v1.6 (see tag ``v1.5.0-llvm`` for that history);
+        ``gpu_omp`` is the single OpenMP-offload path now.
         """
-        return cls(device='gpu-nvidia-omp', max_memory_gb=max_memory_gb)
+        import warnings
+        warnings.warn(
+            "DeviceConfig.gpu_nvidia_omp() is a deprecated alias for "
+            "gpu_omp(); use gpu_omp() directly.",
+            DeprecationWarning, stacklevel=2,
+        )
+        return cls.gpu_omp(max_memory_gb=max_memory_gb)
     
     # Cached detection results (None = not yet checked)
     _cuda_cache: bool | None = None

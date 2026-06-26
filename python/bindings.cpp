@@ -2,9 +2,10 @@
  * @file python/bindings.cpp
  * @brief Python bindings for SBD TPB diagonalization using pybind11
  *
- * This file is compiled twice with different module names:
- * - _core_cpu: CPU backend
- * - _core_gpu: GPU backend (with -DSBD_THRUST)
+ * This file is compiled three times with different module names + flags:
+ * - _core_cpu                : CPU backend (host OpenMP via -fopenmp)
+ * - _core_gpu_thrust         : Thrust GPU backend  (with -DSBD_THRUST,    nvc++ -cuda)
+ * - _core_gpu_omp_offload    : OpenMP-offload GPU  (with -DUSE_OMP_OFFLOAD, nvc++ -mp=gpu)
  *
  * The module name is controlled by the SBD_MODULE_NAME macro.
  */
@@ -41,7 +42,8 @@ MPI_Comm get_mpi_comm(py::object py_comm) {
     return *comm_ptr;
 }
 
-// Module name is set by compiler flag -DSBD_MODULE_NAME=_core_cpu or _core_gpu
+// Module name is set by compiler flag, e.g.
+//   -DSBD_MODULE_NAME=_core_cpu | _core_gpu_thrust | _core_gpu_omp_offload
 #ifndef SBD_MODULE_NAME
 #define SBD_MODULE_NAME _core
 #endif

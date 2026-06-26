@@ -66,22 +66,20 @@ export CXXFLAGS=''
 # cc100 for GB200/Blackwell, sm_80 for A100, etc.
 export SBD_GPU_ARCH_NVIDIA=cc100
 
-# OpenMP-offload GPU backend (optional, requires LLVM/clang trunk
-# with the offload runtime built — see .github/SETUP_LLVM_OFFLOAD.txt).
-# Auto-detected from LLVM_HOME if set; only built when invoked
-# explicitly with SBD_BUILD_BACKEND=gpu_omp_nvidia.
-export LLVM_HOME=/path/to/llvm-offload
-# Override the clang --offload-arch=<arch> flag (default sm_90).
-# sm_100 for GB200/Blackwell, sm_80 for A100, gfx90a for AMD MI200, etc.
-export SBD_OFFLOAD_ARCH_NVIDIA=sm_100
+# OpenMP target-offload GPU backend (built with the same nvc++ as the
+# Thrust path — no extra LLVM/clang prereq). Built only when invoked
+# explicitly with SBD_BUILD_BACKEND=gpu_omp_offload (it cannot coexist
+# in a single Python process with cpu/Thrust due to OMP runtime conflict).
+# Override the nvc++ -gpu=<arch> flag for offload (default cc90 for H100).
+# cc100 for GB200/Blackwell, cc80 for A100, etc. nvc++ accepts cc<XX>;
+# sm_<XX> also works in recent NVHPC but cc<XX> is the documented form.
+export SBD_OFFLOAD_ARCH=cc100
 ```
 
 ### Build
 
-Three backends are available; one `SBD_BUILD_BACKEND` mode per `pip
-install` invocation. Their `_core_*.so` files coexist, so users who
-want multiple backends just run `pip install` again with a different
-mode.
+Three backends are available. CPU + Thrust GPU coexist in one install;
+OMP-offload is built ALONE (different OpenMP runtime — see note below).
 
 ```bash
 # Auto-detect: builds CPU always, plus NVHPC Thrust GPU if NVHPC found
@@ -89,45 +87,42 @@ pip install -e . --no-build-isolation
 
 # Explicit modes
 SBD_BUILD_BACKEND=cpu                pip install -e . --no-build-isolation
-SBD_BUILD_BACKEND=gpu                pip install -e . --no-build-isolation  # NVHPC Thrust
+SBD_BUILD_BACKEND=gpu                pip install -e . --no-build-isolation  # NVHPC Thrust (alias gpu_thrust)
 SBD_BUILD_BACKEND=both               pip install -e . --no-build-isolation  # CPU + Thrust
-SBD_BUILD_BACKEND=gpu_omp_nvidia     pip install -e . --no-build-isolation  # OpenMP-offload, NVIDIA
+SBD_BUILD_BACKEND=gpu_omp_offload    pip install -e . --no-build-isolation  # nvc++ OpenMP target offload
 ```
 
 | Backend | Module | Compiler | Macros | Device strings |
 |---|---|---|---|---|
 | CPU OpenMP host | `_core_cpu` | gcc/clang | `-fopenmp` (host) | `'cpu'` |
-| NVIDIA Thrust | `_core_gpu` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=$SBD_GPU_ARCH_NVIDIA` | `'gpu'`, `'gpu-nvidia'`, `'cuda'` |
-| NVIDIA OpenMP-offload | `_core_gpu_omp_nvidia` | LLVM clang++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -fopenmp-targets=nvptx64-nvidia-cuda --offload-arch=$SBD_OFFLOAD_ARCH_NVIDIA` | `'gpu-omp'`, `'gpu-nvidia-omp'` |
+| NVIDIA Thrust | `_core_gpu_thrust` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=$SBD_GPU_ARCH_NVIDIA` | `'gpu'`, `'gpu-thrust'`, `'gpu-nvidia'`, `'cuda'` |
+| NVIDIA OpenMP-offload | `_core_gpu_omp_offload` | NVHPC nvc++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -mp=gpu -gpu=$SBD_OFFLOAD_ARCH` | `'gpu-omp'`, `'gpu-omp-offload'`, `'gpu-nvhpc-omp'`, `'gpu-nvidia-omp'` |
 
-**`SBD_BUILD_BACKEND=gpu_omp_nvidia` must be invoked alone** (not
-combined with `cpu` / `gpu` / `both`) because clang, gcc, and nvc++
-can't share a single distutils `CC`/`CXX` setting. The setup runs
-ignoring `auto`'s preferences when this mode is set, builds only
-`_core_gpu_omp_nvidia.so`, and leaves any pre-existing `_core_cpu.so`
-or `_core_gpu.so` untouched. Requires `LLVM_HOME` pointing at an LLVM
-trunk install with the offload runtime built — see
-[SETUP_LLVM_OFFLOAD.txt](SETUP_LLVM_OFFLOAD.txt).
+**`SBD_BUILD_BACKEND=gpu_omp_offload` must be invoked alone** (not
+combined with `cpu` / `gpu` / `both`) because the resulting `.so`
+loads NVHPC's `libnvomp` OpenMP runtime, while the CPU backend uses
+libgomp/libomp and Thrust uses CPU-side OMP via `-mp` (also linked
+through NVHPC but to a different libomp surface). Co-loading two
+backends with different OpenMP runtimes in one Python process produces
+the "Another OpenMP runtime library has been detected" warning and can
+deadlock at first OMP region. Install OMP-offload into its own venv /
+install directory if you also need CPU or Thrust.
 
-**Other GPU backends not exposed via `setup.py`:** the bindings
-themselves are GPU-path-agnostic — `bindings.cpp` just wraps the
-templated SBD API, and the underlying library picks between Thrust
-and OpenMP-offload kernels via `-D` macros at compile time. Adding an
-AMD OMP-offload backend (`_core_gpu_omp_amd`) would mean cloning the
-`build_gpu_omp_nvidia` block in `setup.py`, renaming the `Extension`
-and `-DSBD_MODULE_NAME`, and swapping `-fopenmp-targets` /
-`--offload-arch` to `amdgcn-amd-amdhsa` / `gfxXXX` per upstream's
-`vendor/sbd-upstream/apps/.../Configuration` AMD example. We don't
-ship that today; happy to revisit when AMD hardware is in our test
-loop.
+**Reverting to the LLVM/clang offload path:** prior versions of this
+repo supported a separate `_core_gpu_omp_nvidia` backend built with
+LLVM-with-NVPTX clang. That path was removed in v1.6 to reduce the
+software prereq surface (LLVM trunk had to be source-built, NVHPC's
+nvc++ does not). The tag `v1.5.0-llvm` preserves the last revision
+with that backend; check it out and follow the `SETUP_LLVM_OFFLOAD.txt`
+recipe there if you need the clang path back.
 
 ### Verify
 
 ```bash
 python -c "import sbd; print(sbd.available_backends())"
-# CPU only:                                 ['cpu']
-# CPU + NVHPC Thrust:                       ['cpu', 'gpu']
-# CPU + NVHPC Thrust + OMP-offload NVIDIA:  ['cpu', 'gpu', 'gpu-nvidia-omp']
+# CPU only:                       ['cpu']
+# CPU + NVHPC Thrust:             ['cpu', 'gpu']
+# OMP-offload-only install:       ['gpu-omp']
 ```
 
 ## Usage
@@ -156,21 +151,23 @@ sbd.finalize()
 
 ### Runtime backend switching
 
-Whichever backends were built coexist as separate `_core_*.so` modules
-and load at `import sbd` into independent pybind11 namespaces. Pick
-one per call with the `device` parameter:
+Compatible backends coexist as separate `_core_*.so` modules and load
+at `import sbd` into independent pybind11 namespaces. CPU + Thrust GPU
+can co-load; the OMP-offload backend cannot (different OpenMP runtime —
+see the build section). Pick one per call with the `device` parameter:
 
 ```python
 import sbd
 
 # All compiled backends are auto-loaded
 sbd.available_backends()
-# e.g. ['cpu', 'gpu', 'gpu-nvidia-omp']
+# CPU + Thrust install:         ['cpu', 'gpu']
+# OMP-offload-only install:     ['gpu-omp']
 
 # Per-call override — auto-initializes on first use
 result_cpu     = sbd.tpb_diag(..., device='cpu')
-result_thrust  = sbd.tpb_diag(..., device='gpu')         # alias 'gpu-nvidia', 'cuda'
-result_omp     = sbd.tpb_diag(..., device='gpu-omp')     # alias 'gpu-nvidia-omp'
+result_thrust  = sbd.tpb_diag(..., device='gpu')         # alias 'gpu-thrust', 'gpu-nvidia', 'cuda'
+result_omp     = sbd.tpb_diag(..., device='gpu-omp')     # alias 'gpu-omp-offload', 'gpu-nvhpc-omp'
 
 # Or set a default device explicitly (optional)
 sbd.init(device='gpu')      # default = NVHPC Thrust

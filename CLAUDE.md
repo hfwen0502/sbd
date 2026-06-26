@@ -26,10 +26,15 @@ SBD_BUILD_BACKEND=both CC=nvc CXX=nvc++ CFLAGS='' CXXFLAGS='' \
 
 ## Architecture
 
-- **Eager backend loading:** Both `_core_cpu.so` and `_core_gpu.so` loaded at `import sbd` into `_backends` dict
-- **`py::module_local()`** in `bindings.cpp` prevents pybind11 type registry collision when both backends coexist
+- **Three backend modules** (since v1.6):
+  - `_core_cpu` — host OpenMP, built with gcc/clang
+  - `_core_gpu_thrust` — NVHPC nvc++ `-cuda` Thrust path
+  - `_core_gpu_omp_offload` — NVHPC nvc++ `-mp=gpu` OpenMP target offload
+  (LLVM-with-NVPTX `_core_gpu_omp_nvidia` was removed in v1.6; tag `v1.5.0-llvm` preserves it.)
+- **Eager backend loading**: `_core_cpu.so` + `_core_gpu_thrust.so` coexist in one process; `_core_gpu_omp_offload.so` must be installed alone (different OpenMP runtime — libnvomp vs libgomp/libomp — deadlocks on co-load).
+- **`py::module_local()`** in `bindings.cpp` prevents pybind11 type registry collision when CPU + Thrust coexist.
 - **Lazy init:** `sbd.init()` is optional — auto-called on first API use with `device='auto'`
-- **Per-call device switching:** `sbd.tpb_diag(..., device='gpu')` overrides default without re-init
+- **Per-call device switching:** `sbd.tpb_diag(..., device='gpu')` (Thrust) or `device='gpu-omp'` (offload) overrides default without re-init
 - **MPI decomposition:** Total ranks = `task_comm_size × adet_comm_size × bdet_comm_size`
 
 ## Key Design Decisions

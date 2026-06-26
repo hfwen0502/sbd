@@ -300,7 +300,7 @@ add_code_box(slide, Inches(0.5), Inches(2.05), Inches(6.0), Inches(2.0), [
     "import sbd",
     "",
     "sbd.available_backends()",
-    "  → ['cpu', 'gpu', 'gpu-nvidia-omp']",
+    "  → ['cpu', 'gpu']     (or ['gpu-omp'] in an OMP-offload-only install)",
     "",
     "sbd.print_info()  # version, hardware, session",
 ], highlight_idx=[2, 5])
@@ -448,8 +448,8 @@ add_title(slide, "Three backends, one runtime decision",
 add_table(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(1.6), [
     ("device=",            "Compiler",                  "When to use"),
     ("'cpu'",              "system c++",                "small problems · debugging · no GPU"),
-    ("'gpu' (Thrust)",     "NVHPC nvc++",               "NVIDIA GPU · production default"),
-    ("'gpu-omp' (LLVM)",   "clang++ w/ NVPTX target",   "NVIDIA GPU · alternative kernel path"),
+    ("'gpu' (Thrust)",     "NVHPC nvc++ -cuda",         "NVIDIA GPU · production default"),
+    ("'gpu-omp' (offload)","NVHPC nvc++ -mp=gpu",       "NVIDIA GPU · OpenMP target alternative"),
 ])
 
 add_text_box(slide, Inches(0.5), Inches(3.5), Inches(12.3), Inches(0.5),
@@ -526,14 +526,14 @@ add_title(slide, "The HPC pain — toolchain × MPI × fabric per cluster",
           "Why standing this up on a new cluster is harder than pip install")
 
 add_text_box(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(0.4),
-             ["Three backends, three compilers — distutils takes one CXX per setup() call → two pip invocations"],
+             ["Three backends, one toolchain — NVHPC nvc++ drives both GPU paths"],
              size=Pt(15), color=PRIMARY, bold_first=True)
 
 add_table(slide, Inches(0.5), Inches(2.05), Inches(12.3), Inches(1.5), [
-    ("Backend",                  "Compiler",                 "When"),
-    ("_core_cpu",                "system c++",               "debugging, small problems"),
-    ("_core_gpu (Thrust)",       "NVHPC nvc++",              "production GPU on NVIDIA"),
-    ("_core_gpu_omp_nvidia",     "LLVM clang++ + NVPTX",     "alternative GPU path"),
+    ("Backend",                     "Compiler",                  "When"),
+    ("_core_cpu",                   "system c++",                "debugging, small problems"),
+    ("_core_gpu_thrust",            "NVHPC nvc++ -cuda",         "production GPU on NVIDIA"),
+    ("_core_gpu_omp_offload",       "NVHPC nvc++ -mp=gpu",       "OpenMP target offload alternative"),
 ])
 
 add_text_box(slide, Inches(0.5), Inches(3.7), Inches(12.3), Inches(0.4),
@@ -541,10 +541,10 @@ add_text_box(slide, Inches(0.5), Inches(3.7), Inches(12.3), Inches(0.4),
              size=Pt(15), color=DARK, bold_first=True)
 
 add_text_box(slide, Inches(0.5), Inches(4.1), Inches(12.3), Inches(2.8),
-             ["•  GPU compute capability — sm_90 (default) vs sm_100 (Blackwell). Mismatch → silent host fallback, garbage energy.",
+             ["•  GPU compute capability — sm_90 (H100) / cc100 (Blackwell). Mismatch → silent host fallback, garbage energy.",
               "•  MPI vendor — HPCX 4.1.x can't init pml=ucx in SLURM cgroup; fall back to ob1+smcuda+tcp. OpenMPI 5.x is fine. Spectrum MPI needs jsrun.",
               "•  mpi4py ABI — wheels built against OpenMPI 5 segfault on HPCX 4. Source rebuild required.",
-              "•  LD_LIBRARY_PATH ordering — LLVM's libomp must precede NVHPC's, or the wrong OpenMP runtime loads.",
+              "•  OpenMP runtime exclusivity — _core_gpu_omp_offload uses libnvomp; can't co-load with CPU/Thrust in one process. Install separately.",
               "•  SLURM DefMemPerCPU — opaque 'Requested node configuration is not available' if you forget --mem.",
               "•  cvd_wrapper local-rank source — SLURM_LOCALID is alloc-wide; OMPI_COMM_WORLD_LOCAL_RANK is post-MPI_Init; OMPI_MCA_orte_ess_node_rank is the right one.",
              ],
@@ -620,14 +620,15 @@ add_code_box(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(2.5), [
     "SBD_BUILD_BACKEND=both CC=nvc CXX=nvc++ \\",
     "    pip install --no-build-isolation -e .",
     "",
-    "# 2. OMP-offload GPU (LLVM clang++ with NVPTX target on PATH)",
-    "#    Built separately — incompatible with NVHPC's CXX in one setup() call.",
-    "SBD_BUILD_BACKEND=gpu_omp_nvidia \\",
+    "# 2. OpenMP target-offload GPU (also NVHPC nvc++ — no extra LLVM prereq)",
+    "#    Built separately into its own venv: different OpenMP runtime (libnvomp)",
+    "#    can't co-load with CPU/Thrust in one Python process.",
+    "SBD_BUILD_BACKEND=gpu_omp_offload SBD_OFFLOAD_ARCH=cc100 \\",
     "    pip install --no-build-isolation -e .",
     "",
     "# 3. qiskit-addon-sqd MPI-aware fork",
     "pip install git+https://github.com/hfwen0502/qiskit-addon-sqd@patch-ferminon-sbd",
-], highlight_idx=[1, 6, 10], size=Pt(14))
+], highlight_idx=[1, 7, 11], size=Pt(14))
 
 add_text_box(slide, Inches(0.5), Inches(4.4), Inches(12.3), Inches(2.0),
              ["Per-cluster envelope: this is what the agent (slide 11) handles for you.",

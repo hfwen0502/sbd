@@ -33,8 +33,8 @@ def _resolve_backend(device_config=None):
     """Resolve a backend module from a DeviceConfig or the default.
 
     Reads ``device_config.device`` (string key, e.g. 'cpu', 'gpu',
-    'gpu-nvidia-omp') and routes through ``sbd.get_backend()`` which
-    handles aliases ('gpu-omp', 'cuda', etc.).
+    'gpu-omp') and routes through ``sbd.get_backend()`` which handles
+    aliases ('cuda', 'gpu-thrust', 'gpu-nvhpc-omp', etc.).
     """
     from . import get_backend
     if device_config is not None:

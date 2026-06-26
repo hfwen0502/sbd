@@ -45,9 +45,10 @@ def _try_load(module_name, primary_device, *aliases):
     return True
 
 
-_try_load('_core_cpu',            'cpu')
-_try_load('_core_gpu',            'gpu', 'gpu-nvidia', 'cuda')
-_try_load('_core_gpu_omp_nvidia', 'gpu-nvidia-omp', 'gpu-omp')
+_try_load('_core_cpu',             'cpu')
+_try_load('_core_gpu_thrust',      'gpu', 'gpu-thrust', 'gpu-nvidia', 'cuda')
+_try_load('_core_gpu_omp_offload', 'gpu-omp', 'gpu-omp-offload',
+                                   'gpu-nvhpc-omp', 'gpu-nvidia-omp')
 
 # ---------------------------------------------------------------------------
 # Global session state
@@ -81,14 +82,17 @@ def _resolve_device(device):
     """Resolve 'auto' or an alias to a concrete backend key.
 
     Auto-resolution prefers Thrust GPU (`'gpu'`) over OMP-offload
-    (`'gpu-nvidia-omp'`) when both are built and a GPU is present, since
-    the Thrust path is the long-validated default.
+    (`'gpu-omp'`) when both are built and a GPU is present, since the
+    Thrust path is the long-validated default. In practice OMP-offload
+    is built into its own venv/install (different OpenMP runtime, can't
+    co-load with Thrust/CPU), so this branch only fires when an OMP-only
+    install is in use.
     """
     if device == 'auto':
         if 'gpu' in _backends and _gpu_available():
             return 'gpu'
-        if 'gpu-nvidia-omp' in _backends and _gpu_available():
-            return 'gpu-nvidia-omp'
+        if 'gpu-omp' in _backends and _gpu_available():
+            return 'gpu-omp'
         return 'cpu'
     return _device_aliases.get(device, device)
 
@@ -105,7 +109,9 @@ def init(device='cpu', comm_backend='mpi'):
     ``tpb_diag()``, ``tpb_diag_from_files()``, and ``get_backend()``.
 
     Args:
-        device: Default compute device — 'cpu', 'gpu', 'cuda', or 'auto'.
+        device: Default compute device — 'cpu', 'gpu', 'gpu-omp', or 'auto'.
+                Aliases: 'gpu-thrust' / 'gpu-nvidia' / 'cuda' (= 'gpu');
+                         'gpu-omp-offload' / 'gpu-nvhpc-omp' / 'gpu-nvidia-omp' (= 'gpu-omp').
         comm_backend: Communication backend — 'mpi'.
 
     Raises:
@@ -119,8 +125,9 @@ def init(device='cpu', comm_backend='mpi'):
     if not _backends:
         raise RuntimeError(
             "No SBD backends available. Build with:\n"
-            "  pip install -e . --no-build-isolation      (CPU)\n"
-            "  SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation  (GPU)"
+            "  pip install -e . --no-build-isolation                 (auto: CPU + Thrust GPU)\n"
+            "  SBD_BUILD_BACKEND=gpu pip install -e . --no-build-isolation              (Thrust GPU only)\n"
+            "  SBD_BUILD_BACKEND=gpu_omp_offload pip install -e . --no-build-isolation  (OMP-offload only)"
         )
 
     # MPI setup
@@ -196,7 +203,8 @@ def get_backend(device=None):
         device: 'cpu', 'gpu', 'auto', or None (use default).
 
     Returns:
-        The pybind11 backend module (_core_cpu or _core_gpu).
+        The pybind11 backend module (_core_cpu, _core_gpu_thrust, or
+        _core_gpu_omp_offload).
     """
     if device is None:
         device = _default_device or 'auto'
@@ -349,7 +357,7 @@ def tpb_diag(fcidump, adet, bdet, sbd_data,
 # ---------------------------------------------------------------------------
 
 def available_backends():
-    """Get list of compiled backends ('cpu', 'gpu')."""
+    """Get list of compiled backends ('cpu', 'gpu', 'gpu-omp')."""
     return list(_backends.keys())
 
 

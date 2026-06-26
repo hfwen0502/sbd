@@ -67,87 +67,6 @@ def find_nvidia_hpc_sdk():
     return None, False
 
 
-def _llvm_host_triple_subdir(llvm_home):
-    """Pick the host-runtime subdir under LLVM_HOME/lib/.
-
-    LLVM with -DLLVM_RUNTIME_TARGETS=default installs the host runtime
-    libs (libomp, libomptarget) into lib/<triple>/ where <triple>
-    matches the host arch — x86_64-unknown-linux-gnu on Intel/AMD x86,
-    aarch64-unknown-linux-gnu on ARM (Grace, Neoverse, etc.).
-
-    We prefer the platform-derived guess but fall back to whichever
-    triple subdir actually contains libomptarget.so so non-standard
-    installs still work.
-    """
-    import glob, platform
-    arch_to_triple = {
-        'x86_64':  'x86_64-unknown-linux-gnu',
-        'aarch64': 'aarch64-unknown-linux-gnu',
-    }
-    primary = arch_to_triple.get(platform.machine())
-    candidates = [primary] if primary else []
-    # Fallback: scan lib/ for any *-unknown-linux-gnu subdir with omptarget
-    for d in glob.glob(os.path.join(llvm_home, 'lib', '*-unknown-linux-gnu')):
-        name = os.path.basename(d)
-        if name not in candidates:
-            candidates.append(name)
-    for triple in candidates:
-        path = os.path.join(llvm_home, 'lib', triple)
-        if glob.glob(os.path.join(path, 'libomptarget.so*')):
-            return path
-    # Last resort — return primary path even if libomptarget isn't there;
-    # the caller logs a clear "missing libomptarget" warning in that case.
-    return os.path.join(llvm_home, 'lib', primary or 'x86_64-unknown-linux-gnu')
-
-
-def find_llvm_offload():
-    """Return (clang++_path, has_llvm, host_lib_dir) for an LLVM-with-offload install.
-
-    Looks at LLVM_HOME and verifies:
-      1. bin/clang++ exists,
-      2. lib/<host-triple>/libomptarget.so* (host runtime dispatcher) is
-         present (host triple auto-detected — x86_64 or aarch64),
-      3. lib/nvptx64-nvidia-cuda/libomptarget-nvptx.bc (device-side
-         bitcode for NVIDIA) is present.
-
-    All three indicate a working OMP-offload install. Stock distro clang
-    (RHEL clang-19, etc.) usually has #1 and #2 but not #3 — without the
-    device bitcode omp_get_num_devices() returns 0 and offload silently
-    falls back to host. See .github/SETUP_LLVM_OFFLOAD.txt for how to
-    build LLVM trunk with the Offload runtime enabled.
-
-    Note: in older LLVM (<=18 or so) the CUDA RTL was a separate
-    libomptarget.rtl.cuda*.so file. In LLVM trunk this has been merged
-    into libomptarget.so itself, so we don't search for the RTL file.
-    """
-    llvm_home = os.environ.get('LLVM_HOME', None)
-    if not llvm_home:
-        return None, False, None
-    clangxx = os.path.join(llvm_home, 'bin', 'clang++')
-    if not os.path.exists(clangxx):
-        print(f"Warning: LLVM_HOME={llvm_home} but {clangxx} not found")
-        return None, False, None
-    import glob
-    host_lib = _llvm_host_triple_subdir(llvm_home)
-    if not glob.glob(os.path.join(host_lib, 'libomptarget.so*')):
-        print(f"Warning: LLVM_HOME={llvm_home} has clang++ but no "
-              f"libomptarget.so* in {host_lib}; build LLVM with "
-              f"LLVM_RUNTIME_TARGETS including 'default' (see "
-              f".github/SETUP_LLVM_OFFLOAD.txt). Skipping OMP-offload backend.")
-        return None, False, None
-    nvptx_bc = os.path.join(llvm_home, 'lib', 'nvptx64-nvidia-cuda',
-                            'libomptarget-nvptx.bc')
-    if not os.path.exists(nvptx_bc):
-        print(f"Warning: LLVM_HOME={llvm_home} is missing the NVIDIA "
-              f"device-side runtime ({nvptx_bc}); GPU offload would "
-              f"compile but produce no device kernels. Build LLVM with "
-              f"LLVM_RUNTIME_TARGETS including 'nvptx64-nvidia-cuda'. "
-              f"Skipping OMP-offload backend.")
-        return None, False, None
-    print(f"Found LLVM-with-offload at: {llvm_home} (host triple: {os.path.basename(host_lib)})")
-    return clangxx, True, host_lib
-
-
 # Get MPI configuration
 mpi_includes, mpi_lib_dirs, mpi_libs = get_mpi_config()
 
@@ -188,61 +107,63 @@ for lib_dir in library_dirs:
     extra_link_args.append(f'-Wl,--rpath,{lib_dir}')
 print(f"RPATH will be set to: {library_dirs}")
 
-# Detect GPU compilers
+# Detect NVHPC. nvc++ is shared between two GPU backends here:
+#   1. _core_gpu_thrust       (Thrust + CUDA path,  nvc++ -cuda)
+#   2. _core_gpu_omp_offload  (OpenMP target offload, nvc++ -mp=gpu)
 gpu_compiler, has_nvhpc = find_nvidia_hpc_sdk()
-omp_clang, has_llvm, llvm_host_lib = find_llvm_offload()
 
-# Determine which backends to build
+# Determine which backends to build.
+#   auto                  : cpu + thrust GPU (if nvc++ present)
+#   cpu                   : cpu only
+#   gpu | gpu_thrust      : thrust GPU only
+#   both                  : cpu + thrust
+#   gpu_omp_offload       : OpenMP target offload only (nvc++ -mp=gpu)
+#
+# gpu_omp_offload is built ALONE — it uses a different OpenMP runtime
+# (libnvomp) than cpu (libgomp/libomp) and Thrust GPU (CPU OMP via -mp),
+# and loading two backends with different OMP runtimes in one Python
+# process produces "Another OpenMP runtime library has been detected"
+# warnings and can deadlock at first OMP region. Build it into its own
+# venv / install dir.
 build_backend = os.environ.get('SBD_BUILD_BACKEND', 'auto').lower()
 
-# Defaults (each branch overrides the ones it sets to True)
 build_cpu = False
-build_gpu = False
-build_gpu_omp_nvidia = False
+build_gpu_thrust = False
+build_gpu_omp_offload = False
 
 if build_backend == 'auto':
     build_cpu = True
-    build_gpu = has_nvhpc
-    if build_gpu:
-        print("\nAuto-detected nvc++ - will build both CPU and GPU backends")
+    build_gpu_thrust = has_nvhpc
+    if build_gpu_thrust:
+        print("\nAuto-detected nvc++ - will build both CPU and Thrust GPU backends")
     else:
         print("\nnvc++ not found - will build CPU backend only")
-    if has_llvm:
-        print("Note: LLVM_HOME with offload runtime detected. To build the "
-              "OMP-offload backend run a separate pip install with "
-              "SBD_BUILD_BACKEND=gpu_omp_nvidia (must be built alone, "
-              "see setup.py header for why).")
 elif build_backend == 'cpu':
     build_cpu = True
     print("\nBuilding CPU backend only (SBD_BUILD_BACKEND=cpu)")
-elif build_backend == 'gpu':
-    build_gpu = True
-    print("\nBuilding GPU backend only (SBD_BUILD_BACKEND=gpu)")
+elif build_backend in ('gpu', 'gpu_thrust'):
+    build_gpu_thrust = True
+    print(f"\nBuilding Thrust GPU backend only (SBD_BUILD_BACKEND={build_backend})")
     if not has_nvhpc:
         print("Warning: nvc++ not found, GPU build may fail")
 elif build_backend == 'both':
     build_cpu = True
-    build_gpu = True
-    print("\nBuilding both CPU and GPU backends (SBD_BUILD_BACKEND=both)")
+    build_gpu_thrust = True
+    print("\nBuilding both CPU and Thrust GPU backends (SBD_BUILD_BACKEND=both)")
     if not has_nvhpc:
         print("Warning: nvc++ not found, GPU build may fail")
-elif build_backend == 'gpu_omp_nvidia':
-    # Stand-alone build: this mode only emits _core_gpu_omp_nvidia.so.
-    # CPU and Thrust GPU backends use different compilers (gcc / nvc++),
-    # so trying to build them together with clang++ in the same setup()
-    # call breaks distutils' single-CC/CXX assumption. Run separate
-    # pip installs for those if you also want them.
-    build_gpu_omp_nvidia = True
-    print("\nBuilding GPU OMP-offload backend only "
-          "(SBD_BUILD_BACKEND=gpu_omp_nvidia)")
-    if not has_llvm:
-        print("Error: gpu_omp_nvidia requires LLVM_HOME set to an LLVM "
-              "trunk install with the offload runtime built.")
-        print("See .github/SETUP_LLVM_OFFLOAD.txt for the build recipe.")
+elif build_backend == 'gpu_omp_offload':
+    # Stand-alone build: this mode only emits _core_gpu_omp_offload.so.
+    # See note above on the OpenMP-runtime exclusivity constraint.
+    build_gpu_omp_offload = True
+    print("\nBuilding GPU OpenMP target-offload backend only "
+          "(SBD_BUILD_BACKEND=gpu_omp_offload)")
+    if not has_nvhpc:
+        print("Error: gpu_omp_offload requires NVHPC_HOME / nvc++.")
         sys.exit(1)
 else:
     print(f"Error: Invalid SBD_BUILD_BACKEND='{build_backend}'")
-    print("Valid values: auto, cpu, gpu, both, gpu_omp_nvidia")
+    print("Valid values: auto, cpu, gpu (alias gpu_thrust), both, gpu_omp_offload")
     sys.exit(1)
 
 ext_modules = []
@@ -289,8 +210,9 @@ if build_cpu:
     )
     ext_modules.append(cpu_ext)
 
-if build_gpu:
-    print("\nConfiguring GPU backend (_core_gpu)")
+
+if build_gpu_thrust:
+    print("\nConfiguring Thrust GPU backend (_core_gpu_thrust)")
     if not gpu_compiler:
         print("Error: GPU backend requested but nvc++ not found")
         sys.exit(1)
@@ -298,8 +220,8 @@ if build_gpu:
     gpu_arch = os.environ.get('SBD_GPU_ARCH_NVIDIA', 'sm_90')
     print(f"NVHPC GPU arch: {gpu_arch} (set SBD_GPU_ARCH_NVIDIA to override)")
 
-    gpu_ext = Extension(
-        'sbd._core_gpu',
+    gpu_thrust_ext = Extension(
+        'sbd._core_gpu_thrust',
         ['python/bindings.cpp'],
         include_dirs=include_dirs,
         libraries=libraries,
@@ -316,7 +238,7 @@ if build_gpu:
             '-fmax-errors=0',
             '-fPIC',
             f'-gpu={gpu_arch}',
-            '-DSBD_MODULE_NAME=_core_gpu',
+            '-DSBD_MODULE_NAME=_core_gpu_thrust',
         ],
         # NOTE: -cudalib (no value) makes nvc++ blanket-link every CUDA
         # library NVHPC ships, including math libs SBD never calls
@@ -327,68 +249,89 @@ if build_gpu:
         # explicitly link -lcudart instead.
         extra_link_args=extra_link_args + ['-mp', '-cuda', '-lcudart'],
     )
-    ext_modules.append(gpu_ext)
+    ext_modules.append(gpu_thrust_ext)
 
 
-if build_gpu_omp_nvidia:
-    print("\nConfiguring GPU OMP-offload backend (_core_gpu_omp_nvidia)")
-    print(f"Using compiler: {omp_clang}")
+if build_gpu_omp_offload:
+    print("\nConfiguring GPU OpenMP target-offload backend (_core_gpu_omp_offload)")
+    print(f"Using compiler: {gpu_compiler}")
 
-    # Drive the build through clang++. Distutils picks compiler from
-    # CC / CXX / LDSHARED; only one compiler choice per setup() call,
-    # which is why this mode must be invoked alone.
-    os.environ['CC']       = omp_clang
-    os.environ['CXX']      = omp_clang
-    os.environ['LDSHARED'] = f'{omp_clang} -shared'
-
-    # Clear sysconfig-inherited flags. RHEL CPython ships with
-    # -fcf-protection={branch,return} which are x86-only and clang
-    # rejects when compiling the nvptx offload pass. We pass our own
-    # full flag list via extra_compile_args below.
+    # Drive build through nvc++ for both .c and .cpp. nvc handles C but
+    # distutils picks CC for .cpp in some paths, so route both to nvc++.
+    os.environ['CC']       = gpu_compiler
+    os.environ['CXX']      = gpu_compiler
+    os.environ['LDSHARED'] = f'{gpu_compiler} -shared'
     os.environ['CFLAGS']   = ''
     os.environ['CXXFLAGS'] = ''
-    # Same for distutils' default optimization flag set
     os.environ['CPPFLAGS'] = ''
 
-    offload_arch = os.environ.get('SBD_OFFLOAD_ARCH_NVIDIA', 'sm_90')
-    # Host-arch-aware: x86_64 -> x86_64-unknown-linux-gnu/, aarch64 -> aarch64-...
-    triple_lib   = llvm_host_lib
+    # RHEL 9 CPython sysconfig injects gcc-specific flags that nvc++ rejects
+    # (-grecord-gcc-switches, -Wp,-D_FORTIFY_SOURCE=2, -fstack-protector-strong,
+    # -fasynchronous-unwind-tables, -fstack-clash-protection, -fcf-protection,
+    # -fwrapv) plus a -march=x86-64-v2 default that nvc++ explicitly rejects
+    # (requires v3+). distutils pulls these from sysconfig in addition to
+    # os.environ.CFLAGS, so blanking the latter alone is not enough — we
+    # rewrite the sysconfig dict itself.
+    import sysconfig, re as _re
+    _cfg = sysconfig.get_config_vars()
+    _strip_tokens = (
+        '-grecord-gcc-switches',
+        '-Wp,-D_FORTIFY_SOURCE=2',
+        '-Wp,-D_GLIBCXX_ASSERTIONS',
+        '-fstack-protector-strong',
+        '-fasynchronous-unwind-tables',
+        '-fstack-clash-protection',
+        '-fcf-protection',
+        '-fwrapv',
+        '-Wno-unused-result',
+    )
+    for _k in list(_cfg.keys()):
+        _v = _cfg[_k]
+        if not isinstance(_v, str):
+            continue
+        for _bad in _strip_tokens:
+            _v = _v.replace(_bad, '')
+        _v = _v.replace('-march=x86-64-v2', '-march=x86-64-v3')
+        _cfg[_k] = _re.sub(r' +', ' ', _v).strip()
 
-    gpu_omp_nvidia_ext = Extension(
-        'sbd._core_gpu_omp_nvidia',
+    # nvc++ uses cc<XX> not sm_<XX>. Default cc90 for H100.
+    offload_arch = os.environ.get('SBD_OFFLOAD_ARCH', 'cc90')
+    print(f"NVHPC OMP-offload arch: {offload_arch} (set SBD_OFFLOAD_ARCH to override)")
+
+    gpu_omp_offload_ext = Extension(
+        'sbd._core_gpu_omp_offload',
         ['python/bindings.cpp'],
         include_dirs=include_dirs,
         libraries=libraries,
-        # Add the LLVM runtime triple subdir to library search; rpath
-        # below ensures the resulting .so finds libomptarget at import.
-        library_dirs=library_dirs + [triple_lib],
+        library_dirs=library_dirs,
         language='c++',
         extra_compile_args=[
             '-O3', '-std=c++17', '-fPIC',
-            '-fopenmp',
-            '-fopenmp-targets=nvptx64-nvidia-cuda',
-            f'--offload-arch={offload_arch}',
-            '-fopenmp-offload-mandatory',
-            '-foffload-lto',
+            '-mp=gpu',
+            f'-gpu={offload_arch}',
+            '-Minfo=mp',
             '-DSBD_TRADMODE',
             '-DUSE_GPU',
             '-DUSE_OMP_OFFLOAD',
             '-DOMPI_SKIP_MPICXX',
-            '-DSBD_MODULE_NAME=_core_gpu_omp_nvidia',
+            '-DSBD_MODULE_NAME=_core_gpu_omp_offload',
+            # Force-include nvc++ shim so __builtin_ffsl / __builtin_popcountl
+            # inside #pragma omp declare target lower to portable inlines
+            # rather than __blt_pgi_ffsl (host-only NVHPC symbol that nvlink
+            # can't resolve from device code).
+            '-include', 'python/sbd_nvhpc_compat.h',
         ],
         extra_link_args=extra_link_args + [
-            '-fopenmp',
-            f'--offload-arch={offload_arch}',
-            '-foffload-lto',
-            f'-Wl,-rpath,{triple_lib}',
+            '-mp=gpu',
+            f'-gpu={offload_arch}',
         ],
     )
-    ext_modules.append(gpu_omp_nvidia_ext)
+    ext_modules.append(gpu_omp_offload_ext)
 
 
 setup(
     name='sbd',
-    version='1.3.0',
+    version='1.6.0',
     author='Tomonori Shirakawa',
     author_email='',
     description='Python bindings for Selected Basis Diagonalization (SBD) library',
@@ -410,8 +353,8 @@ setup(
 print("\nSetup complete!")
 if build_cpu:
     print("  - CPU backend:                    sbd._core_cpu")
-if build_gpu:
-    print("  - GPU backend (NVHPC Thrust):     sbd._core_gpu")
-if build_gpu_omp_nvidia:
-    print("  - GPU backend (OMP-offload NV):   sbd._core_gpu_omp_nvidia")
+if build_gpu_thrust:
+    print("  - Thrust GPU backend:             sbd._core_gpu_thrust")
+if build_gpu_omp_offload:
+    print("  - OpenMP-offload GPU backend:     sbd._core_gpu_omp_offload")
 print()
