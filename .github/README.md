@@ -91,26 +91,51 @@ second venv avoids the bookkeeping.
 
 Pick **one** of two installation profiles. They produce mutually
 incompatible Python processes (different OpenMP runtimes — see the
-paragraph above the "Build" section) so use separate venvs if you
-need both.
+paragraph above the "Build" section) so put them in **separate venvs
+backed by separate checkouts** if you need both. The `source …`
+lines below are not optional: forgetting to activate the right venv
+before `pip install -e .` either puts the build into the wrong venv
+or fails outright.
 
 **Profile 1 — CPU + Thrust GPU** (the common case)
 
 ```bash
+# one-time setup
+git clone --recurse-submodules https://github.com/hfwen0502/sbd.git  sbd-thrust
+python -m venv  ~/venvs/sbd-thrust
+source ~/venvs/sbd-thrust/bin/activate
+MPICC=$(which mpicc) pip install --no-binary=mpi4py mpi4py pybind11 numpy wheel
+
+# build (re-run after pulling main)
+source ~/venvs/sbd-thrust/bin/activate            # always activate first
+cd sbd-thrust
 SBD_GPU_ARCH=cc100  pip install -e . --no-build-isolation
 ```
 
 Builds the CPU backend always. Adds the Thrust GPU backend when NVHPC
 `nvc++` is on PATH; otherwise CPU-only. Devices: `'cpu'` and `'gpu'`.
 
-**Profile 2 — OpenMP target-offload GPU** (separate venv)
+**Profile 2 — OpenMP target-offload GPU** (use a **separate** venv +
+checkout from Profile 1)
 
 ```bash
+# one-time setup
+git clone --recurse-submodules https://github.com/hfwen0502/sbd.git  sbd-omp-offload
+python -m venv  ~/venvs/sbd-omp-offload
+source ~/venvs/sbd-omp-offload/bin/activate
+MPICC=$(which mpicc) pip install --no-binary=mpi4py mpi4py pybind11 numpy wheel
+
+# build (re-run after pulling main)
+source ~/venvs/sbd-omp-offload/bin/activate       # always activate first
+cd sbd-omp-offload
 SBD_BUILD_BACKEND=gpu_omp_offload  SBD_GPU_ARCH=cc100 \
     pip install -e . --no-build-isolation
 ```
 
 Builds the OMP-offload GPU backend only. Device: `'gpu-omp'`.
+
+After both profiles are installed, switching is a one-liner
+(`source ~/venvs/<which>/bin/activate`) — no rebuild needed.
 
 **Multi-arch fat binary**: comma-separate the arches:
 `SBD_GPU_ARCH=cc80,cc90,cc100`. nvc++ embeds one SASS cubin per arch
