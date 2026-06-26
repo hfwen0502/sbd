@@ -83,35 +83,62 @@ you need it alongside the others.
 
 ### Build
 
-Three backends are available. CPU + Thrust GPU coexist in one install;
-OMP-offload is built ALONE (different OpenMP runtime — see note below).
+Pick **one** of two installation profiles. They produce mutually
+incompatible Python processes (different OpenMP runtimes — see
+[Why two profiles](#why-two-profiles) below) so use separate venvs
+if you need both.
+
+**Profile 1 — CPU + Thrust GPU** (the common case)
 
 ```bash
-# Auto-detect: builds CPU always, plus NVHPC Thrust GPU if NVHPC found
-pip install -e . --no-build-isolation
-
-# Explicit modes
-SBD_BUILD_BACKEND=cpu                pip install -e . --no-build-isolation
-SBD_BUILD_BACKEND=gpu                pip install -e . --no-build-isolation  # NVHPC Thrust (alias gpu_thrust)
-SBD_BUILD_BACKEND=both               pip install -e . --no-build-isolation  # CPU + Thrust
-SBD_BUILD_BACKEND=gpu_omp_offload    pip install -e . --no-build-isolation  # nvc++ OpenMP target offload
+SBD_GPU_ARCH=cc100  pip install -e . --no-build-isolation
 ```
 
-| Backend | Module | Compiler | Macros | Device strings |
-|---|---|---|---|---|
-| CPU OpenMP host | `_core_cpu` | gcc/clang | `-fopenmp` (host) | `'cpu'` |
-| NVIDIA Thrust | `_core_gpu_thrust` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=$SBD_GPU_ARCH` | `'gpu'`, `'gpu-thrust'`, `'gpu-nvidia'`, `'cuda'` |
-| NVIDIA OpenMP-offload | `_core_gpu_omp_offload` | NVHPC nvc++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -mp=gpu -gpu=$SBD_GPU_ARCH` | `'gpu-omp'`, `'gpu-omp-offload'`, `'gpu-nvhpc-omp'`, `'gpu-nvidia-omp'` |
+Builds `_core_cpu` always. Adds `_core_gpu_thrust` when NVHPC `nvc++`
+is on PATH; otherwise CPU-only. Devices: `'cpu'` + `'gpu'` (aliases
+`'gpu-thrust'`, `'gpu-nvidia'`, `'cuda'`).
 
-**`SBD_BUILD_BACKEND=gpu_omp_offload` must be invoked alone** (not
-combined with `cpu` / `gpu` / `both`) because the resulting `.so`
-loads NVHPC's `libnvomp` OpenMP runtime, while the CPU backend uses
-libgomp/libomp and Thrust uses CPU-side OMP via `-mp` (also linked
-through NVHPC but to a different libomp surface). Co-loading two
-backends with different OpenMP runtimes in one Python process produces
-the "Another OpenMP runtime library has been detected" warning and can
-deadlock at first OMP region. Install OMP-offload into its own venv /
-install directory if you also need CPU or Thrust.
+**Profile 2 — OpenMP target-offload GPU** (separate venv)
+
+```bash
+SBD_BUILD_BACKEND=gpu_omp_offload  SBD_GPU_ARCH=cc100 \
+    pip install -e . --no-build-isolation
+```
+
+Builds `_core_gpu_omp_offload` only. Device: `'gpu-omp'` (aliases
+`'gpu-omp-offload'`, `'gpu-nvhpc-omp'`, `'gpu-nvidia-omp'`).
+
+**Multi-arch fat binary**: comma-separate the arches:
+`SBD_GPU_ARCH=cc80,cc90,cc100`. nvc++ embeds one SASS cubin per arch
+and picks the matching one at runtime.
+
+| Backend | Module | Compiler | Macros |
+|---|---|---|---|
+| CPU OpenMP host | `_core_cpu` | gcc/clang | `-fopenmp` (host) |
+| NVIDIA Thrust | `_core_gpu_thrust` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=$SBD_GPU_ARCH` |
+| NVIDIA OpenMP-offload | `_core_gpu_omp_offload` | NVHPC nvc++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -mp=gpu -gpu=$SBD_GPU_ARCH` |
+
+#### Advanced `SBD_BUILD_BACKEND` overrides
+
+Only needed when you want to deviate from the two profiles above.
+
+| Value | Builds | Note |
+|---|---|---|
+| *unset* (default) | `_core_cpu` always; `_core_gpu_thrust` if nvc++ found | Same as `auto`. The "Profile 1" default. |
+| `cpu` | `_core_cpu` only | Skip GPU even if nvc++ is present. |
+| `gpu` *(alias `gpu_thrust`)* | `_core_gpu_thrust` only | Skip CPU. Errors if nvc++ missing. |
+| `both` | `_core_cpu` + `_core_gpu_thrust` | Like default, but errors instead of falling back if nvc++ missing. |
+| `gpu_omp_offload` | `_core_gpu_omp_offload` only | The "Profile 2" install. Cannot be combined with the others — see below. |
+
+#### Why two profiles
+
+`_core_gpu_omp_offload` loads NVHPC's `libnvomp` OpenMP runtime;
+`_core_cpu` and `_core_gpu_thrust` load `libgomp`/`libomp` (CPU-side
+OpenMP via `-fopenmp` / `-mp` respectively). NVHPC refuses to share
+a process with another OpenMP runtime — co-loading produces the
+"Another OpenMP runtime library has been detected" warning and can
+deadlock at the first `#pragma omp` region. So OMP-offload lives in
+its own venv / install directory.
 
 **Reverting to the LLVM/clang offload path:** prior versions of this
 repo supported a separate `_core_gpu_omp_nvidia` backend built with
