@@ -46,33 +46,39 @@ pip install -e . --no-build-isolation --force-reinstall --no-deps
 ### Environment Variables
 
 ```bash
+# --- always needed ---
 export MPI_HOME=/path/to/mpi
 export BLAS_LIB_PATH=/path/to/blas/lib
 export BLAS_LIBS=openblas  # or mkl_rt
 
-# macOS: use system clang to match Python's libc++
+# --- macOS only — pin the host compiler to system clang so libc++
+#     matches Python's. Not needed on Linux GPU boxes (setup.py
+#     auto-picks nvc++ for the GPU extensions; the CPU extension
+#     then compiles cleanly under nvc++ as well).
 export CC=/usr/bin/clang
 export CXX=/usr/bin/clang++
 
-# GPU backends (Thrust and OpenMP target-offload) — NVIDIA-ONLY.
-# Both compile with NVHPC nvc++; there is no AMD/Intel GPU path in
-# this wrapper. Requires the NVHPC SDK (one tarball; no LLVM/clang
-# source build needed since v1.6).
+# --- GPU backends (Thrust and OpenMP target-offload) — NVIDIA-only.
+#     Both compile with NVHPC nvc++; there is no AMD/Intel GPU path
+#     in this wrapper. Requires the NVHPC SDK (one tarball; no
+#     LLVM/clang source build needed since v1.6).
 export NVHPC_HOME=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/compilers
-export CC=nvc
-export CXX=nvc++
-# Clear these — inherited flags (e.g. from conda) may be gcc-specific
-# and break nvc++ compilation
-export CFLAGS=''
-export CXXFLAGS=''
 # Target GPU arch for nvc++ -gpu=<arch>. Used by BOTH the Thrust path
-# and the OMP-offload path (same compiler, same flag). nvc++ accepts
-# cc<XX> (documented PGI form) and sm_<XX>. Default cc90 for H100.
-#   H100:        cc90
+# and the OMP-offload path. nvc++ accepts cc<XX> (documented PGI form)
+# and sm_<XX>. Default cc90 for H100.
+#   H100:         cc90
 #   GB200 / B200: cc100
-#   A100:        cc80
+#   A100:         cc80
 export SBD_GPU_ARCH=cc100
 ```
+
+You do **not** need to set `CC=nvc` / `CXX=nvc++` or clear `CFLAGS` /
+`CXXFLAGS` manually for the GPU builds — setup.py auto-routes those
+extensions through nvc++ and filters the RHEL 9 sysconfig flags that
+nvc++ rejects. (Earlier versions required this; the v1.6 refactor
+moved it into `setup.py:_route_build_through_nvhpc()`.) If you DO
+set them, your values win — distutils' `os.environ.setdefault`
+semantics.
 
 The OpenMP target-offload backend cannot share a Python process with
 CPU or Thrust. They link incompatible OpenMP runtimes (NVHPC's
