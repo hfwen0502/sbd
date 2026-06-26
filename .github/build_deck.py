@@ -623,7 +623,7 @@ add_code_box(slide, Inches(0.5), Inches(1.6), Inches(12.3), Inches(2.5), [
     "# 2. OpenMP target-offload GPU (also NVHPC nvc++ — no extra LLVM prereq)",
     "#    Built separately into its own venv: different OpenMP runtime (libnvomp)",
     "#    can't co-load with CPU/Thrust in one Python process.",
-    "SBD_BUILD_BACKEND=gpu_omp_offload SBD_OFFLOAD_ARCH=cc100 \\",
+    "SBD_BUILD_BACKEND=gpu_omp_offload SBD_GPU_ARCH=cc100 \\",
     "    pip install --no-build-isolation -e .",
     "",
     "# 3. qiskit-addon-sqd MPI-aware fork",

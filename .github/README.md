@@ -54,7 +54,10 @@ export BLAS_LIBS=openblas  # or mkl_rt
 export CC=/usr/bin/clang
 export CXX=/usr/bin/clang++
 
-# NVIDIA Thrust GPU backend (optional, requires NVHPC nvc++)
+# GPU backends (Thrust and OpenMP target-offload) — NVIDIA-ONLY.
+# Both compile with NVHPC nvc++; there is no AMD/Intel GPU path in
+# this wrapper. Requires the NVHPC SDK (one tarball; no LLVM/clang
+# source build needed since v1.6).
 export NVHPC_HOME=/opt/nvidia/hpc_sdk/Linux_x86_64/2025/compilers
 export CC=nvc
 export CXX=nvc++
@@ -62,19 +65,21 @@ export CXX=nvc++
 # and break nvc++ compilation
 export CFLAGS=''
 export CXXFLAGS=''
-# Override the NVHPC -gpu=<arch> flag (default sm_90 for H100). Use
-# cc100 for GB200/Blackwell, sm_80 for A100, etc.
-export SBD_GPU_ARCH_NVIDIA=cc100
-
-# OpenMP target-offload GPU backend (built with the same nvc++ as the
-# Thrust path — no extra LLVM/clang prereq). Built only when invoked
-# explicitly with SBD_BUILD_BACKEND=gpu_omp_offload (it cannot coexist
-# in a single Python process with cpu/Thrust due to OMP runtime conflict).
-# Override the nvc++ -gpu=<arch> flag for offload (default cc90 for H100).
-# cc100 for GB200/Blackwell, cc80 for A100, etc. nvc++ accepts cc<XX>;
-# sm_<XX> also works in recent NVHPC but cc<XX> is the documented form.
-export SBD_OFFLOAD_ARCH=cc100
+# Target GPU arch for nvc++ -gpu=<arch>. Used by BOTH the Thrust path
+# and the OMP-offload path (same compiler, same flag). nvc++ accepts
+# cc<XX> (documented PGI form) and sm_<XX>. Default cc90 for H100.
+#   H100:        cc90
+#   GB200 / B200: cc100
+#   A100:        cc80
+export SBD_GPU_ARCH=cc100
 ```
+
+The OpenMP target-offload backend (`_core_gpu_omp_offload`) is built
+explicitly via `SBD_BUILD_BACKEND=gpu_omp_offload` and **cannot coexist
+in a single Python process with CPU or Thrust** (libnvomp vs
+libgomp/libomp — co-loading produces "Another OpenMP runtime library
+has been detected" and may deadlock). Install it into its own venv if
+you need it alongside the others.
 
 ### Build
 
@@ -95,8 +100,8 @@ SBD_BUILD_BACKEND=gpu_omp_offload    pip install -e . --no-build-isolation  # nv
 | Backend | Module | Compiler | Macros | Device strings |
 |---|---|---|---|---|
 | CPU OpenMP host | `_core_cpu` | gcc/clang | `-fopenmp` (host) | `'cpu'` |
-| NVIDIA Thrust | `_core_gpu_thrust` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=$SBD_GPU_ARCH_NVIDIA` | `'gpu'`, `'gpu-thrust'`, `'gpu-nvidia'`, `'cuda'` |
-| NVIDIA OpenMP-offload | `_core_gpu_omp_offload` | NVHPC nvc++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -mp=gpu -gpu=$SBD_OFFLOAD_ARCH` | `'gpu-omp'`, `'gpu-omp-offload'`, `'gpu-nvhpc-omp'`, `'gpu-nvidia-omp'` |
+| NVIDIA Thrust | `_core_gpu_thrust` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=$SBD_GPU_ARCH` | `'gpu'`, `'gpu-thrust'`, `'gpu-nvidia'`, `'cuda'` |
+| NVIDIA OpenMP-offload | `_core_gpu_omp_offload` | NVHPC nvc++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -mp=gpu -gpu=$SBD_GPU_ARCH` | `'gpu-omp'`, `'gpu-omp-offload'`, `'gpu-nvhpc-omp'`, `'gpu-nvidia-omp'` |
 
 **`SBD_BUILD_BACKEND=gpu_omp_offload` must be invoked alone** (not
 combined with `cpu` / `gpu` / `both`) because the resulting `.so`

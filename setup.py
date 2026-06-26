@@ -46,6 +46,30 @@ def get_mpi_config():
         sys.exit(1)
 
 
+def _resolve_gpu_arch(default='cc90'):
+    """Pick the nvc++ -gpu=<arch> value from env, with back-compat alias.
+
+    Both Thrust (_core_gpu_thrust) and OMP-offload (_core_gpu_omp_offload)
+    backends compile with nvc++ and take the same -gpu=<arch> flag, so we
+    use a single env var.
+
+    Reads SBD_GPU_ARCH (canonical name since v1.6). Falls back to the
+    deprecated SBD_GPU_ARCH_NVIDIA (v1.5 and earlier) with a notice so
+    existing setup scripts keep working through the transition.
+    """
+    val = os.environ.get('SBD_GPU_ARCH')
+    if val:
+        return val
+    legacy = os.environ.get('SBD_GPU_ARCH_NVIDIA')
+    if legacy:
+        print(f"Notice: SBD_GPU_ARCH_NVIDIA={legacy!r} is deprecated since "
+              "v1.6 (single SBD_GPU_ARCH covers both Thrust and OMP-offload "
+              "since LLVM/clang was removed). Honoring it as a back-compat "
+              "alias. Please switch to SBD_GPU_ARCH.")
+        return legacy
+    return default
+
+
 def find_nvidia_hpc_sdk():
     nvhpc_home = os.environ.get('NVHPC_HOME', None)
     if nvhpc_home:
@@ -217,8 +241,9 @@ if build_gpu_thrust:
         print("Error: GPU backend requested but nvc++ not found")
         sys.exit(1)
     print(f"Using compiler: {gpu_compiler}")
-    gpu_arch = os.environ.get('SBD_GPU_ARCH_NVIDIA', 'sm_90')
-    print(f"NVHPC GPU arch: {gpu_arch} (set SBD_GPU_ARCH_NVIDIA to override)")
+    gpu_arch = _resolve_gpu_arch(default='cc90')
+    print(f"NVHPC -gpu= arch: {gpu_arch} (set SBD_GPU_ARCH to override; "
+          "nvc++ accepts cc<XX> and sm_<XX>)")
 
     gpu_thrust_ext = Extension(
         'sbd._core_gpu_thrust',
@@ -294,9 +319,9 @@ if build_gpu_omp_offload:
         _v = _v.replace('-march=x86-64-v2', '-march=x86-64-v3')
         _cfg[_k] = _re.sub(r' +', ' ', _v).strip()
 
-    # nvc++ uses cc<XX> not sm_<XX>. Default cc90 for H100.
-    offload_arch = os.environ.get('SBD_OFFLOAD_ARCH', 'cc90')
-    print(f"NVHPC OMP-offload arch: {offload_arch} (set SBD_OFFLOAD_ARCH to override)")
+    # Same arch flag as the Thrust path (both compile with nvc++ -gpu=).
+    offload_arch = _resolve_gpu_arch(default='cc90')
+    print(f"NVHPC -gpu= arch: {offload_arch} (set SBD_GPU_ARCH to override)")
 
     gpu_omp_offload_ext = Extension(
         'sbd._core_gpu_omp_offload',
