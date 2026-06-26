@@ -74,19 +74,25 @@ export CXXFLAGS=''
 export SBD_GPU_ARCH=cc100
 ```
 
-The OpenMP target-offload backend is built explicitly via
-`SBD_BUILD_BACKEND=gpu_omp_offload` and **cannot coexist in a single
-Python process with CPU or Thrust** (libnvomp vs libgomp/libomp —
-co-loading produces "Another OpenMP runtime library has been
-detected" and may deadlock). Install it into its own venv if you
-need it alongside the others.
+The OpenMP target-offload backend cannot share a Python process with
+CPU or Thrust. They link incompatible OpenMP runtimes (NVHPC's
+`libnvomp` for OMP-offload, `libgomp`/`libomp` for CPU and Thrust),
+and `import sbd` eagerly loads every `_core_*.so` it finds in
+`python/`. Co-resident `.so` files therefore pull both runtimes into
+the same address space, producing "Another OpenMP runtime library has
+been detected" and potentially deadlocking at the first `#pragma omp`
+region. **The cleanest setup is two venvs with two checkouts** — one
+for CPU + Thrust, one for OMP-offload. Within a single venv you can
+also switch profiles by removing the other profile's `_core_*.so`
+before rebuilding (only files present in `python/` get loaded), but a
+second venv avoids the bookkeeping.
 
 ### Build
 
 Pick **one** of two installation profiles. They produce mutually
-incompatible Python processes (different OpenMP runtimes — see
-[Why two profiles](#why-two-profiles) below) so use separate venvs
-if you need both.
+incompatible Python processes (different OpenMP runtimes — see the
+paragraph above the "Build" section) so use separate venvs if you
+need both.
 
 **Profile 1 — CPU + Thrust GPU** (the common case)
 
@@ -121,15 +127,6 @@ Only needed when you want to deviate from the two profiles above.
 | `gpu` | Thrust GPU only — skip CPU. Errors if `nvc++` missing. |
 | `both` | CPU + Thrust GPU. Errors instead of falling back if `nvc++` missing. |
 | `gpu_omp_offload` | OMP-offload GPU only. The "Profile 2" install. |
-
-#### Why two profiles
-
-The OMP-offload backend uses NVHPC's `libnvomp` OpenMP runtime; the
-CPU and Thrust backends use `libgomp` / `libomp`. NVHPC refuses to
-share a process with another OpenMP runtime — co-loading produces
-the "Another OpenMP runtime library has been detected" warning and
-can deadlock at the first `#pragma omp` region. So OMP-offload lives
-in its own venv / install directory.
 
 **Reverting to the LLVM/clang offload path:** prior versions of this
 repo supported a separate `_core_gpu_omp_nvidia` backend built with
