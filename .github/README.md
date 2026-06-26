@@ -74,12 +74,12 @@ export CXXFLAGS=''
 export SBD_GPU_ARCH=cc100
 ```
 
-The OpenMP target-offload backend (`_core_gpu_omp_offload`) is built
-explicitly via `SBD_BUILD_BACKEND=gpu_omp_offload` and **cannot coexist
-in a single Python process with CPU or Thrust** (libnvomp vs
-libgomp/libomp — co-loading produces "Another OpenMP runtime library
-has been detected" and may deadlock). Install it into its own venv if
-you need it alongside the others.
+The OpenMP target-offload backend is built explicitly via
+`SBD_BUILD_BACKEND=gpu_omp_offload` and **cannot coexist in a single
+Python process with CPU or Thrust** (libnvomp vs libgomp/libomp —
+co-loading produces "Another OpenMP runtime library has been
+detected" and may deadlock). Install it into its own venv if you
+need it alongside the others.
 
 ### Build
 
@@ -94,9 +94,8 @@ if you need both.
 SBD_GPU_ARCH=cc100  pip install -e . --no-build-isolation
 ```
 
-Builds `_core_cpu` always. Adds `_core_gpu_thrust` when NVHPC `nvc++`
-is on PATH; otherwise CPU-only. Devices: `'cpu'` + `'gpu'` (aliases
-`'gpu-thrust'`, `'gpu-nvidia'`, `'cuda'`).
+Builds the CPU backend always. Adds the Thrust GPU backend when NVHPC
+`nvc++` is on PATH; otherwise CPU-only. Devices: `'cpu'` and `'gpu'`.
 
 **Profile 2 — OpenMP target-offload GPU** (separate venv)
 
@@ -105,40 +104,32 @@ SBD_BUILD_BACKEND=gpu_omp_offload  SBD_GPU_ARCH=cc100 \
     pip install -e . --no-build-isolation
 ```
 
-Builds `_core_gpu_omp_offload` only. Device: `'gpu-omp'` (aliases
-`'gpu-omp-offload'`, `'gpu-nvhpc-omp'`, `'gpu-nvidia-omp'`).
+Builds the OMP-offload GPU backend only. Device: `'gpu-omp'`.
 
 **Multi-arch fat binary**: comma-separate the arches:
 `SBD_GPU_ARCH=cc80,cc90,cc100`. nvc++ embeds one SASS cubin per arch
 and picks the matching one at runtime.
 
-| Backend | Module | Compiler | Macros |
-|---|---|---|---|
-| CPU OpenMP host | `_core_cpu` | gcc/clang | `-fopenmp` (host) |
-| NVIDIA Thrust | `_core_gpu_thrust` | NVHPC nvc++ | `-DSBD_THRUST -cuda -gpu=$SBD_GPU_ARCH` |
-| NVIDIA OpenMP-offload | `_core_gpu_omp_offload` | NVHPC nvc++ | `-DUSE_GPU -DUSE_OMP_OFFLOAD -mp=gpu -gpu=$SBD_GPU_ARCH` |
-
 #### Advanced `SBD_BUILD_BACKEND` overrides
 
 Only needed when you want to deviate from the two profiles above.
 
-| Value | Builds | Note |
-|---|---|---|
-| *unset* (default) | `_core_cpu` always; `_core_gpu_thrust` if nvc++ found | Same as `auto`. The "Profile 1" default. |
-| `cpu` | `_core_cpu` only | Skip GPU even if nvc++ is present. |
-| `gpu` *(alias `gpu_thrust`)* | `_core_gpu_thrust` only | Skip CPU. Errors if nvc++ missing. |
-| `both` | `_core_cpu` + `_core_gpu_thrust` | Like default, but errors instead of falling back if nvc++ missing. |
-| `gpu_omp_offload` | `_core_gpu_omp_offload` only | The "Profile 2" install. Cannot be combined with the others — see below. |
+| Value | Builds |
+|---|---|
+| *unset* (default) | CPU always; Thrust GPU if `nvc++` found. The "Profile 1" default. |
+| `cpu` | CPU only — skip GPU even if `nvc++` is present. |
+| `gpu` | Thrust GPU only — skip CPU. Errors if `nvc++` missing. |
+| `both` | CPU + Thrust GPU. Errors instead of falling back if `nvc++` missing. |
+| `gpu_omp_offload` | OMP-offload GPU only. The "Profile 2" install. |
 
 #### Why two profiles
 
-`_core_gpu_omp_offload` loads NVHPC's `libnvomp` OpenMP runtime;
-`_core_cpu` and `_core_gpu_thrust` load `libgomp`/`libomp` (CPU-side
-OpenMP via `-fopenmp` / `-mp` respectively). NVHPC refuses to share
-a process with another OpenMP runtime — co-loading produces the
-"Another OpenMP runtime library has been detected" warning and can
-deadlock at the first `#pragma omp` region. So OMP-offload lives in
-its own venv / install directory.
+The OMP-offload backend uses NVHPC's `libnvomp` OpenMP runtime; the
+CPU and Thrust backends use `libgomp` / `libomp`. NVHPC refuses to
+share a process with another OpenMP runtime — co-loading produces
+the "Another OpenMP runtime library has been detected" warning and
+can deadlock at the first `#pragma omp` region. So OMP-offload lives
+in its own venv / install directory.
 
 **Reverting to the LLVM/clang offload path:** prior versions of this
 repo supported a separate `_core_gpu_omp_nvidia` backend built with
@@ -198,8 +189,8 @@ sbd.available_backends()
 
 # Per-call override — auto-initializes on first use
 result_cpu     = sbd.tpb_diag(..., device='cpu')
-result_thrust  = sbd.tpb_diag(..., device='gpu')         # alias 'gpu-thrust', 'gpu-nvidia', 'cuda'
-result_omp     = sbd.tpb_diag(..., device='gpu-omp')     # alias 'gpu-omp-offload', 'gpu-nvhpc-omp'
+result_thrust  = sbd.tpb_diag(..., device='gpu')
+result_omp     = sbd.tpb_diag(..., device='gpu-omp')
 
 # Or set a default device explicitly (optional)
 sbd.init(device='gpu')      # default = NVHPC Thrust
@@ -286,8 +277,8 @@ See [python/examples/README.md](../python/examples/README.md) for usage details.
 
 | Function | Description |
 |----------|-------------|
-| `sbd.get_backend(device=None)` | Get backend module (`_core_cpu`, `_core_gpu`, or `_core_gpu_omp_nvidia`). `None` = default |
-| `sbd.available_backends()` | List of compiled backends, e.g. `['cpu']`, `['cpu', 'gpu']`, `['cpu', 'gpu', 'gpu-nvidia-omp']` |
+| `sbd.get_backend(device=None)` | Get the pybind11 backend module for the named device. `None` = default device. |
+| `sbd.available_backends()` | List of compiled backends, e.g. `['cpu']`, `['cpu', 'gpu']`, `['gpu-omp']` |
 
 ### Query
 
@@ -347,11 +338,10 @@ sbd.print_info()
 
 ## Backend Architecture
 
-- Each backend is a separate pybind11 module — `_core_cpu.so`, `_core_gpu.so` (NVHPC Thrust), `_core_gpu_omp_nvidia.so` (LLVM OpenMP-offload). All compiled from the same `python/bindings.cpp` source with different `-D` macros (`SBD_THRUST`, `USE_GPU + USE_OMP_OFFLOAD`, or neither for CPU) and different compilers (gcc/clang, nvc++, clang++ respectively). Distinct C++ namespaces — no symbol collision when multiple coexist.
-- All compiled backends are loaded eagerly at `import sbd` into `sbd._backends`. Aliases (`'gpu-omp'` → `'gpu-nvidia-omp'`, `'cuda'`/`'gpu-nvidia'` → `'gpu'`) live in `sbd._device_aliases`.
-- `get_backend(device)` resolves aliases and returns the appropriate module; all wrapper functions accept an optional `device` parameter.
+- Each backend is a separate pybind11 module compiled from the same `python/bindings.cpp` source with different `-D` macros (`SBD_THRUST` for the Thrust path, `USE_GPU + USE_OMP_OFFLOAD` for OMP-offload, neither for CPU). The Thrust and OMP-offload paths both compile with NVHPC `nvc++` (with `-cuda` and `-mp=gpu` respectively); CPU compiles with gcc/clang. Distinct C++ namespaces — no symbol collision when multiple coexist.
+- `get_backend(device)` resolves the `device=` string and returns the appropriate module; all wrapper functions accept an optional `device` parameter. Aliases for back-compat live in `sbd._device_aliases`.
 - GPU device assignment: `gpu_id = mpi_rank % num_gpus` (set per `tpb_diag()` call in `bindings.cpp`); same logic for both Thrust and OMP-offload paths.
-- Backends differ in which phases run on the GPU vs the host. Davidson and the matvec (`mult`) live on the GPU under both Thrust and OMP-offload. The diagonal-Hamiltonian preconditioner (`makeQChamDiagTerms`) is GPU-resident under Thrust but runs on the host under OMP-offload (no `#pragma omp target` port in `tpb/qcham.h`) — see `.github/SETUP_LLVM_OFFLOAD.txt` for details.
+- Backends differ in which phases run on the GPU vs the host. Davidson and the matvec (`mult`) live on the GPU under both Thrust and OMP-offload. The diagonal-Hamiltonian preconditioner (`makeQChamDiagTerms`) is GPU-resident under Thrust but runs on the host under OMP-offload (no `#pragma omp target` port in `tpb/qcham.h`).
 
 ## Troubleshooting
 
@@ -363,7 +353,7 @@ sbd.print_info()
 
 **MPI errors:** Verify `MPI_HOME`, check `python -c "from mpi4py import MPI; print(MPI.Get_version())"`.
 
-**OMP-offload runs all land on GPU 0 in multi-GPU jobs:** symptom — every MPI rank shows large memory only on GPU 0 in `nvidia-smi`. The bindings already call `omp_set_default_device(mpi_rank % n_dev)`, but when `_core_gpu_omp_nvidia.so` is loaded via Python's dlopen, `omp_get_num_devices()` binds to libomp's stub (returns 0) instead of libomptarget's working version (returns the real count). The bindings fall back to parsing `CUDA_VISIBLE_DEVICES` to recover the device count, so make sure that env var is exported and lists all your GPUs (e.g. `0,1,2,3`). Slurm/`srun --gres=gpu:N` and OpenMPI's default binding policy already do this; if you've custom-restricted `CUDA_VISIBLE_DEVICES` to a single GPU per rank, set it manually before launch.
+**OMP-offload runs all land on GPU 0 in multi-GPU jobs:** symptom — every MPI rank shows large memory only on GPU 0 in `nvidia-smi`. The bindings call `omp_set_default_device(mpi_rank % n_dev)`, but `omp_get_num_devices()` can return 0 in some dlopen scenarios. The bindings fall back to parsing `CUDA_VISIBLE_DEVICES` to recover the device count, so make sure that env var is exported and lists all your GPUs (e.g. `0,1,2,3`). Slurm/`srun --gres=gpu:N` and OpenMPI's default binding policy already do this; if you've custom-restricted `CUDA_VISIBLE_DEVICES` to a single GPU per rank, set it manually before launch.
 
 **OMP-offload + UCX MPI fails with `MPI_INIT failed`:** mpi4py 4.x requests `MPI_THREAD_MULTIPLE` by default, which UCX in HPCX rejects with `UCP worker does not support MPI_THREAD_MULTIPLE`. Set `MPI4PY_RC_THREAD_LEVEL=serialized` (or `funneled`/`single`) in the environment, or `import mpi4py; mpi4py.rc.thread_level = 'serialized'` before `from mpi4py import MPI`.
 
