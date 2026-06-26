@@ -70,6 +70,64 @@ def _resolve_gpu_arch(default='cc90'):
     return default
 
 
+def _route_build_through_nvhpc(nvc_path):
+    """Configure distutils + sysconfig so a setup() call uses nvc++.
+
+    Called by both the Thrust and OMP-offload extension blocks (both
+    compile with nvc++). Idempotent — second call is a no-op.
+
+    Effect: distutils' UnixCCompiler will pick up CC/CXX/LDSHARED from
+    os.environ and use them for every Extension in this setup() call.
+    Also clears CFLAGS/CXXFLAGS/CPPFLAGS and rewrites sysconfig to drop
+    gcc-specific tokens nvc++ rejects (RHEL 9 CPython injects a long
+    list — see comment below).
+
+    Co-builds with the CPU extension are safe: nvc++ accepts the CPU
+    block's `-fopenmp -O3 -std=c++17` flags (treats -fopenmp as -mp).
+    """
+    if os.environ.get('_SBD_NVHPC_ROUTING_APPLIED'):
+        return
+    os.environ['_SBD_NVHPC_ROUTING_APPLIED'] = '1'
+
+    # Respect user-set CC/CXX (e.g. cross-toolchain); otherwise pin nvc++.
+    os.environ.setdefault('CC',       nvc_path)
+    os.environ.setdefault('CXX',      nvc_path)
+    os.environ.setdefault('LDSHARED', f'{nvc_path} -shared')
+    os.environ.setdefault('CFLAGS',   '')
+    os.environ.setdefault('CXXFLAGS', '')
+    os.environ.setdefault('CPPFLAGS', '')
+
+    # RHEL 9 CPython sysconfig injects gcc-specific flags that nvc++
+    # rejects (-grecord-gcc-switches, -Wp,-D_FORTIFY_SOURCE=2,
+    # -fstack-protector-strong, -fasynchronous-unwind-tables,
+    # -fstack-clash-protection, -fcf-protection, -fwrapv) plus a
+    # -march=x86-64-v2 default that nvc++ explicitly rejects
+    # (requires v3+). distutils pulls these from sysconfig in addition
+    # to os.environ.CFLAGS, so blanking the latter alone is not enough
+    # — we rewrite the sysconfig dict itself.
+    import sysconfig, re as _re
+    _cfg = sysconfig.get_config_vars()
+    _strip_tokens = (
+        '-grecord-gcc-switches',
+        '-Wp,-D_FORTIFY_SOURCE=2',
+        '-Wp,-D_GLIBCXX_ASSERTIONS',
+        '-fstack-protector-strong',
+        '-fasynchronous-unwind-tables',
+        '-fstack-clash-protection',
+        '-fcf-protection',
+        '-fwrapv',
+        '-Wno-unused-result',
+    )
+    for _k in list(_cfg.keys()):
+        _v = _cfg[_k]
+        if not isinstance(_v, str):
+            continue
+        for _bad in _strip_tokens:
+            _v = _v.replace(_bad, '')
+        _v = _v.replace('-march=x86-64-v2', '-march=x86-64-v3')
+        _cfg[_k] = _re.sub(r' +', ' ', _v).strip()
+
+
 def find_nvidia_hpc_sdk():
     nvhpc_home = os.environ.get('NVHPC_HOME', None)
     if nvhpc_home:
@@ -241,6 +299,9 @@ if build_gpu_thrust:
         print("Error: GPU backend requested but nvc++ not found")
         sys.exit(1)
     print(f"Using compiler: {gpu_compiler}")
+    # Auto-route the build through nvc++ + sanitize sysconfig flags.
+    # No-op if the user already set CC/CXX manually.
+    _route_build_through_nvhpc(gpu_compiler)
     gpu_arch = _resolve_gpu_arch(default='cc90')
     print(f"NVHPC -gpu= arch: {gpu_arch} (set SBD_GPU_ARCH to override; "
           "nvc++ accepts cc<XX> and sm_<XX>)")
@@ -280,46 +341,8 @@ if build_gpu_thrust:
 if build_gpu_omp_offload:
     print("\nConfiguring GPU OpenMP target-offload backend (_core_gpu_omp_offload)")
     print(f"Using compiler: {gpu_compiler}")
-
-    # Drive build through nvc++ for both .c and .cpp. nvc handles C but
-    # distutils picks CC for .cpp in some paths, so route both to nvc++.
-    os.environ['CC']       = gpu_compiler
-    os.environ['CXX']      = gpu_compiler
-    os.environ['LDSHARED'] = f'{gpu_compiler} -shared'
-    os.environ['CFLAGS']   = ''
-    os.environ['CXXFLAGS'] = ''
-    os.environ['CPPFLAGS'] = ''
-
-    # RHEL 9 CPython sysconfig injects gcc-specific flags that nvc++ rejects
-    # (-grecord-gcc-switches, -Wp,-D_FORTIFY_SOURCE=2, -fstack-protector-strong,
-    # -fasynchronous-unwind-tables, -fstack-clash-protection, -fcf-protection,
-    # -fwrapv) plus a -march=x86-64-v2 default that nvc++ explicitly rejects
-    # (requires v3+). distutils pulls these from sysconfig in addition to
-    # os.environ.CFLAGS, so blanking the latter alone is not enough — we
-    # rewrite the sysconfig dict itself.
-    import sysconfig, re as _re
-    _cfg = sysconfig.get_config_vars()
-    _strip_tokens = (
-        '-grecord-gcc-switches',
-        '-Wp,-D_FORTIFY_SOURCE=2',
-        '-Wp,-D_GLIBCXX_ASSERTIONS',
-        '-fstack-protector-strong',
-        '-fasynchronous-unwind-tables',
-        '-fstack-clash-protection',
-        '-fcf-protection',
-        '-fwrapv',
-        '-Wno-unused-result',
-    )
-    for _k in list(_cfg.keys()):
-        _v = _cfg[_k]
-        if not isinstance(_v, str):
-            continue
-        for _bad in _strip_tokens:
-            _v = _v.replace(_bad, '')
-        _v = _v.replace('-march=x86-64-v2', '-march=x86-64-v3')
-        _cfg[_k] = _re.sub(r' +', ' ', _v).strip()
-
-    # Same arch flag as the Thrust path (both compile with nvc++ -gpu=).
+    # Auto-route the build through nvc++ + sanitize sysconfig flags.
+    _route_build_through_nvhpc(gpu_compiler)
     offload_arch = _resolve_gpu_arch(default='cc90')
     print(f"NVHPC -gpu= arch: {offload_arch} (set SBD_GPU_ARCH to override)")
 
