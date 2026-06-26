@@ -7,6 +7,31 @@ Examples demonstrating SBD's capabilities for quantum chemistry calculations.
 - **Communication:** MPI for distributed computing
 - **Backends:** CPU (OpenMP) and GPU (CUDA), switchable at runtime via `device` parameter
 
+## Extra dependencies (only for the SQD examples)
+
+The standalone `run_sbd_diag.py` script needs nothing beyond what
+`pip install -e .` already installed (`sbd`, `mpi4py`, `numpy`).
+
+The SQD examples — `run_sqd_sbd.py` and `run_sqd_sbd.ipynb` — wrap SBD
+with the qiskit-addon-sqd self-consistent loop, which pulls in three
+extra Python packages. Install them once into the same venv:
+
+```bash
+source ~/venvs/<your-sbd-venv>/bin/activate
+pip install pyscf qiskit \
+    "git+https://github.com/hfwen0502/qiskit-addon-sqd@patch-ferminon-sbd"
+```
+
+- **`pyscf`** — reads FCIDUMP, restores 4-fold integral symmetry.
+- **`qiskit`** — `BitArray` type for sampled-bitstring input.
+- **`qiskit-addon-sqd`** — the SQD loop (`diagonalize_fermionic_hamiltonian`).
+  Must be the **MPI-aware fork at `patch-ferminon-sbd`**, not the upstream
+  PyPI package; upstream doesn't have the multi-rank plumbing.
+
+`pyscf` is the heavy one (~150 MB plus `h5py`). The qiskit-addon-sqd
+fork is a thin layer on top of upstream qiskit, so most of `qiskit`'s
+~300 MB is what dominates the install size.
+
 ## Examples
 
 ### 1. run_sbd_diag.py — Standalone SBD Diagonalization
@@ -89,8 +114,7 @@ MPI decomposition flags. SBD solver flags (`--method`, `--tolerance`,
 `--iteration`, etc.) have sensible defaults; run `python run_sqd_sbd.py --help`
 for the full list.
 
-**Requirements:** `sbd`, `mpi4py`, `pyscf`, `numpy`, and the MPI-aware fork of qiskit-addon-sqd:
-[hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) (`patch-ferminon-sbd` branch)
+**Requirements:** see [Extra dependencies](#extra-dependencies-only-for-the-sqd-examples) above (`pyscf`, `qiskit`, `qiskit-addon-sqd` fork).
 
 #### SQD Parameter Guide
 
