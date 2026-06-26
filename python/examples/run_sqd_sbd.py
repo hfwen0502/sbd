@@ -255,6 +255,18 @@ def main():
         print("Starting SQD loop...")
         t0 = time.perf_counter()
 
+    # HF (Hartree-Fock) occupancies as a recovery seed: first num_elec_a
+    # alpha orbitals filled, first num_elec_b beta orbitals filled. This
+    # is what configuration_recovery falls back to when the bit_array
+    # contains no valid Hamming-weight strings — which is always the
+    # case for the uniform-random fallback path (probability of a random
+    # 2*norb bitstring having exactly (num_elec_a, num_elec_b) Hamming
+    # weights is vanishing for any realistic norb). Cheap insurance even
+    # when --counts is provided; harmless if the bit_array is already
+    # valid.
+    hf_alpha = np.zeros(norb); hf_alpha[:num_elec_a] = 1.0
+    hf_beta  = np.zeros(norb); hf_beta[:num_elec_b]  = 1.0
+
     try:
         result = diagonalize_fermionic_hamiltonian(
             hcore,
@@ -269,6 +281,7 @@ def main():
             symmetrize_spin=True,
             callback=callback,
             seed=rand_seed,
+            initial_occupancies=(hf_alpha, hf_beta),
         )
     except RuntimeError as e:
         if "Failed to open FCIDUMP" in str(e):
