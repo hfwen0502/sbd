@@ -245,7 +245,7 @@ sbd.finalize()  # optional — syncs GPU and resets state
 
 SBD can serve as the eigensolver backend for qiskit-addon-sqd's SQD workflow.
 
-**Note:** Requires the `patch-ferminon-sbd` branch of [hfwen0502/qiskit-addon-sqd](https://github.com/hfwen0502/qiskit-addon-sqd) for MPI-aware solver support.
+**Note:** The `main` branch of [Qiskit/qiskit-addon-sqd](https://github.com/Qiskit/qiskit-addon-sqd) is currently required for MPI-aware solver support; this will be made broadly available when qiskit-addon-sqd 0.13.0 is released.
 
 ```python
 from functools import partial
