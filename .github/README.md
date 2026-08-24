@@ -1,3 +1,13 @@
+# ⚠️ This repository has moved
+
+**Active development has moved to [Qiskit/sbd-eigensolver-python](https://github.com/Qiskit/sbd-eigensolver-python).**
+
+This repository is **archived and read-only**. Please use the new location for the
+latest code, and to open issues or pull requests. The history here is preserved for
+reference only.
+
+---
+
 # SBD Python Bindings
 
 Python bindings for the Selected Basis Diagonalization (SBD) library with dual CPU/GPU backend support.
