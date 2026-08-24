@@ -1,3 +1,13 @@
+# ⚠️ This repository has moved
+
+**Active development has moved to [Qiskit/sbd-eigensolver-python](https://github.com/Qiskit/sbd-eigensolver-python).**
+
+This repository is **archived and read-only**. Please use the new location for the
+latest code, and to open issues or pull requests. The history here is preserved for
+reference only.
+
+---
+
 # Library for selected basis diagonalization
 
 This is a header-only library for diagonalizing quantum systems in a selected basis, with a focus on handling wavefunction vectors that are too large to fit in the memory of a single node.
