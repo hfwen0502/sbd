@@ -194,6 +194,31 @@ fused_cross(const double* __restrict__ C, const double* __restrict__ Vs, int ldv
             const double* As = ring + (t & 1) * 32 * SBD_FM_LD + wm * 32 + q8;
             const double* Bt = Bs + (t * 32) * SBD_FM_LD + wn * 32 + q8;
             const int kc = min(32, K - t * 32);
+#if defined(__HIP_PLATFORM_AMD__)
+            // AMD: the same outputs per lane as mma.sync m8n8k4 (X[wm*32 + i*8 + q8][wn*32 + j*8 + 2*r4 + {0,1}]),
+            // computed directly from shared memory: per 4-deep step, 16 A + 32 B loads feed 128 FMAs.
+            const double* Bn = Bs + (t * 32) * SBD_FM_LD + wn * 32 + 2 * r4;
+            for (int kk = 0; kk < kc; kk += 4) {
+#pragma unroll
+                for (int k = 0; k < 4; k++) {
+                    double av[4], bv[4][2];
+#pragma unroll
+                    for (int i = 0; i < 4; i++) av[i] = As[(kk + k) * SBD_FM_LD + i * 8];
+#pragma unroll
+                    for (int j = 0; j < 4; j++) {
+                        bv[j][0] = Bn[(kk + k) * SBD_FM_LD + j * 8];
+                        bv[j][1] = Bn[(kk + k) * SBD_FM_LD + j * 8 + 1];
+                    }
+#pragma unroll
+                    for (int i = 0; i < 4; i++)
+#pragma unroll
+                        for (int j = 0; j < 4; j++) {
+                            acc[i][j][0] = fma(av[i], bv[j][0], acc[i][j][0]);
+                            acc[i][j][1] = fma(av[i], bv[j][1], acc[i][j][1]);
+                        }
+                }
+            }
+#else
             for (int kk = 0; kk < kc; kk += 4) {
                 double fa[4], fb[4];
 #pragma unroll
@@ -205,6 +230,7 @@ fused_cross(const double* __restrict__ C, const double* __restrict__ Vs, int ldv
 #pragma unroll
                     for (int j = 0; j < 4; j++) fm_dmma(acc[i][j][0], acc[i][j][1], fa[i], fb[j]);
             }
+#endif  // __HIP_PLATFORM_AMD__
             __syncthreads();  // stage (t & 1) free for the load two tiles ahead / for X
         }
         double* Xs = ring;
