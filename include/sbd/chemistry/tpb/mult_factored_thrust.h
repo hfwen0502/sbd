@@ -1059,12 +1059,14 @@ public:
             // nodes at different GPUs, so it uses all four NICs of a node, 84 GB/s per GPU on two GH200
             // nodes against 24 GB/s for MPI_Allgather; Davidson at 1e9 determinants on 8 GPUs took
             // 51.5 s against 120.9 s.
-            MPI_Comm node;
-            MPI_Comm_split_type(b_comm, MPI_COMM_TYPE_SHARED, rank_, MPI_INFO_NULL, &node);
-            int on_node = 0;
-            MPI_Comm_size(node, &on_node);
-            MPI_Comm_free(&node);
-            int one_node = on_node == P_, all_one_node = 0;
+            // MPICH 5.0.x reports a local size of 1 from MPI_Comm_split_type(MPI_COMM_TYPE_SHARED) on some
+            // systems, so every rank would look like its own node. Compare host names with rank 0's instead.
+            char host[MPI_MAX_PROCESSOR_NAME + 1] = {0}, root_host[MPI_MAX_PROCESSOR_NAME + 1] = {0};
+            int host_len = 0;
+            MPI_Get_processor_name(host, &host_len);
+            std::memcpy(root_host, host, sizeof(root_host));
+            MPI_Bcast(root_host, MPI_MAX_PROCESSOR_NAME + 1, MPI_CHAR, 0, b_comm);
+            int one_node = std::strcmp(host, root_host) == 0, all_one_node = 0;
             MPI_Allreduce(&one_node, &all_one_node, 1, MPI_INT, MPI_LAND, b_comm);
 #ifndef SBD_USE_NCCL
             if (!all_one_node)
