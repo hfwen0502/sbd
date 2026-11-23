@@ -65,12 +65,37 @@ namespace factored {
 // ---------------------------------------------------------------------------------------------
 
 #define SBD_FM_LD 72    // row stride (doubles) of the V, C and X tiles: 64 + 8 avoids bank conflicts
+#if defined(__HIP_PLATFORM_AMD__)
+#define SBD_FM_LDC 64   // AMD: 2 x 64 x 64 doubles = 64 KiB, the per-block limit
+#else
 #define SBD_FM_LDC 65   // row stride of the same-spin C tiles; odd so transposed fills spread over banks
+#endif
 #define SBD_FM_TR 128   // rows per same-spin tile (columns per tile: 64)
 #ifndef SBD_FM_SMEM_LIMIT
 #define SBD_FM_SMEM_LIMIT 0  // bytes of shared memory a cross-term block may use; 0: the device's limit
 #endif
 
+#if defined(__HIP_PLATFORM_AMD__)
+// AMD (HIP) versions of the PTX helpers below. Correctness first: plain loads instead of cp.async, and
+// mma.sync m8n8k4 f64 emulated with 32-wide shuffles in PTX's fragment layout (lane l: g = l / 4, t = l % 4;
+// A[g][t] and B[t][g] in, D[g][2t], D[g][2t + 1] accumulated). A 64-lane wavefront runs two such groups.
+__device__ __forceinline__ void fm_cp_async8(double* dst, const double* src, bool valid)
+{
+    *dst = valid ? *src : 0.0;  // zero-fills when not valid, like cp.async with src-size 0
+}
+__device__ __forceinline__ void fm_cp_commit() {}
+__device__ __forceinline__ void fm_cp_wait0() {}
+__device__ __forceinline__ void fm_cp_wait1() {}
+__device__ __forceinline__ void fm_dmma(double& d0, double& d1, double a, double b)
+{
+    const int l = static_cast<int>(threadIdx.x) & 31, g = l >> 2, t = l & 3;
+    for (int k = 0; k < 4; k++) {
+        const double ag = __shfl(a, g * 4 + k, 32);           // A[g][k]
+        d0 += ag * __shfl(b, (2 * t) * 4 + k, 32);             // B[k][2t]
+        d1 += ag * __shfl(b, (2 * t + 1) * 4 + k, 32);         // B[k][2t + 1]
+    }
+}
+#else
 __device__ __forceinline__ void fm_cp_async8(double* dst, const double* src, bool valid)
 {
     unsigned d = (unsigned)__cvta_generic_to_shared(dst);
@@ -85,6 +110,8 @@ __device__ __forceinline__ void fm_dmma(double& d0, double& d1, double a, double
     asm volatile("mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {%0, %1}, {%2}, {%3}, {%0, %1};\n"
                  : "+d"(d0), "+d"(d1) : "d"(a), "d"(b));
 }
+
+#endif  // __HIP_PLATFORM_AMD__
 
 // V tile t of a chunk (rows k of the tile, 64 rs columns) into a ring stage, by cp.async
 __device__ __forceinline__ void fm_load_v_tile(double* stage, const double* Vs, const int* rl,
