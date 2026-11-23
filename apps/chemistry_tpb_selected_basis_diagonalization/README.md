@@ -40,6 +40,12 @@ You can generate the documentation by running the command `doxygen ./doc/Doxyfil
     make
     ```
 
+- AMD GPUs (Thrust backend through HIP): `make -f Makefile.hip` with `Configuration.hip`. The sources are compiled with
+  `hipcc` (via the MPI wrapper, e.g. `export MPICH_CXX=hipcc`) against rocThrust, hipCUB and RCCL; `hipshim/` at the
+  top of the repository maps SBD's CUDA, Thrust, CUB, cuBLAS and NCCL names onto them. Set `GPU_ARCH` (`gfx90a` for
+  MI200, `gfx942` for MI300). Use a GPU-aware MPI, or `-DSBD_USE_NCCL` with RCCL, for several ranks. Run one MPI rank
+  per GPU (GCD): two processes on one GCD gave wrong results in our tests. `--factored_mult 1` is supported.
+
 ## Command-Line Arguments for Executable
 
 For usage examples, please refer to the `run.sh` script included in this directory. It shows how to run the executable with various command-line options.
