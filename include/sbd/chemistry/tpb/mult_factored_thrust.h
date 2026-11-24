@@ -842,6 +842,15 @@ inline void BuildCrossBuckets(CrossTables &x, size_t a0, size_t a1)
 template <typename ElemT>
 class MultTPBFactored : public MultBase<ElemT> {
 public:
+#ifdef SBD_USE_NCCL
+    // The eigensolver's collectives (DavidsonCublas) use MultBase's NCCL communicators; the standard
+    // multiplication receives them in Init, so hand the same ones to this one.
+    void SetNcclComms(ncclComm_t b_nccl_comm, ncclComm_t a_nccl_comm)
+    {
+        this->b_nccl_comm_ = b_nccl_comm;
+        this->a_nccl_comm_ = a_nccl_comm;
+    }
+#endif
     MultTPBFactored() {}
     ~MultTPBFactored()
     {

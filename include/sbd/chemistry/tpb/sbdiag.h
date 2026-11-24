@@ -472,6 +472,9 @@ namespace sbd {
 	                       // allocated later: the eigensolver's vectors on the GPU and the diagonal
 	                       sizeof(double) * (helper[0].braAlphaEnd - helper[0].braAlphaStart) * bdet.size()
 	                       * static_cast<size_t>(sbd_data.cpu_subspace ? 5 : 2 * max_nb + 5));
+#ifdef SBD_USE_NCCL
+	    factored_mult.SetNcclComms(b_nccl_comm, a_nccl_comm);
+#endif
 	}
 	if( !use_factored || sbd_data.factored_mult_check ) {
 	    init_device_mult();
