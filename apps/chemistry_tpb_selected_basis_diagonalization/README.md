@@ -45,7 +45,8 @@ You can generate the documentation by running the command `doxygen ./doc/Doxyfil
   at the top of the repository maps SBD's CUDA, Thrust, CUB, cuBLAS and NCCL names onto them. `Configuration.hip`
   enables the options of `Configuration.nvhpc` except NVTX. Set `GPU_ARCH` (`gfx90a` for MI200, `gfx942` for MI300).
   Use a GPU-aware MPI for several ranks, and run one MPI rank per GPU (GCD): two processes on one GCD gave wrong
-  results in our tests.
+  results in our tests. `--factored_mult 1` works as on NVIDIA; `Configuration.hip` already builds with RCCL
+  (`SBD_USE_NCCL`).
 
 ## Command-Line Arguments for Executable
 
